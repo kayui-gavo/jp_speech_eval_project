@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jp-speech-eval"
+version = "1.5.0"
+description = "Lightweight Japanese speech evaluation prototype with robust endpointing, recording-quality gates, mora-level evidence, F0, prosody, fluency, and multi-mode evaluation."
+requires-python = ">=3.10,<3.13"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,27 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments and local installs
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Generated audio/cache/evaluation artifacts
+ver1.3/cache/
+ver1.3/outputs/
+ver1.3/data/*.wav
+ver1.3/data/*.mp3
+ver1.3/data/*.m4a
+ver1.3/data/*.flac
+
+# Keep local historical folders out unless intentionally migrated
+/ver1.0

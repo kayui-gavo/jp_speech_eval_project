@@ -1,0 +1,52 @@
+{
+  "pause": {
+    "long_pause_sec": 0.30
+  },
+  "fluency": {
+    "target_mora_per_sec_min": 4.0,
+    "target_mora_per_sec_max": 7.0,
+    "slow_mora_per_sec": 3.0,
+    "fast_mora_per_sec": 8.5,
+    "pause_ratio_weight": 180.0,
+    "pause_count_penalty": 8.0
+  },
+  "pronunciation": {
+    "special_mora_short_ratio": 0.45,
+    "special_mora_penalty": 10.0,
+    "rhythm_cv_weight": 90.0,
+    "rhythm_cv_warning": 0.35
+  },
+  "prosody": {
+    "f0_direction_threshold": 0.25,
+    "question_final_rise_threshold": 0.20,
+    "statement_final_rise_threshold": 0.45,
+    "hl_match_weight": 0.45,
+    "direction_match_weight": 0.35,
+    "final_intonation_weight": 0.20
+  },
+  "tone": {
+    "low_pitch_range_log": 0.15,
+    "high_pitch_range_log": 0.75,
+    "low_energy_mean": 0.015,
+    "high_energy_cv": 1.0,
+    "high_pause_ratio": 0.20,
+    "pause_ratio_weight": 120.0
+  },
+  "realtime": {
+    "chunk_ms": 20,
+    "analysis_window_ms": 60,
+    "min_rms_voiced": 0.012,
+    "f0_min_hz": 70.0,
+    "f0_max_hz": 500.0,
+    "pitch_margin_log": 0.08,
+    "speech_rms_threshold": 0.060,
+    "speech_start_sec": 0.08,
+    "maybe_end_silence_sec": 0.25,
+    "end_silence_sec": 0.65
+  },
+  "content_match": {
+    "use_asr": true,
+    "asr_provider": "auto",
+    "asr_model": "small"
+  }
+}

@@ -1,0 +1,1344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Japanese Speech Eval Debug UI</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #18202a;
+      --muted: #667085;
+      --line: #d7dde5;
+      --accent: #0f766e;
+      --accent-dark: #115e59;
+      --warn: #b45309;
+      --bad: #b42318;
+      --good: #047857;
+      --soft: #eef6f5;
+      --shadow: 0 8px 24px rgba(24, 32, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.92);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(10px);
+    }
+
+    .topbar {
+      max-width: 1560px;
+      margin: 0 auto;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 720;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .target {
+      color: var(--muted);
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    main {
+      max-width: 1560px;
+      margin: 0 auto;
+      padding: 22px 20px 36px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .workspace {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+      min-width: 0;
+    }
+
+    .panel-head {
+      padding: 14px 16px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .panel-body { padding: 14px 16px 16px; }
+
+    .prompt {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .jp {
+      font-size: clamp(26px, 2.4vw, 42px);
+      font-weight: 760;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .kana {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .moras {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .reference-tools {
+      display: grid;
+      gap: 10px;
+      justify-items: end;
+      min-width: 230px;
+    }
+
+    audio {
+      width: 100%;
+      max-width: 260px;
+    }
+
+    .audio-block {
+      width: 100%;
+      display: grid;
+      gap: 5px;
+    }
+
+    .audio-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .mora {
+      min-width: 32px;
+      text-align: center;
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfd;
+      font-weight: 650;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pitch {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .controls-mini {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .controls-mini button {
+      min-height: 34px;
+      font-size: 12px;
+      padding: 0 10px;
+    }
+
+    .mode-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    select {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 0 10px;
+      background: #fff;
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    #lastRecordingAudio {
+      margin-top: 10px;
+      max-width: 100%;
+    }
+
+    button, .file-label {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 7px;
+      min-height: 42px;
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 680;
+      font-size: 14px;
+      cursor: pointer;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    button.primary:hover { background: var(--accent-dark); }
+    button:disabled { cursor: not-allowed; opacity: 0.55; }
+    input[type="file"] { display: none; }
+
+    .meter-wrap {
+      margin-top: 14px;
+      height: 12px;
+      background: #e8edf2;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .meter {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 80ms linear;
+    }
+
+    .status-row {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      min-width: 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-weight: 650;
+    }
+
+    .pill.good { color: var(--good); background: #ecfdf3; border-color: #abefc6; }
+    .pill.warn { color: var(--warn); background: #fffaeb; border-color: #fedf89; }
+    .pill.bad { color: var(--bad); background: #fef3f2; border-color: #fecdca; }
+
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .score {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fbfcfd;
+      min-height: 84px;
+    }
+
+    .score strong {
+      display: block;
+      font-size: 26px;
+      line-height: 1;
+      margin: 6px 0;
+    }
+
+    .score span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .reliability-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .reliability-item {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px;
+      background: #fbfcfd;
+      min-width: 0;
+    }
+
+    .reliability-item strong {
+      display: block;
+      font-size: 20px;
+      line-height: 1.1;
+      margin-top: 4px;
+    }
+
+    .reliability-item span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .warning-list {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--warn);
+      font-size: 13px;
+    }
+
+    .bars {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 3px;
+      height: 72px;
+      align-items: end;
+      padding-top: 8px;
+    }
+
+    .bar {
+      min-height: 2px;
+      background: var(--accent);
+      border-radius: 4px 4px 0 0;
+      opacity: 0.82;
+    }
+
+    .bar.empty-bar {
+      background: #d7dde5;
+      opacity: 1;
+    }
+
+    .timeline {
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      position: relative;
+      overflow: hidden;
+      background: #edf1f5;
+    }
+
+    .speech-region {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: var(--accent);
+      opacity: 0.78;
+    }
+
+    .timeline-labels {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pitch-compare {
+      width: 100%;
+      height: 300px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fbfcfd;
+      display: block;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 24px;
+      height: 4px;
+      border-radius: 999px;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    .swatch.ref { background: #0f766e; }
+    .swatch.user { background: #b45309; }
+
+    .chart-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .feedback-list {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .feedback-list li { margin: 8px 0; }
+
+    .realtime-table {
+      max-height: 310px;
+      overflow: auto;
+      border-top: 1px solid var(--line);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      table-layout: fixed;
+    }
+
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      z-index: 1;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .raw {
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: 300px;
+      padding: 12px;
+      border-radius: 7px;
+      background: #101828;
+      color: #e6edf3;
+      font-size: 12px;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 20px;
+      border: 1px dashed var(--line);
+      border-radius: 7px;
+      background: #fbfcfd;
+    }
+
+    @media (max-width: 920px) {
+      main { grid-template-columns: 1fr; }
+      .score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .reliability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .controls { grid-template-columns: 1fr; }
+      .prompt { grid-template-columns: 1fr; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .brand { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div class="brand">
+        <h1>Speech Practice</h1>
+        <div class="target" id="cacheLabel">Loading target...</div>
+      </div>
+      <span class="pill" id="serverState">Local debug</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <section>
+        <div class="panel-head">
+          <h2>Practice Prompt</h2>
+          <span class="pill" id="cachePath">cache</span>
+        </div>
+        <div class="panel-body">
+          <div class="prompt">
+            <div>
+              <div class="jp" id="targetText">ラーメンをください</div>
+              <div class="kana" id="kanaText">ラーメンヲクダサイ</div>
+              <div class="moras" id="moraList"></div>
+            </div>
+            <div class="reference-tools">
+              <div class="audio-block">
+                <span class="audio-label" id="referenceLabel">Model reference</span>
+                <audio id="referenceAudio" controls src="/api/reference.wav"></audio>
+              </div>
+              <div class="audio-block">
+                <span class="audio-label">Saved user sample</span>
+                <audio id="sampleAudio" controls src="/api/sample.wav"></audio>
+              </div>
+              <button id="sampleBtn">Evaluate saved sample</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Record Or Upload</h2>
+          <span class="pill" id="recordState">Ready</span>
+        </div>
+        <div class="panel-body">
+          <div class="mode-row">
+            <span>Evaluation mode</span>
+            <select id="evalMode">
+              <option value="reference">Reference fixed sentence</option>
+              <option value="asr_pseudo_reference">ASR pseudo-reference</option>
+              <option value="transcript_assisted_light">Transcript-assisted light</option>
+              <option value="acoustic">Acoustic only experimental</option>
+            </select>
+            <span class="pill" id="modeHint">target text required</span>
+          </div>
+          <div class="controls">
+            <button class="primary" id="recordBtn">● Start recording</button>
+            <button id="stopBtn" disabled>■ Stop & score</button>
+            <button id="playLastBtn" disabled>▶ Play last recording</button>
+            <label class="file-label" for="fileInput">↑ Upload wav</label>
+            <input id="fileInput" type="file" accept="audio/wav,audio/x-wav">
+          </div>
+          <audio id="lastRecordingAudio" controls></audio>
+          <div class="meter-wrap"><div class="meter" id="meter"></div></div>
+          <div class="status-row">
+            <span class="pill" id="liveTime">0.00s</span>
+            <span class="pill" id="liveRms">rms 0.000</span>
+            <span class="pill" id="liveHint">Waiting</span>
+            <span class="pill" id="evalLatency">wait --</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Scores</h2>
+          <span class="pill" id="wavPath">No wav yet</span>
+        </div>
+        <div class="panel-body">
+          <div class="score-grid" id="scoreGrid"></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Reliability</h2>
+          <span class="pill" id="reliabilityLevel">No data</span>
+        </div>
+        <div class="panel-body">
+          <div class="reliability-grid" id="reliabilityGrid"></div>
+          <ul class="warning-list" id="reliabilityWarnings"></ul>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Endpointing</h2>
+          <span class="pill" id="speechRatio">speech ratio</span>
+        </div>
+        <div class="panel-body">
+          <div class="timeline" id="timeline"><div class="speech-region" id="speechRegion"></div></div>
+          <div class="timeline-labels" id="endpointStats"></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Relative F0 Contour</h2>
+          <span class="pill" id="pitchSummary">speaker-normalized</span>
+        </div>
+        <div class="panel-body">
+          <canvas class="pitch-compare" id="pitchCanvas"></canvas>
+          <div class="legend">
+            <span><span class="swatch ref"></span>Model reference example</span>
+            <span><span class="swatch user"></span>Your relative contour</span>
+          </div>
+          <div class="chart-note">Prosody scoring primarily compares the speaker-normalized reference contour with your contour. Heuristic H/L labels are debug cues unless backed by dictionary/manual targets.</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="workspace">
+      <section>
+        <div class="panel-head">
+          <h2>Realtime States</h2>
+          <span class="pill" id="stateSummary">No data</span>
+        </div>
+        <div class="panel-body">
+          <div class="bars" id="stateBars"></div>
+        </div>
+        <div class="realtime-table">
+          <table>
+            <thead>
+              <tr><th>time</th><th>state</th><th>mora</th><th>vol</th><th>pitch</th></tr>
+            </thead>
+            <tbody id="realtimeRows">
+              <tr><td colspan="5">No realtime rows yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Feedback</h2>
+          <span class="pill" id="feedbackCount">0</span>
+        </div>
+        <div class="panel-body">
+          <div class="empty" id="feedbackEmpty">Score an utterance to see learner-facing feedback.</div>
+          <ul class="feedback-list" id="feedbackList"></ul>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Raw JSON</h2>
+          <div class="controls-mini">
+            <button id="compareModesBtn">Compare sample modes</button>
+            <button id="exportFeaturesBtn">Export CSV</button>
+            <button id="copyJsonBtn" disabled>Copy</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <pre class="raw" id="rawJson">{}</pre>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = {
+      audioContext: null,
+      source: null,
+      processor: null,
+      stream: null,
+      chunks: [],
+      sampleRate: 16000,
+      startedAt: 0,
+      readyTimer: null,
+      meterTimer: null,
+      recording: false,
+      lastRecordingUrl: null,
+      lastWaitStartedAt: null,
+      lastPayload: null,
+      config: null,
+      activeReference: null,
+      activeMoras: null,
+      activeTargetPitch: null
+    };
+
+    const scoreMeta = [
+      ["total_score", "Total"],
+      ["pronunciation_score", "Pronunciation"],
+      ["prosody_score", "Prosody"],
+      ["fluency_score", "Fluency"],
+      ["tone_score", "Expression"]
+    ];
+
+    function setBusy(isBusy, label = "Scoring") {
+      $("serverState").textContent = isBusy ? label : "Local debug";
+      $("serverState").className = isBusy ? "pill warn" : "pill";
+      $("recordBtn").disabled = isBusy;
+      $("sampleBtn").disabled = isBusy;
+      $("fileInput").disabled = isBusy;
+      $("playLastBtn").disabled = isBusy || !state.lastRecordingUrl;
+    }
+
+    function renderConfig(config) {
+      state.config = config;
+      $("cachePath").textContent = config.cache_prefix;
+      state.activeReference = config.reference;
+      renderPrompt({
+        target_text: config.target_text,
+        kana: config.kana,
+        moras: config.moras,
+        target_pitch: config.target_pitch
+      });
+      $("referenceLabel").textContent = "Model reference";
+      if (config.reference_audio_url) {
+        $("referenceAudio").src = config.reference_audio_url;
+        $("referenceAudio").load();
+      }
+      drawPitchComparison(null);
+      updateModeHint();
+    }
+
+    function renderPrompt(source) {
+      const moras = source?.moras || [];
+      const pitch = source?.target_pitch || [];
+      state.activeMoras = moras;
+      state.activeTargetPitch = pitch;
+      $("cacheLabel").textContent = source?.target_text || "Acoustic-only diagnosis";
+      $("targetText").textContent = source?.target_text || "Acoustic-only diagnosis";
+      $("kanaText").textContent = source?.kana || "No target text / no kana in this mode";
+      $("moraList").innerHTML = moras.length
+        ? moras.map((m, i) => `<span class="mora">${m}<span class="pitch">${pitch[i] || "?"}</span></span>`).join("")
+        : `<span class="pill">No mora target</span>`;
+    }
+
+    function renderModePlaceholder() {
+      const mode = currentMode();
+      if (mode === "reference") {
+        renderConfig(state.config);
+        return;
+      }
+      state.activeReference = null;
+      $("referenceAudio").removeAttribute("src");
+      $("referenceAudio").load();
+      if (mode === "asr_pseudo_reference") {
+        $("cachePath").textContent = "Waiting for ASR";
+        $("referenceLabel").textContent = "Generated reference after scoring";
+        renderPrompt({
+          target_text: "Speak freely, then ASR will generate the reference",
+          kana: "Transcript / kana will appear after scoring",
+          moras: [],
+          target_pitch: []
+        });
+        $("pitchSummary").textContent = "No generated contour yet";
+      } else if (mode === "transcript_assisted_light") {
+        $("cachePath").textContent = "Waiting for ASR transcript";
+        $("referenceLabel").textContent = "No generated reference";
+        renderPrompt({
+          target_text: "Speak freely, then transcript-assisted analysis will estimate mora rate",
+          kana: "Transcript / kana will appear after scoring",
+          moras: [],
+          target_pitch: []
+        });
+        $("pitchSummary").textContent = "No generated contour in this mode";
+      } else {
+        $("cachePath").textContent = "No text reference";
+        $("referenceLabel").textContent = "No generated reference";
+        renderPrompt({
+          target_text: "Acoustic-only diagnosis",
+          kana: "No transcript, no target kana in this mode",
+          moras: [],
+          target_pitch: []
+        });
+        $("pitchSummary").textContent = "No target contour in this mode";
+      }
+      drawPitchComparison(null);
+    }
+
+    function renderDynamicReference(payload) {
+      const result = payload.result || {};
+      const mode = result.details?.mode || payload.mode || currentMode();
+      if (payload.reference) {
+        state.activeReference = payload.reference;
+      } else if (payload.mode === "acoustic" || mode.includes("acoustic") || mode === "transcript_assisted_light") {
+        state.activeReference = null;
+      }
+      if (payload.reference_audio_url) {
+        $("referenceAudio").src = payload.reference_audio_url;
+        $("referenceAudio").load();
+      }
+      if (mode === "asr_pseudo_reference") {
+        const asrText = result.details?.asr?.text || result.target_text || "ASR transcript";
+        $("cachePath").textContent = "ASR generated reference";
+        const method = payload.reference?.ref_boundary_method || "generated";
+        $("referenceLabel").textContent = `Generated reference from ASR (${method})`;
+        $("cacheLabel").textContent = asrText;
+      } else if (mode === "transcript_assisted_light") {
+        const asrText = result.details?.asr?.text || result.target_text || "Transcript-assisted diagnosis";
+        $("cachePath").textContent = "Transcript-assisted light";
+        $("referenceLabel").textContent = "No generated reference";
+        $("referenceAudio").removeAttribute("src");
+        $("referenceAudio").load();
+        $("cacheLabel").textContent = asrText;
+      } else if (mode === "reference_free_acoustic" || mode === "acoustic" || mode.includes("fallback_acoustic")) {
+        $("cachePath").textContent = "No text reference";
+        $("referenceLabel").textContent = "No generated reference";
+        $("referenceAudio").removeAttribute("src");
+        $("referenceAudio").load();
+      } else {
+        $("cachePath").textContent = state.config?.cache_prefix || "fixed reference";
+        $("referenceLabel").textContent = "Model reference";
+      }
+      renderPrompt({
+        target_text: result.target_text,
+        kana: result.kana,
+        moras: result.moras,
+        target_pitch: result.target_pitch
+      });
+    }
+
+    function currentMode() {
+      return $("evalMode")?.value || "reference";
+    }
+
+    function updateModeHint() {
+      const mode = currentMode();
+      const hints = {
+        reference: "uses target + reference",
+        asr_pseudo_reference: "ASR transcript + generated reference",
+        transcript_assisted_light: "ASR transcript + acoustic proxy",
+        acoustic: "fast: no ASR, risk proxy only"
+      };
+      $("modeHint").textContent = hints[mode] || mode;
+      $("modeHint").className = mode === "reference" ? "pill good" : mode === "asr_pseudo_reference" || mode === "transcript_assisted_light" ? "pill warn" : "pill";
+    }
+
+    function renderScores(result) {
+      $("scoreGrid").innerHTML = scoreMeta.map(([key, label]) => {
+        const value = result[key] ?? 0;
+        return `<div class="score"><span>${label}</span><strong>${value}</strong><span>/ 100</span></div>`;
+      }).join("");
+    }
+
+    function renderReliability(result) {
+      const reliability = result.details?.reliability || {};
+      const content = result.details?.content_match || {};
+      const prosody = result.prosody_metrics || result.details?.prosody_metrics || {};
+      const acoustic = result.details?.acoustic_features || {};
+      const recording = result.details?.recording_quality || {};
+      const evidence = result.details?.mora_evidence_summary || {};
+      const mode = result.details?.mode || state.lastPayload?.mode || "reference";
+      const level = reliability.level || "unknown";
+      $("reliabilityLevel").textContent = `${level} ${(Number(reliability.overall || 0) * 100).toFixed(0)}%`;
+      $("reliabilityLevel").className = level === "high" ? "pill good" : level === "medium" ? "pill warn" : "pill bad";
+      const items = [
+        ["Content match", content.status || "unknown"],
+        ["Kana similarity", content.kana_similarity],
+        ["Prosody target", prosody.pitch_target_source || "unknown"],
+        ["H/L source", prosody.hl_target_source || "unknown"],
+        ["Pitch consistency", prosody.pitch_target_consistency || "unknown"],
+        ["Contour corr", prosody.contour_corr],
+        ["Contour RMSE", prosody.contour_rmse],
+        ["Transition", prosody.transition_agreement],
+        ["Final intonation", prosody.final_intonation_match],
+        ["Eval mode", mode],
+        ["Voiced ratio", acoustic.voiced_ratio],
+        ["F0 range", acoustic.relative_log_f0_range],
+        ["Recording", reliability.recording_quality],
+        ["SNR", recording.snr_db],
+        ["Mora evidence", reliability.mora_evidence],
+        ["Mora judge", evidence.judgement_available_count !== undefined ? `${evidence.judgement_available_count}/${evidence.mora_count || result.moras?.length || 0}` : undefined],
+        ["Endpointing", reliability.endpointing],
+        ["Alignment", reliability.alignment],
+        ["F0 coverage", reliability.f0_coverage],
+        ["Mora F0", `${reliability.valid_mora_count || 0}/${reliability.mora_count || result.moras?.length || 0}`],
+        ["DTW cost", content.dtw_cost],
+        ["Duration ratio", content.duration_ratio]
+      ];
+      $("reliabilityGrid").innerHTML = items.map(([label, value]) => {
+        let text = value;
+        if (typeof value === "number") {
+          text = label === "SNR"
+            ? `${value.toFixed(1)} dB`
+            : label === "DTW cost" || label === "Duration ratio" || label === "Contour corr" || label === "Contour RMSE"
+            ? value.toFixed(2)
+            : `${(value * 100).toFixed(0)}%`;
+        } else if (typeof value === "boolean") {
+          text = value ? "match" : "different";
+        }
+        return `<div class="reliability-item"><span>${label}</span><strong>${text}</strong></div>`;
+      }).join("");
+      const contentWarnings = content.note ? [`content_match: ${content.note}`] : [];
+      if (content.transcript) {
+        contentWarnings.unshift(`ASR: ${content.transcript} / ${content.transcript_kana || ""}`);
+      }
+      if (prosody.pitch_target_source) {
+        contentWarnings.push(`prosody: ${prosody.pitch_target_source} primary; H/L source = ${prosody.hl_target_source || "unknown"}`);
+      }
+      if (mode === "reference_free_acoustic") {
+        contentWarnings.push("acoustic-only: no text, no ASR, no mora correctness");
+      }
+      if (mode === "transcript_assisted_light") {
+        contentWarnings.push("transcript-assisted: transcript estimates mora count only; no kana-level correction");
+      }
+      $("reliabilityWarnings").innerHTML = [...contentWarnings, ...(reliability.warnings || [])]
+        .map((warning) => `<li>${warning}</li>`)
+        .join("");
+    }
+
+    function renderEndpointing(endpointing) {
+      const raw = Math.max(endpointing.raw_duration || 0, 0.001);
+      const left = Math.max(0, (endpointing.speech_start || 0) / raw * 100);
+      const width = Math.max(0, (endpointing.speech_duration || 0) / raw * 100);
+      $("speechRegion").style.left = `${left}%`;
+      $("speechRegion").style.width = `${width}%`;
+      $("speechRatio").textContent = `speech ${(endpointing.speech_ratio * 100).toFixed(1)}%`;
+      $("endpointStats").innerHTML = [
+        ["Raw", endpointing.raw_duration],
+        ["Start", endpointing.speech_start],
+        ["Speech", endpointing.speech_duration],
+        ["Trailing", endpointing.trailing_silence]
+      ].map(([label, value]) => `<div><strong>${label}</strong><br>${Number(value || 0).toFixed(3)}s</div>`).join("");
+    }
+
+    function renderFeedback(result) {
+      const list = result.feedback || [];
+      $("feedbackCount").textContent = String(list.length);
+      $("feedbackEmpty").style.display = list.length ? "none" : "block";
+      $("feedbackList").innerHTML = list.map((item) => `<li>${item}</li>`).join("");
+    }
+
+    function renderRealtime(rows, mode) {
+      if (!rows.length) {
+        const reason = mode === "reference" || mode === "reference_based"
+          ? "No offline realtime simulation rows returned yet."
+          : "Not run in this mode";
+        $("stateSummary").textContent = reason;
+        $("stateBars").innerHTML = ["waiting", "speaking", "ending", "ended"].map((label) =>
+          `<div class="bar empty-bar" title="${label}: not available" style="height:2px"></div>`
+        ).join("");
+        $("realtimeRows").innerHTML = `<tr><td colspan="5">${mode === "reference" || mode === "reference_based"
+          ? "Reference mode shows offline replay rows after scoring. It is not live browser streaming."
+          : "Realtime state replay is only implemented for fixed reference mode. This mode uses sentence-final analysis."}</td></tr>`;
+        return;
+      }
+      const counts = rows.reduce((acc, row) => {
+        acc[row.endpoint_state] = (acc[row.endpoint_state] || 0) + 1;
+        return acc;
+      }, {});
+      const keys = ["waiting_for_speech", "speaking", "maybe_ending", "ended"];
+      const max = Math.max(1, ...Object.values(counts));
+      $("stateSummary").textContent = `offline replay · ${keys.map((k) => `${k}: ${counts[k] || 0}`).join(" · ")}`;
+      $("stateBars").innerHTML = keys.map((k) => {
+        const h = Math.max(2, ((counts[k] || 0) / max) * 68);
+        return `<div class="bar" title="${k}: ${counts[k] || 0}" style="height:${h}px"></div>`;
+      }).join("");
+      $("realtimeRows").innerHTML = rows.filter((_, i) => i % 4 === 0 || i === rows.length - 1).map((row) =>
+        `<tr><td>${Number(row.time_sec).toFixed(2)}</td><td>${row.endpoint_state}</td><td>${row.mora_index}:${row.mora}</td><td>${row.volume_state}</td><td>${row.pitch_state}</td></tr>`
+      ).join("");
+    }
+
+    function finitePitch(values) {
+      return values.filter((v) => Number.isFinite(v) && v > 0);
+    }
+
+    function normalizeLogF0(values) {
+      const logs = values.map((v) => Number.isFinite(v) && v > 0 ? Math.log(v) : null);
+      const valid = logs.filter((v) => Number.isFinite(v));
+      if (valid.length < 2) return logs.map(() => null);
+      const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+      const variance = valid.reduce((a, b) => a + (b - mean) * (b - mean), 0) / valid.length;
+      const sd = Math.sqrt(variance) || 1;
+      return logs.map((v) => Number.isFinite(v) ? (v - mean) / sd : null);
+    }
+
+    function drawPitchComparison(result) {
+      const canvas = $("pitchCanvas");
+      if (!canvas) return;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      const moras = state.activeMoras !== null ? state.activeMoras : (state.config?.moras || []);
+      const targetPitch = state.activeTargetPitch !== null ? state.activeTargetPitch : (state.config?.target_pitch || []);
+      const refHz = state.activeReference?.ref_f0_by_mora || [];
+      const userHz = result ? (result.mora_table || []).map((row) => row.f0_hz) : [];
+      if (!moras.length && currentMode() !== "reference") {
+        ctx.fillStyle = "#667085";
+        ctx.font = "12px system-ui, -apple-system, sans-serif";
+        const text = currentMode() === "asr_pseudo_reference"
+          ? "ASR pseudo-reference mode will draw the generated reference contour after scoring."
+          : currentMode() === "transcript_assisted_light"
+          ? "Transcript-assisted light mode has transcript mora count but no generated reference contour."
+          : "Acoustic-only mode has no target mora/reference contour.";
+        ctx.fillText(text, 16, 34);
+        return;
+      }
+      if (result && (!result.mora_table || result.mora_table.length === 0)) {
+        ctx.fillStyle = "#667085";
+        ctx.font = "12px system-ui, -apple-system, sans-serif";
+        const text = currentMode() === "transcript_assisted_light"
+          ? "Transcript-assisted light mode estimates mora rate but does not generate a reference contour."
+          : "Acoustic-only mode has no target mora/reference contour. See Reliability for F0 range and voiced ratio.";
+        ctx.fillText(text, 16, 34);
+        $("pitchSummary").textContent = "No target contour in this mode";
+        return;
+      }
+      const ref = normalizeLogF0(refHz);
+      const user = normalizeLogF0(userHz);
+      const all = ref.concat(user).filter((v) => Number.isFinite(v));
+      const observed = result ? (result.mora_table || []).map((row) => row.observed_pitch) : [];
+      const pad = { left: 42, right: 18, top: 18, bottom: 62 };
+      const w = rect.width - pad.left - pad.right;
+      const h = rect.height - pad.top - pad.bottom;
+
+      ctx.font = "12px system-ui, -apple-system, sans-serif";
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#d7dde5";
+      ctx.fillStyle = "#667085";
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + (h * i / 4);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + w, y);
+        ctx.stroke();
+      }
+
+      if (!all.length || !moras.length) {
+        ctx.fillText("Score or load a sample to compare relative F0 movement.", pad.left, pad.top + 24);
+        return;
+      }
+
+      const minZ = Math.min(-2, Math.min(...all) - 0.25);
+      const maxZ = Math.max(2, Math.max(...all) + 0.25);
+      const xFor = (i) => pad.left + (moras.length <= 1 ? 0 : (w * i / (moras.length - 1)));
+      const yFor = (z) => pad.top + h - ((z - minZ) / (maxZ - minZ)) * h;
+
+      ctx.fillStyle = "#667085";
+      ctx.fillText("high", 4, pad.top + 4);
+      ctx.fillText("low", 4, pad.top + h);
+      ctx.fillText("rel.", 4, pad.top + h / 2);
+
+      moras.forEach((mora, i) => {
+        const x = xFor(i);
+        ctx.strokeStyle = "#e4e8ee";
+        ctx.beginPath();
+        ctx.moveTo(x, pad.top);
+        ctx.lineTo(x, pad.top + h);
+        ctx.stroke();
+        ctx.fillStyle = "#18202a";
+        ctx.textAlign = "center";
+        ctx.fillText(mora, x, pad.top + h + 22);
+        ctx.fillStyle = "#667085";
+        ctx.fillText(`T:${targetPitch[i] || "?"}`, x, pad.top + h + 38);
+        if (result) {
+          const obs = observed[i] || "?";
+          ctx.fillStyle = obs === "?" ? "#98a2b3" : obs === targetPitch[i] ? "#047857" : "#b42318";
+          ctx.fillText(`O:${obs}`, x, pad.top + h + 54);
+        }
+      });
+      ctx.textAlign = "left";
+
+      function drawLine(values, color) {
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        let drawing = false;
+        values.forEach((value, i) => {
+          if (!Number.isFinite(value)) {
+            drawing = false;
+            return;
+          }
+          const x = xFor(i);
+          const y = yFor(value);
+          if (!drawing) {
+            ctx.moveTo(x, y);
+            drawing = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+        values.forEach((value, i) => {
+          if (!Number.isFinite(value)) return;
+          ctx.beginPath();
+          ctx.arc(xFor(i), yFor(value), 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      drawLine(ref, "#0f766e");
+      if (result) drawLine(user, "#b45309");
+
+      const validPairs = ref.map((v, i) => [v, user[i]])
+        .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b));
+      const reliability = result?.details?.reliability;
+      $("pitchSummary").textContent = result
+        ? `${validPairs.length}/${moras.length} mora compared · ${reliability?.level || "unknown"} reliability`
+        : "Model reference only";
+    }
+
+    function renderPayload(payload) {
+      state.lastPayload = payload;
+      $("wavPath").textContent = payload.wav_path || "uploaded wav";
+      renderLatency(payload);
+      renderDynamicReference(payload);
+      renderScores(payload.result);
+      renderReliability(payload.result);
+      renderEndpointing(payload.result.endpointing || {});
+      renderFeedback(payload.result);
+      renderRealtime(payload.realtime || [], payload.result?.details?.mode || payload.mode || currentMode());
+      drawPitchComparison(payload.result);
+      $("rawJson").textContent = JSON.stringify(payload, null, 2);
+      $("copyJsonBtn").disabled = false;
+    }
+
+    function renderLatency(payload) {
+      const serverMs = Number(payload.unified?.latency_ms || ((payload.result?.timing?.total || 0) * 1000));
+      const wallMs = Number(payload.client_latency_ms || 0);
+      const parts = [];
+      if (wallMs > 0) parts.push(`wait ${(wallMs / 1000).toFixed(3)}s`);
+      if (serverMs > 0) parts.push(`server ${(serverMs / 1000).toFixed(3)}s`);
+      $("evalLatency").textContent = parts.length ? parts.join(" · ") : "wait --";
+    }
+
+    async function evaluateBlob(blob, name = "recording.wav") {
+      setBusy(true);
+      const started = performance.now();
+      state.lastWaitStartedAt = started;
+      $("evalLatency").textContent = "wait ...";
+      const form = new FormData();
+      form.append("audio", blob, name);
+      form.append("mode", currentMode());
+      const res = await fetch("/api/evaluate", { method: "POST", body: form });
+      const payload = await res.json();
+      payload.client_latency_ms = Math.round((performance.now() - started) * 1000) / 1000;
+      setBusy(false);
+      if (!payload.ok) throw new Error(payload.error || "Evaluation failed");
+      renderPayload(payload);
+    }
+
+    function downsample(input, inputRate, outputRate) {
+      if (outputRate === inputRate) return input;
+      const ratio = inputRate / outputRate;
+      const output = new Float32Array(Math.round(input.length / ratio));
+      for (let i = 0; i < output.length; i++) {
+        const start = Math.floor(i * ratio);
+        const end = Math.min(input.length, Math.floor((i + 1) * ratio));
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += input[j];
+        output[i] = sum / Math.max(1, end - start);
+      }
+      return output;
+    }
+
+    function encodeWav(buffers, inputRate, outputRate = 16000) {
+      const length = buffers.reduce((n, b) => n + b.length, 0);
+      const merged = new Float32Array(length);
+      let offset = 0;
+      buffers.forEach((b) => { merged.set(b, offset); offset += b.length; });
+      const samples = downsample(merged, inputRate, outputRate);
+      const dataBytes = samples.length * 2;
+      const buffer = new ArrayBuffer(44 + dataBytes);
+      const view = new DataView(buffer);
+      const write = (pos, str) => [...str].forEach((ch, i) => view.setUint8(pos + i, ch.charCodeAt(0)));
+      write(0, "RIFF");
+      view.setUint32(4, 36 + dataBytes, true);
+      write(8, "WAVE");
+      write(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, outputRate, true);
+      view.setUint32(28, outputRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      write(36, "data");
+      view.setUint32(40, dataBytes, true);
+      let p = 44;
+      for (const sample of samples) {
+        const s = Math.max(-1, Math.min(1, sample));
+        view.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        p += 2;
+      }
+      return new Blob([buffer], { type: "audio/wav" });
+    }
+
+    async function startRecording() {
+      state.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      state.audioContext = new AudioContext();
+      if (state.audioContext.state === "suspended") await state.audioContext.resume();
+      state.sampleRate = state.audioContext.sampleRate;
+      state.source = state.audioContext.createMediaStreamSource(state.stream);
+      state.processor = state.audioContext.createScriptProcessor(1024, 1, 1);
+      state.chunks = [];
+      state.startedAt = performance.now();
+      state.recording = true;
+
+      state.processor.onaudioprocess = (event) => {
+        const input = event.inputBuffer.getChannelData(0);
+        if (!state.recording) return;
+        state.chunks.push(new Float32Array(input));
+        let rms = 0;
+        for (let i = 0; i < input.length; i++) rms += input[i] * input[i];
+        rms = Math.sqrt(rms / input.length);
+        $("meter").style.width = `${Math.min(100, rms * 360)}%`;
+        $("liveRms").textContent = `rms ${rms.toFixed(3)}`;
+      };
+
+      state.source.connect(state.processor);
+      state.processor.connect(state.audioContext.destination);
+      $("recordState").textContent = "Get ready";
+      $("recordState").className = "pill warn";
+      $("liveHint").textContent = "Get ready";
+      $("recordBtn").disabled = true;
+      $("stopBtn").disabled = false;
+      $("playLastBtn").disabled = true;
+      clearTimeout(state.readyTimer);
+      state.readyTimer = setTimeout(() => {
+        if (!state.recording) return;
+        $("recordState").textContent = "Speak now";
+        $("recordState").className = "pill bad";
+        $("liveHint").textContent = "Speak now";
+      }, 700);
+      state.meterTimer = setInterval(() => {
+        $("liveTime").textContent = `${((performance.now() - state.startedAt) / 1000).toFixed(2)}s`;
+      }, 100);
+    }
+
+    async function stopRecording() {
+      $("stopBtn").disabled = true;
+      $("recordState").textContent = "Encoding";
+      $("recordState").className = "pill warn";
+      $("liveHint").textContent = "Encoding";
+      state.recording = false;
+      clearTimeout(state.readyTimer);
+      clearInterval(state.meterTimer);
+      if (state.processor) state.processor.disconnect();
+      if (state.source) state.source.disconnect();
+      if (state.stream) state.stream.getTracks().forEach((track) => track.stop());
+      if (state.audioContext) await state.audioContext.close();
+      const blob = encodeWav(state.chunks, state.sampleRate, 16000);
+      if (state.lastRecordingUrl) URL.revokeObjectURL(state.lastRecordingUrl);
+      state.lastRecordingUrl = URL.createObjectURL(blob);
+      $("lastRecordingAudio").src = state.lastRecordingUrl;
+      $("playLastBtn").disabled = false;
+      $("recordState").textContent = "Scoring";
+      $("recordState").className = "pill warn";
+      $("liveHint").textContent = "Scoring";
+      $("evalLatency").textContent = "wait ...";
+      await evaluateBlob(blob);
+      $("recordState").textContent = "Ready";
+      $("recordState").className = "pill";
+      $("liveHint").textContent = "Ready";
+      $("recordBtn").disabled = false;
+      $("playLastBtn").disabled = !state.lastRecordingUrl;
+    }
+
+    async function init() {
+      const config = await fetch("/api/config").then((r) => r.json());
+      renderConfig(config);
+      $("sampleBtn").onclick = async () => {
+        setBusy(true, "Sample");
+        const started = performance.now();
+        $("evalLatency").textContent = "wait ...";
+        const payload = await fetch(`/api/evaluate-sample?mode=${encodeURIComponent(currentMode())}`).then((r) => r.json());
+        payload.client_latency_ms = Math.round((performance.now() - started) * 1000) / 1000;
+        setBusy(false);
+        if (!payload.ok) throw new Error(payload.error || "Sample failed");
+        renderPayload(payload);
+      };
+      $("recordBtn").onclick = () => startRecording().catch((err) => alert(err.message));
+      $("stopBtn").onclick = () => stopRecording().catch((err) => alert(err.message));
+      $("evalMode").onchange = () => {
+        updateModeHint();
+        renderModePlaceholder();
+      };
+      $("playLastBtn").onclick = () => {
+        if (state.lastRecordingUrl) $("lastRecordingAudio").play();
+      };
+      $("fileInput").onchange = async (event) => {
+        const file = event.target.files[0];
+        if (file) await evaluateBlob(file, file.name).catch((err) => alert(err.message));
+      };
+      $("copyJsonBtn").onclick = () => navigator.clipboard.writeText($("rawJson").textContent);
+      $("exportFeaturesBtn").onclick = async () => {
+        setBusy(true, "Export");
+        const payload = await fetch("/api/export-features").then((r) => r.json());
+        setBusy(false);
+        if (!payload.ok) throw new Error(payload.error || "Export failed");
+        $("rawJson").textContent = JSON.stringify(payload, null, 2);
+        $("copyJsonBtn").disabled = false;
+      };
+      $("compareModesBtn").onclick = async () => {
+        setBusy(true, "Compare");
+        const payload = await fetch("/api/compare-sample").then((r) => r.json());
+        setBusy(false);
+        if (!payload.ok) throw new Error(payload.error || "Compare failed");
+        $("rawJson").textContent = JSON.stringify(payload, null, 2);
+        $("copyJsonBtn").disabled = false;
+      };
+    }
+
+    window.addEventListener("resize", () => drawPitchComparison(state.lastPayload?.result || null));
+
+    init().catch((err) => {
+      $("serverState").textContent = err.message;
+      $("serverState").className = "pill bad";
+    });
+  </script>
+</body>
+</html>
