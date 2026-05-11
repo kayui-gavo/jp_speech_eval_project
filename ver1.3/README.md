@@ -23,6 +23,19 @@ Current scoring dimensions:
 - fluency: delivery/style, based on endpointed speech rate + in-speech pauses
 - tone / emotion proxy: expression/style, based on pitch range + energy + in-speech pause ratio
 
+Prosody target note: target H/L labels are now generated at the OpenJTalk
+accent-phrase level, using frontend chain information so particles and
+auxiliaries are not treated as fresh pitch phrases by default. This is closer
+to OJAD-style sentence prosody and accent-sandhi handling, but it is still an
+automatic tool-derived target. When a cached TTS reference exists, scoring
+primarily compares speaker-normalized sentence-level F0 contour and adjacent
+mora movement; single-mora H/L labels remain weak auxiliary evidence.
+
+Evidence-gate note: when mora alignment falls back to equal-time segmentation,
+too few morae have acoustic evidence, F0 coverage is low, or overall reliability
+is below stable-evaluation range, pronunciation/prosody/total scores are capped.
+This prevents artificial high scores caused by unstable alignment or missing F0.
+
 Important limitation: ASR is now an optional content gate, not a full phoneme-level pronunciation model. To judge fine substitutions such as `す` vs `ず` robustly, add CTC/GOP or a trained Japanese phoneme/kana aligner.
 
 Endpointing note: `record_mic.py` still records a fixed-duration wav for CLI compatibility, but sentence-final scoring first detects `speech_start` and `speech_end`. The JSON keeps raw diagnostics under `endpointing` while duration-based scores use `speech_duration`.

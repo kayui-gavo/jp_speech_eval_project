@@ -15,7 +15,11 @@ def main() -> None:
     print("Kana          :", info.kana)
     print("Mora          :", "・".join(info.moras))
     print("Target pitch  :", " ".join(info.target_pitch))
+    print("Pitch source  :", info.pitch_target_source)
     print("Is question   :", info.is_question)
+    print("\nAccent phrases:")
+    for phrase in info.accent_phrases:
+        print(phrase)
     print("\nOpenJTalk frontend raw output:")
     for item in run_frontend(args.text):
         print(item)

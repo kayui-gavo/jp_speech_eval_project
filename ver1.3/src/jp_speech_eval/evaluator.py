@@ -90,6 +90,7 @@ def _text_info_from_cache(cache: SentenceCache) -> TextInfo:
         target_pitch=cache.meta.target_pitch,
         pitch_target_source=cache.meta.pitch_target_source,
         is_question=cache.meta.is_question,
+        accent_phrases=cache.meta.accent_phrases,
     )
 
 
@@ -368,12 +369,36 @@ def evaluate_utterance(
         reference_duration_sec=cache.meta.ref_duration_sec if cache else None,
     )
 
+    score_adjustments: List[str] = []
+    if alignment_mode.endswith("fallback_equal"):
+        pronunciation_score = min(pronunciation_score, 65)
+        score_adjustments.append(
+            "mora 边界回退到等分切分，发音代理分已封顶。"
+        )
+    judgement_count = int(mora_evidence_summary.get("judgement_available_count", 0) or 0)
+    judgement_needed = max(3, int(len(text_info.moras) * 0.55))
+    if judgement_count < judgement_needed:
+        pronunciation_score = min(pronunciation_score, 60)
+        score_adjustments.append(
+            "可判定的 mora 证据不足，发音代理分已封顶。"
+        )
+    if float(reliability.get("f0_coverage", 0.0) or 0.0) < 0.50:
+        prosody_score = min(prosody_score, 55)
+        score_adjustments.append(
+            "F0 覆盖不足 50%，韵律分已封顶。"
+        )
+
     total_score = round(
         0.30 * pronunciation_score
         + 0.30 * prosody_score
         + 0.25 * fluency_score
         + 0.15 * tone_score
     )
+    if float(reliability.get("overall", 0.0) or 0.0) < 0.75:
+        total_score = min(total_score, 70)
+        score_adjustments.append(
+            "整体可靠性不足，本次总分作为诊断结果封顶。"
+        )
     if content_match and content_match.status == "fail":
         pronunciation_score = 0
         prosody_score = 0
@@ -409,6 +434,8 @@ def evaluate_utterance(
         )
 
     feedback = pron_fb + prosody_fb + fluency_fb + tone_fb
+    if score_adjustments:
+        feedback = [f"证据门控：{msg}" for msg in score_adjustments] + feedback
     if content_match and content_match.status == "fail":
         feedback = [
             "检测到这段录音和目标句的内容匹配度很低，因此不输出正常发音分数。请确认读的是「ラーメンをください」。",
@@ -481,6 +508,8 @@ def evaluate_utterance(
             "pronunciation": pron_details,
             "prosody": prosody_details,
             "prosody_metrics": prosody_metrics,
+            "score_adjustments": score_adjustments,
+            "accent_phrases": text_info.accent_phrases,
             "fluency": fluency_details,
             "tone": tone_details,
         },

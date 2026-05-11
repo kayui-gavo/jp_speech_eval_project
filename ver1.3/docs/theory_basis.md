@@ -12,6 +12,20 @@ For Japanese pitch accent, the useful analysis unit is not the English-like syll
 
 This follows the direction of Minematsu / Hirose style Japanese accent training work, where learner accent is analyzed using F0 movement around mora units and feedback is given visually and acoustically.
 
+The target contour must be sentence-level, not isolated-word-only. Japanese
+particles, auxiliaries, and conjugated verbal expressions can form one accent
+phrase with the preceding content word, so the frontend uses OpenJTalk
+`chain_flag` information to build accent-phrase-level H/L labels. These labels
+are still automatic hypotheses. The more important comparison is the
+speaker-normalized F0 contour and adjacent-mora movement, especially when a
+cached reference F0 contour is available.
+
+Scores must be gated by evidence. Equal-time fallback boundaries can make rhythm
+look artificially regular, and sparse F0 extraction can make pitch comparison
+look more certain than it is. The evaluator therefore caps pronunciation,
+prosody, and total scores when alignment, mora evidence, F0 coverage, or overall
+reliability is insufficient.
+
 ## 2. F0, duration, and power are practical acoustic feedback signals
 
 The current acoustic module uses:

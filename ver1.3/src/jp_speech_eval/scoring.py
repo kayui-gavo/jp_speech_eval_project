@@ -197,6 +197,7 @@ def score_prosody(
             "valid_mora_count": 0,
             "mora_count": len(moras),
             "note": "no_valid_f0",
+            "target_pitch_note": "openjtalk_or_heuristic_labels_are_weak_auxiliary_targets; sentence_level_reference_contour_is_primary_when_available",
         }
     min_reliable = max(3, int(np.ceil(len(moras) * 0.5)))
     if len(valid_idx) < min_reliable or len(contour_valid_idx) < min_reliable:
@@ -217,6 +218,7 @@ def score_prosody(
             "hl_target_source": hl_target_source,
             "pitch_target_consistency": "unknown",
             "note": "insufficient_valid_mora_f0",
+            "target_pitch_note": "openjtalk_or_heuristic_labels_are_weak_auxiliary_targets; sentence_level_reference_contour_is_primary_when_available",
         }
 
     direction_th = float(c["f0_direction_threshold"])
@@ -251,6 +253,13 @@ def score_prosody(
     ])) if heuristic_hl_valid else 0.0
     if hl_target_source in {"dictionary", "manual"}:
         pitch_target_consistency = "trusted"
+    elif hl_target_source.startswith("openjtalk"):
+        if heuristic_hl_match >= 0.70 and heuristic_dir_match >= 0.55:
+            pitch_target_consistency = "tool_generated_high"
+        elif heuristic_hl_match >= 0.50 or heuristic_dir_match >= 0.40:
+            pitch_target_consistency = "tool_generated_medium"
+        else:
+            pitch_target_consistency = "tool_generated_low"
     elif heuristic_hl_match >= 0.75 and heuristic_dir_match >= 0.60:
         pitch_target_consistency = "high"
     elif heuristic_hl_match >= 0.55 or heuristic_dir_match >= 0.45:
@@ -272,7 +281,7 @@ def score_prosody(
     hl_match = float(np.mean([observed_pattern[i] == target_pattern[i] for i in valid_idx]))
     if hl_target_source in {"dictionary", "manual"}:
         hl_weight = 0.20
-    elif pitch_target_consistency in {"high", "medium"}:
+    elif pitch_target_consistency in {"high", "medium", "tool_generated_high", "tool_generated_medium"}:
         hl_weight = 0.08
     else:
         hl_weight = 0.02
@@ -341,8 +350,8 @@ def score_prosody(
             feedback.append(
                 f"第 {i + 1} 拍「{moras[i]}」的音高和目标差异较大，可以单独确认。"
             )
-    elif pitch_target_consistency == "low":
-        feedback.append("当前 H/L 标签来自启发式规则，且和参考 F0 轮廓不完全一致，因此不按单拍 H/L 强判错。")
+    elif pitch_target_consistency in {"low", "tool_generated_low"}:
+        feedback.append("当前 H/L 标签来自自动前端/启发式规则，且和参考 F0 轮廓不完全一致，因此不按单拍 H/L 强判错。")
 
     details = {
         "dimension_label": "core_pronunciation_related_prosody",
@@ -382,6 +391,7 @@ def score_prosody(
             },
         },
         "theory_hint": "speaker_normalized_reference_contour_and_adjacent_mora_direction",
+        "target_pitch_note": "openjtalk_or_heuristic_labels_are_weak_auxiliary_targets; sentence_level_reference_contour_is_primary_when_available",
     }
     return clamp_score(score), feedback[:5], details
 

@@ -25,6 +25,7 @@ class SentenceMeta:
     ref_duration_sec: float
     ref_mora_boundaries: List[Tuple[float, float]]
     frontend_raw: List[Dict[str, Any]]
+    accent_phrases: List[Dict[str, Any]]
     reference_text: str
     ref_boundary_method: str
 
@@ -204,12 +205,13 @@ def build_sentence_cache(
         kana=text_info.kana,
         moras=text_info.moras,
         target_pitch=text_info.target_pitch,
-        pitch_target_source="heuristic",
+        pitch_target_source=text_info.pitch_target_source,
         is_question=text_info.is_question,
         sr=sr,
         ref_duration_sec=round(float(ref_duration), 6),
         ref_mora_boundaries=[(round(float(s), 6), round(float(e), 6)) for s, e in ref_boundaries],
         frontend_raw=frontend_raw,
+        accent_phrases=text_info.accent_phrases,
         reference_text=reference_text,
         ref_boundary_method=boundary_method,
     )
@@ -242,17 +244,30 @@ def load_sentence_cache(prefix: str | Path) -> SentenceCache:
 
     with json_path.open("r", encoding="utf-8") as f:
         raw = json.load(f)
+    target_pitch = list(raw["target_pitch"])
+    pitch_target_source = str(raw.get("pitch_target_source", "heuristic"))
+    accent_phrases = list(raw.get("accent_phrases", []))
+    if not accent_phrases or pitch_target_source == "heuristic":
+        try:
+            upgraded = build_text_info(str(raw["text"]))
+            if len(upgraded.moras) == len(raw["moras"]):
+                target_pitch = upgraded.target_pitch
+                pitch_target_source = upgraded.pitch_target_source
+                accent_phrases = upgraded.accent_phrases
+        except Exception:
+            pass
     meta = SentenceMeta(
         text=raw["text"],
         kana=raw["kana"],
         moras=list(raw["moras"]),
-        target_pitch=list(raw["target_pitch"]),
-        pitch_target_source=str(raw.get("pitch_target_source", "heuristic")),
+        target_pitch=target_pitch,
+        pitch_target_source=pitch_target_source,
         is_question=bool(raw["is_question"]),
         sr=int(raw["sr"]),
         ref_duration_sec=float(raw["ref_duration_sec"]),
         ref_mora_boundaries=[(float(s), float(e)) for s, e in raw["ref_mora_boundaries"]],
         frontend_raw=list(raw.get("frontend_raw", [])),
+        accent_phrases=accent_phrases,
         reference_text=str(raw.get("reference_text", raw["text"])),
         ref_boundary_method=str(raw.get("ref_boundary_method", "equal_mora")),
     )
@@ -276,6 +291,7 @@ def cache_summary(cache: SentenceCache) -> str:
         f"Mora          : {'・'.join(cache.meta.moras)}",
         f"Target pitch  : {' '.join(cache.meta.target_pitch)}",
         f"Pitch source  : {cache.meta.pitch_target_source}",
+        f"Accent phrases: {len(cache.meta.accent_phrases)}",
         f"Reference text: {cache.meta.reference_text}",
         f"Boundary mode : {cache.meta.ref_boundary_method}",
         f"Ref duration  : {cache.meta.ref_duration_sec:.3f} sec",
