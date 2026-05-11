@@ -139,6 +139,7 @@ def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run jp_speech_eval over JANON-SPEECH for calibration analysis.")
     parser.add_argument("--janon-root", default="../JANON")
+    parser.add_argument("--manifest", default=None, help="Optional JANON-format CSV subset to run instead of janon-root/data.csv.")
     parser.add_argument("--stimulus-type", default="isolated", choices=["isolated", "sentence", "all"])
     parser.add_argument("--native-language", default=None)
     parser.add_argument("--max-rows", type=int, default=30, help="Use 0 for all matching rows.")
@@ -152,8 +153,11 @@ def main() -> None:
     janon_root = Path(args.janon_root)
     if not janon_root.is_absolute():
         janon_root = (ROOT / janon_root).resolve()
+    manifest_path = Path(args.manifest) if args.manifest else janon_root / "data.csv"
+    if args.manifest and not manifest_path.is_absolute():
+        manifest_path = (ROOT / manifest_path).resolve()
     rows = _pick_rows(
-        _read_rows(janon_root / "data.csv"),
+        _read_rows(manifest_path),
         stimulus_type=args.stimulus_type,
         native_language=args.native_language,
         max_rows=args.max_rows,
