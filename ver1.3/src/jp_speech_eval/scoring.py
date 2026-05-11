@@ -153,12 +153,12 @@ def _safe_corr(a: np.ndarray, b: np.ndarray) -> Optional[float]:
 
 
 def _prosody_dynamics(user_z: np.ndarray, ref_z: np.ndarray) -> Dict[str, Any]:
-    """Control-style trajectory tracking features on mora-level log-F0.
+    """Experimental trajectory-tracking diagnostics on mora-level log-F0.
 
     This treats the reference contour as r[k] and the user contour as y[k].
     First differences approximate pitch velocity; second differences approximate
-    pitch acceleration/curvature. These are proxy features, not a validated
-    pronunciation model.
+    pitch acceleration/curvature. These diagnostics are not used as score
+    weights until validated against human labels.
     """
     n = min(len(user_z), len(ref_z))
     user = np.asarray(user_z[:n], dtype=float)
@@ -259,7 +259,7 @@ def _prosody_dynamics(user_z: np.ndarray, ref_z: np.ndarray) -> Dict[str, Any]:
         "overshoot_ratio": round(float(overshoot_ratio), 4),
         "undershoot_ratio": round(float(undershoot_ratio), 4),
         "opposite_direction_ratio": round(float(opposite_ratio), 4),
-        "interpretation": "control_style_pitch_trajectory_tracking_proxy",
+        "interpretation": "experimental_pitch_trajectory_tracking_diagnostic_not_scoring_weight",
     }
 
 
@@ -423,14 +423,12 @@ def score_prosody(
             final_intonation_match = final_slope <= float(c["statement_final_rise_threshold"])
         final_score = 1.0 if final_intonation_match else 0.55
 
-    dynamics_weight = 0.18 if dynamics.get("available") else 0.0
     transition_weight = 0.25
     final_weight = 0.12
-    contour_weight = max(0.0, 1.0 - transition_weight - final_weight - hl_weight - dynamics_weight)
+    contour_weight = max(0.0, 1.0 - transition_weight - final_weight - hl_weight)
     score = 100.0 * (
         contour_weight * contour_score
         + transition_weight * transition_agreement
-        + dynamics_weight * float(dynamics.get("score", 0.5))
         + final_weight * final_score
         + hl_weight * hl_match
     )
@@ -446,13 +444,13 @@ def score_prosody(
         slope_corr = dynamics.get("slope_corr")
         best_lag = int(dynamics.get("best_lag_mora", 0) or 0)
         if isinstance(slope_corr, (int, float)) and slope_corr >= 0.60:
-            feedback.append("音高上升/下降的动态走势和参考比较接近。")
+            feedback.append("诊断参考：音高上升/下降的动态走势和参考比较接近。")
         elif isinstance(slope_corr, (int, float)) and slope_corr < 0.20:
-            feedback.append("音高上升/下降的动态走势和参考不太一致。")
+            feedback.append("诊断参考：音高上升/下降的动态走势和参考不太一致。")
         if best_lag:
-            feedback.append("音高变化的时机和参考略有错位。")
+            feedback.append("诊断参考：音高变化的时机和参考略有错位。")
         if float(dynamics.get("overshoot_ratio", 0.0) or 0.0) >= 0.34:
-            feedback.append("部分音高变化幅度偏大，听起来可能有过冲或夸张。")
+            feedback.append("诊断参考：部分音高变化幅度偏大，可能有过冲或夸张。")
 
     early_valid = [i for i in range(min(3, len(reference_dir), len(observed_dir))) if reference_dir[i] != "?" and observed_dir[i] != "?"]
     if early_valid:
@@ -523,13 +521,14 @@ def score_prosody(
             "weights": {
                 "contour": contour_weight,
                 "transition": transition_weight,
-                "dynamics": dynamics_weight,
+                "dynamics": 0.0,
                 "final": final_weight,
                 "hl": hl_weight,
             },
         },
         "prosody_dynamics": dynamics,
         "theory_hint": "speaker_normalized_reference_contour_and_adjacent_mora_direction",
+        "experimental_note": "prosody_dynamics_are_logged_for_ablation_but_not_used_in_score",
         "target_pitch_note": "openjtalk_or_heuristic_labels_are_weak_auxiliary_targets; sentence_level_reference_contour_is_primary_when_available",
     }
     return clamp_score(score), feedback[:5], details

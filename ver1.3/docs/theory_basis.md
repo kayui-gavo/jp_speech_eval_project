@@ -26,12 +26,12 @@ look more certain than it is. The evaluator therefore caps pronunciation,
 prosody, and total scores when alignment, mora evidence, F0 coverage, or overall
 reliability is insufficient.
 
-Control-style dynamics are used only as an interpretable prosody proxy. The
-reference contour is treated as a trajectory and the user contour as the tracked
+Trajectory dynamics are logged only as experimental diagnostics. The reference
+contour is treated as a trajectory and the user contour as the tracked
 trajectory. First differences approximate pitch velocity, second differences
 approximate curvature, lag estimates timing mismatch, and overshoot/undershoot
-flags mark excessive or insufficient pitch movement. This helps describe
-prosodic movement without claiming a calibrated SOTA pronunciation model.
+flags mark excessive or insufficient pitch movement. These features do not
+affect scoring until they are validated against human labels.
 
 ## 2. F0, duration, and power are practical acoustic feedback signals
 
