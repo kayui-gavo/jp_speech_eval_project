@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -102,6 +103,22 @@ def _summary_row(row: Dict[str, str], wav_path: Path, result: Dict[str, Any]) ->
     }
 
 
+def _resolve_audio_path(janon_root: Path, relative_path: str) -> Path:
+    wav_path = janon_root / relative_path
+    if wav_path.exists():
+        return wav_path
+    alternatives = []
+    if "/sentence/" in relative_path:
+        alternatives.append(relative_path.replace("/sentence/", "/sentences/"))
+    if "/isolated/" in relative_path:
+        alternatives.append(relative_path.replace("/isolated/", "/isolated_words/"))
+    for alt in alternatives:
+        alt_path = janon_root / alt
+        if alt_path.exists():
+            return alt_path
+    return wav_path
+
+
 def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
@@ -128,6 +145,7 @@ def main() -> None:
     parser.add_argument("--out-csv", default="outputs/janon_analysis.csv")
     parser.add_argument("--cache-dir", default="outputs/janon_cache")
     parser.add_argument("--jsonl", default=None, help="Optional full raw result JSONL.")
+    parser.add_argument("--content-match", action="store_true", help="Run content-match gate. Off by default for JANON calibration because targets are known.")
     parser.add_argument("--config", default=None)
     args = parser.parse_args()
 
@@ -151,16 +169,19 @@ def main() -> None:
 
     for idx, row in enumerate(rows, start=1):
         text = row.get("Stmiulus") or ""
-        wav_path = janon_root / (row.get("Path") or "")
+        wav_path = _resolve_audio_path(janon_root, row.get("Path") or "")
         try:
-            cache_prefix = ROOT / args.cache_dir / f"janon_{idx:05d}"
-            build_sentence_cache(text, cache_prefix, save_reference_wav=False)
+            text_digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+            cache_prefix = ROOT / args.cache_dir / f"txt_{text_digest}"
+            if not cache_prefix.with_suffix(".json").exists() or not cache_prefix.with_suffix(".npz").exists():
+                build_sentence_cache(text, cache_prefix, save_reference_wav=False)
             result = evaluate_utterance(
                 wav_path=wav_path,
                 cache_path=cache_prefix,
                 alignment_mode="cached_dtw",
                 scoring_config_path=args.config,
                 profile=False,
+                use_content_match=bool(args.content_match),
             ).to_dict()
             out_rows.append(_summary_row(row, wav_path, result))
             if jsonl_path:
