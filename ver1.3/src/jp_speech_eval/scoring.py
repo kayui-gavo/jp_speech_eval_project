@@ -144,6 +144,125 @@ def _direction_match(target: str, observed: str) -> bool:
     return target == observed
 
 
+def _safe_corr(a: np.ndarray, b: np.ndarray) -> Optional[float]:
+    if a.size < 2 or b.size < 2:
+        return None
+    if float(np.std(a)) <= 1e-8 or float(np.std(b)) <= 1e-8:
+        return None
+    return float(np.corrcoef(a, b)[0, 1])
+
+
+def _prosody_dynamics(user_z: np.ndarray, ref_z: np.ndarray) -> Dict[str, Any]:
+    """Control-style trajectory tracking features on mora-level log-F0.
+
+    This treats the reference contour as r[k] and the user contour as y[k].
+    First differences approximate pitch velocity; second differences approximate
+    pitch acceleration/curvature. These are proxy features, not a validated
+    pronunciation model.
+    """
+    n = min(len(user_z), len(ref_z))
+    user = np.asarray(user_z[:n], dtype=float)
+    ref = np.asarray(ref_z[:n], dtype=float)
+    if n < 3:
+        return {
+            "available": False,
+            "score": 0.5,
+            "note": "not_enough_morae_for_dynamics",
+        }
+
+    user_slope = np.diff(user)
+    ref_slope = np.diff(ref)
+    slope_valid = np.isfinite(user_slope) & np.isfinite(ref_slope)
+    slope_count = int(np.sum(slope_valid))
+    if slope_count < 2:
+        return {
+            "available": False,
+            "score": 0.5,
+            "valid_slope_count": slope_count,
+            "note": "not_enough_valid_slope_pairs",
+        }
+
+    us = user_slope[slope_valid]
+    rs = ref_slope[slope_valid]
+    slope_corr = _safe_corr(us, rs)
+    slope_corr_score = 0.5 if slope_corr is None else (float(slope_corr) + 1.0) / 2.0
+    slope_rmse = float(np.sqrt(np.mean((us - rs) ** 2)))
+    slope_rmse_score = float(np.exp(-0.75 * slope_rmse))
+
+    user_curv = np.diff(user_slope)
+    ref_curv = np.diff(ref_slope)
+    curv_valid = np.isfinite(user_curv) & np.isfinite(ref_curv)
+    if int(np.sum(curv_valid)) >= 2:
+        uc = user_curv[curv_valid]
+        rc = ref_curv[curv_valid]
+        curv_corr = _safe_corr(uc, rc)
+        curv_corr_score = 0.5 if curv_corr is None else (float(curv_corr) + 1.0) / 2.0
+        curv_rmse = float(np.sqrt(np.mean((uc - rc) ** 2)))
+        curv_score = 0.60 * curv_corr_score + 0.40 * float(np.exp(-0.50 * curv_rmse))
+    else:
+        curv_corr = None
+        curv_rmse = None
+        curv_score = 0.5
+
+    best_lag = 0
+    best_lag_corr = slope_corr
+    best_lag_score = -1.0 if slope_corr is None else float(slope_corr)
+    for lag in (-2, -1, 0, 1, 2):
+        if lag < 0:
+            a = user_slope[-lag:]
+            b = ref_slope[: len(a)]
+        elif lag > 0:
+            a = user_slope[: len(user_slope) - lag]
+            b = ref_slope[lag:]
+        else:
+            a = user_slope
+            b = ref_slope
+        valid = np.isfinite(a) & np.isfinite(b)
+        corr = _safe_corr(a[valid], b[valid])
+        if corr is not None and float(corr) > best_lag_score:
+            best_lag = lag
+            best_lag_corr = corr
+            best_lag_score = float(corr)
+    lag_score = max(0.55, 1.0 - 0.16 * abs(best_lag))
+
+    ref_mag = np.abs(rs)
+    user_mag = np.abs(us)
+    active = ref_mag >= 0.20
+    same_direction = np.sign(us) == np.sign(rs)
+    overshoot = active & same_direction & (user_mag > ref_mag * 1.65 + 0.10)
+    undershoot = active & same_direction & (user_mag < ref_mag * 0.45)
+    opposite = active & (~same_direction)
+    overshoot_ratio = float(np.mean(overshoot)) if np.any(active) else 0.0
+    undershoot_ratio = float(np.mean(undershoot)) if np.any(active) else 0.0
+    opposite_ratio = float(np.mean(opposite)) if np.any(active) else 0.0
+    control_penalty = min(0.35, 0.18 * overshoot_ratio + 0.12 * undershoot_ratio + 0.25 * opposite_ratio)
+
+    dynamic_score = (
+        0.42 * slope_corr_score
+        + 0.23 * slope_rmse_score
+        + 0.20 * curv_score
+        + 0.15 * lag_score
+        - control_penalty
+    )
+    dynamic_score = float(max(0.0, min(1.0, dynamic_score)))
+    return {
+        "available": True,
+        "score": dynamic_score,
+        "valid_slope_count": slope_count,
+        "slope_corr": None if slope_corr is None else round(float(slope_corr), 4),
+        "slope_rmse": round(float(slope_rmse), 4),
+        "curvature_corr": None if curv_corr is None else round(float(curv_corr), 4),
+        "curvature_rmse": None if curv_rmse is None else round(float(curv_rmse), 4),
+        "best_lag_mora": int(best_lag),
+        "best_lag_slope_corr": None if best_lag_corr is None else round(float(best_lag_corr), 4),
+        "lag_score": round(float(lag_score), 4),
+        "overshoot_ratio": round(float(overshoot_ratio), 4),
+        "undershoot_ratio": round(float(undershoot_ratio), 4),
+        "opposite_direction_ratio": round(float(opposite_ratio), 4),
+        "interpretation": "control_style_pitch_trajectory_tracking_proxy",
+    }
+
+
 def score_prosody(
     moras: List[str],
     target_pattern: List[str],
@@ -197,6 +316,7 @@ def score_prosody(
             "valid_mora_count": 0,
             "mora_count": len(moras),
             "note": "no_valid_f0",
+            "prosody_dynamics": {"available": False, "note": "no_valid_f0"},
             "target_pitch_note": "openjtalk_or_heuristic_labels_are_weak_auxiliary_targets; sentence_level_reference_contour_is_primary_when_available",
         }
     min_reliable = max(3, int(np.ceil(len(moras) * 0.5)))
@@ -218,6 +338,7 @@ def score_prosody(
             "hl_target_source": hl_target_source,
             "pitch_target_consistency": "unknown",
             "note": "insufficient_valid_mora_f0",
+            "prosody_dynamics": {"available": False, "note": "insufficient_valid_mora_f0"},
             "target_pitch_note": "openjtalk_or_heuristic_labels_are_weak_auxiliary_targets; sentence_level_reference_contour_is_primary_when_available",
         }
 
@@ -277,6 +398,7 @@ def score_prosody(
     corr_score = (contour_corr + 1.0) / 2.0
     rmse_score = np.exp(-0.5 * contour_rmse) if np.isfinite(contour_rmse) else 0.5
     contour_score = 0.70 * corr_score + 0.30 * float(rmse_score)
+    dynamics = _prosody_dynamics(z, ref_z)
 
     hl_match = float(np.mean([observed_pattern[i] == target_pattern[i] for i in valid_idx]))
     if hl_target_source in {"dictionary", "manual"}:
@@ -301,12 +423,14 @@ def score_prosody(
             final_intonation_match = final_slope <= float(c["statement_final_rise_threshold"])
         final_score = 1.0 if final_intonation_match else 0.55
 
-    transition_weight = 0.30
+    dynamics_weight = 0.18 if dynamics.get("available") else 0.0
+    transition_weight = 0.25
     final_weight = 0.12
-    contour_weight = max(0.0, 1.0 - transition_weight - final_weight - hl_weight)
+    contour_weight = max(0.0, 1.0 - transition_weight - final_weight - hl_weight - dynamics_weight)
     score = 100.0 * (
         contour_weight * contour_score
         + transition_weight * transition_agreement
+        + dynamics_weight * float(dynamics.get("score", 0.5))
         + final_weight * final_score
         + hl_weight * hl_match
     )
@@ -317,6 +441,18 @@ def score_prosody(
         feedback.append("整体音高走向有接近参考的部分，但还有一些起伏差异。")
     else:
         feedback.append("整体音高轮廓和参考音差异较明显。")
+
+    if dynamics.get("available"):
+        slope_corr = dynamics.get("slope_corr")
+        best_lag = int(dynamics.get("best_lag_mora", 0) or 0)
+        if isinstance(slope_corr, (int, float)) and slope_corr >= 0.60:
+            feedback.append("音高上升/下降的动态走势和参考比较接近。")
+        elif isinstance(slope_corr, (int, float)) and slope_corr < 0.20:
+            feedback.append("音高上升/下降的动态走势和参考不太一致。")
+        if best_lag:
+            feedback.append("音高变化的时机和参考略有错位。")
+        if float(dynamics.get("overshoot_ratio", 0.0) or 0.0) >= 0.34:
+            feedback.append("部分音高变化幅度偏大，听起来可能有过冲或夸张。")
 
     early_valid = [i for i in range(min(3, len(reference_dir), len(observed_dir))) if reference_dir[i] != "?" and observed_dir[i] != "?"]
     if early_valid:
@@ -383,13 +519,16 @@ def score_prosody(
             "transition": _safe_float(transition_agreement),
             "final": _safe_float(final_score),
             "hl": _safe_float(hl_match),
+            "dynamics": _safe_float(float(dynamics.get("score", 0.5))),
             "weights": {
                 "contour": contour_weight,
                 "transition": transition_weight,
+                "dynamics": dynamics_weight,
                 "final": final_weight,
                 "hl": hl_weight,
             },
         },
+        "prosody_dynamics": dynamics,
         "theory_hint": "speaker_normalized_reference_contour_and_adjacent_mora_direction",
         "target_pitch_note": "openjtalk_or_heuristic_labels_are_weak_auxiliary_targets; sentence_level_reference_contour_is_primary_when_available",
     }

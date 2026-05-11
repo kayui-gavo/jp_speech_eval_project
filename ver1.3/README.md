@@ -36,6 +36,12 @@ too few morae have acoustic evidence, F0 coverage is low, or overall reliability
 is below stable-evaluation range, pronunciation/prosody/total scores are capped.
 This prevents artificial high scores caused by unstable alignment or missing F0.
 
+Prosody dynamics note: the prosody score also includes a lightweight
+control-style trajectory-tracking proxy. It compares the user's normalized F0
+movement against the reference movement using first differences (pitch
+rise/fall), second differences (curvature), timing lag, and overshoot/undershoot
+flags. This is an interpretable engineering feature, not a validated SOTA model.
+
 Important limitation: ASR is now an optional content gate, not a full phoneme-level pronunciation model. To judge fine substitutions such as `す` vs `ず` robustly, add CTC/GOP or a trained Japanese phoneme/kana aligner.
 
 Endpointing note: `record_mic.py` still records a fixed-duration wav for CLI compatibility, but sentence-final scoring first detects `speech_start` and `speech_end`. The JSON keeps raw diagnostics under `endpointing` while duration-based scores use `speech_duration`.
