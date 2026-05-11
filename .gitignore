@@ -16,6 +16,8 @@ env/
 *.egg-info/
 
 # Generated audio/cache/evaluation artifacts
+JANON/
+datasets/
 ver1.3/cache/
 ver1.3/outputs/
 ver1.3/data/*.wav
