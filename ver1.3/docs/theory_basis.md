@@ -19,6 +19,10 @@ phrase with the preceding content word, so the frontend uses OpenJTalk
 are still automatic hypotheses. The more important comparison is the
 speaker-normalized F0 contour and adjacent-mora movement, especially when a
 cached reference F0 contour is available.
+Since Japanese accent is largely cued by movement around the accent nucleus,
+transition agreement is weighted by accent-phrase role: accent-nucleus drops
+and phrase-initial rises receive more weight, while transitions across phrase
+boundaries receive less weight.
 
 Scores must be gated by evidence. Equal-time fallback boundaries can make rhythm
 look artificially regular, and sparse F0 extraction can make pitch comparison

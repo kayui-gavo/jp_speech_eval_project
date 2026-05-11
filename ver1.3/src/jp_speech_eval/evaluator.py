@@ -347,6 +347,7 @@ def evaluate_utterance(
         reference_f0_by_mora=ref_f0_mora,
         pitch_target_source=text_info.pitch_target_source,
         is_question=text_info.is_question,
+        accent_phrases=text_info.accent_phrases,
         config=config,
     )
     fluency_score, fluency_fb, fluency_details = score_fluency(

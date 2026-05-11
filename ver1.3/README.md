@@ -30,6 +30,9 @@ to OJAD-style sentence prosody and accent-sandhi handling, but it is still an
 automatic tool-derived target. When a cached TTS reference exists, scoring
 primarily compares speaker-normalized sentence-level F0 contour and adjacent
 mora movement; single-mora H/L labels remain weak auxiliary evidence.
+Transition agreement is weighted by accent-phrase role: accent-nucleus drops and
+phrase-initial rises matter more, while phrase-boundary transitions are judged
+more softly.
 
 Evidence-gate note: when mora alignment falls back to equal-time segmentation,
 too few morae have acoustic evidence, F0 coverage is low, or overall reliability

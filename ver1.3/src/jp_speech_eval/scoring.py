@@ -263,6 +263,66 @@ def _prosody_dynamics(user_z: np.ndarray, ref_z: np.ndarray) -> Dict[str, Any]:
     }
 
 
+def _accent_phrase_transition_weights(
+    mora_count: int,
+    target_direction: List[str],
+    accent_phrases: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[List[float], List[str]]:
+    weights = [1.0 for _ in range(max(0, mora_count - 1))]
+    roles = ["general_transition" for _ in range(max(0, mora_count - 1))]
+    if not weights:
+        return weights, roles
+
+    spans: List[Tuple[int, int, int]] = []
+    offset = 0
+    for phrase in accent_phrases or []:
+        phrase_moras = phrase.get("moras") or []
+        n = len(phrase_moras)
+        if n <= 0:
+            continue
+        accent_position = int(phrase.get("accent_position", 0) or 0)
+        spans.append((offset, offset + n, accent_position))
+        offset += n
+    if not spans:
+        spans = [(0, mora_count, 0)]
+
+    for start, end, accent_position in spans:
+        for i in range(start, min(end - 1, len(weights))):
+            direction = target_direction[i] if i < len(target_direction) else "?"
+            if accent_position > 0 and i == start + accent_position - 1 and direction == "↓":
+                weights[i] = 1.8
+                roles[i] = "accent_nucleus_drop"
+            elif i == start and direction == "↑":
+                weights[i] = 1.35
+                roles[i] = "phrase_initial_rise"
+            elif direction == "↑":
+                weights[i] = 1.15
+                roles[i] = "rising_transition"
+            elif direction == "↓":
+                weights[i] = 1.35
+                roles[i] = "falling_transition"
+            elif direction == "→":
+                weights[i] = 0.75
+                roles[i] = "sustained_pitch"
+
+    for _start, end, _accent_position in spans[:-1]:
+        boundary_i = end - 1
+        if 0 <= boundary_i < len(weights):
+            weights[boundary_i] = min(weights[boundary_i], 0.45)
+            roles[boundary_i] = "accent_phrase_boundary"
+    return weights, roles
+
+
+def _weighted_mean(values: List[float], weights: List[float]) -> float:
+    if not values:
+        return 0.0
+    w = np.asarray(weights, dtype=float)
+    v = np.asarray(values, dtype=float)
+    if w.size != v.size or float(np.sum(w)) <= 1e-8:
+        return float(np.mean(v))
+    return float(np.sum(v * w) / np.sum(w))
+
+
 def score_prosody(
     moras: List[str],
     target_pattern: List[str],
@@ -270,6 +330,7 @@ def score_prosody(
     reference_f0_by_mora: Optional[List[float]] = None,
     pitch_target_source: str = "heuristic",
     is_question: bool = False,
+    accent_phrases: Optional[List[Dict[str, Any]]] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[int, List[str], Dict]:
     c = _cfg(config)["prosody"]
@@ -359,10 +420,27 @@ def score_prosody(
         reference_dir.append(_direction(ref_z[i], ref_z[i + 1], th=direction_th))
         observed_dir.append(_direction(z[i], z[i + 1], th=direction_th))
 
+    transition_weights, transition_roles = _accent_phrase_transition_weights(
+        len(moras),
+        heuristic_dir,
+        accent_phrases=accent_phrases,
+    )
     ref_dir_valid = [i for i, d in enumerate(observed_dir) if d != "?" and i < len(reference_dir) and reference_dir[i] != "?"]
-    transition_agreement = float(np.mean([
-        _direction_match(reference_dir[i], observed_dir[i]) for i in ref_dir_valid
-    ])) if ref_dir_valid else 0.5
+    transition_values = [
+        1.0 if _direction_match(reference_dir[i], observed_dir[i]) else 0.0
+        for i in ref_dir_valid
+    ]
+    transition_agreement = _weighted_mean(
+        transition_values,
+        [transition_weights[i] if i < len(transition_weights) else 1.0 for i in ref_dir_valid],
+    ) if ref_dir_valid else 0.5
+    accent_drop_indices = [
+        i for i, role in enumerate(transition_roles)
+        if role == "accent_nucleus_drop" and i < len(observed_dir) and observed_dir[i] != "?"
+    ]
+    accent_drop_agreement = float(np.mean([
+        observed_dir[i] == "↓" for i in accent_drop_indices
+    ])) if accent_drop_indices else None
 
     heuristic_dir_valid = [i for i, d in enumerate(heuristic_dir) if i < len(reference_dir) and reference_dir[i] != "?"]
     heuristic_dir_match = float(np.mean([
@@ -467,6 +545,11 @@ def score_prosody(
         i = weak_lifts[0]
         feedback.append(f"参考音在「{moras[i]}〜{moras[i + 1]}」附近有更明显的上扬，你的上扬可以再清楚一点。")
 
+    if accent_drop_agreement is not None and accent_drop_agreement < 0.5:
+        drop_i = accent_drop_indices[0]
+        if drop_i + 1 < len(moras):
+            feedback.append(f"重音核后的下降在「{moras[drop_i]}〜{moras[drop_i + 1]}」附近不够明显。")
+
     if final_intonation_match is True:
         feedback.append("句末语调接近参考音。")
     elif final_intonation_match is False:
@@ -494,6 +577,8 @@ def score_prosody(
         "target_direction": heuristic_dir,
         "reference_direction": reference_dir,
         "observed_direction": observed_dir,
+        "transition_weights": [_safe_float(v) for v in transition_weights],
+        "transition_roles": transition_roles,
         "normalized_log_f0": [_safe_float(v) for v in z],
         "reference_normalized_log_f0": [_safe_float(v) for v in ref_z],
         "valid_mora_count": len(valid_idx),
@@ -502,6 +587,8 @@ def score_prosody(
         "hl_match": hl_match,
         "direction_match": transition_agreement,
         "transition_agreement": transition_agreement,
+        "accent_drop_agreement": _safe_float(accent_drop_agreement) if accent_drop_agreement is not None else None,
+        "accent_phrase_count": len(accent_phrases or []),
         "final_score": clamp_score(final_score * 100.0),
         "contour_corr": _safe_float(contour_corr),
         "contour_rmse": _safe_float(contour_rmse),
