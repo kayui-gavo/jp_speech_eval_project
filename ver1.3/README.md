@@ -120,6 +120,23 @@ cache/ramen_kudasai.npz
 cache/ramen_kudasai.ref.wav   # optional
 ```
 
+If you already generated a same-text pseudo-reference outside this package, you
+can cache it without changing the evaluator:
+
+```bash
+python scripts/prepare_cache.py \
+  --text "ラーメンをください" \
+  --out cache/ramen_user_voice \
+  --reference-wav outputs/ramen_user_voice.ref.wav \
+  --reference-source kanade_voice_conditioned_pseudo_reference \
+  --save-ref-wav
+```
+
+Use this only for same-text reference audio. A user-voice-conditioned reference
+is still a `pseudo-reference`, not ground truth; keep `reference_source` honest
+so later analysis can separate OpenJTalk TTS, external TTS, and voice-converted
+references.
+
 The slow work is done here, not during realtime use.
 
 ---

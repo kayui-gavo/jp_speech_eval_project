@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Tuple
 import librosa
 import numpy as np
 
-from .audio_features import extract_f0, trim_silence
+from .audio_features import extract_f0, load_audio, trim_silence
 from .text_frontend import TextInfo, build_text_info
 
 
@@ -27,6 +27,7 @@ class SentenceMeta:
     frontend_raw: List[Dict[str, Any]]
     accent_phrases: List[Dict[str, Any]]
     reference_text: str
+    reference_source: str
     ref_boundary_method: str
 
 
@@ -174,6 +175,8 @@ def build_sentence_cache(
     out_prefix: str | Path,
     sr: int = 16000,
     save_reference_wav: bool = False,
+    reference_wav_path: str | Path | None = None,
+    reference_source: str | None = None,
 ) -> SentenceCache:
     """
     Build and save cache for a target sentence.
@@ -192,7 +195,16 @@ def build_sentence_cache(
 
     text_info: TextInfo = build_text_info(text)
     frontend_raw = run_frontend(text)
-    ref_y, ref_boundaries, reference_text, boundary_method = chunked_tts_reference(text, sr=sr)
+    if reference_wav_path is not None:
+        external_audio = load_audio(str(reference_wav_path), sr=sr)
+        ref_y, _ = trim_silence(external_audio.y, top_db=30.0)
+        ref_boundaries = _equal_boundaries(len(ref_y) / sr, len(text_info.moras))
+        reference_text = text
+        boundary_method = "external_equal_mora"
+        reference_source_name = reference_source or "external_reference_wav"
+    else:
+        ref_y, ref_boundaries, reference_text, boundary_method = chunked_tts_reference(text, sr=sr)
+        reference_source_name = reference_source or "pyopenjtalk_tts_pseudo_reference"
     ref_duration = len(ref_y) / sr
     if len(ref_boundaries) != len(text_info.moras):
         ref_boundaries = _equal_boundaries(ref_duration, len(text_info.moras))
@@ -213,6 +225,7 @@ def build_sentence_cache(
         frontend_raw=frontend_raw,
         accent_phrases=text_info.accent_phrases,
         reference_text=reference_text,
+        reference_source=reference_source_name,
         ref_boundary_method=boundary_method,
     )
 
@@ -269,6 +282,7 @@ def load_sentence_cache(prefix: str | Path) -> SentenceCache:
         frontend_raw=list(raw.get("frontend_raw", [])),
         accent_phrases=accent_phrases,
         reference_text=str(raw.get("reference_text", raw["text"])),
+        reference_source=str(raw.get("reference_source", "pyopenjtalk_tts_pseudo_reference")),
         ref_boundary_method=str(raw.get("ref_boundary_method", "equal_mora")),
     )
     data = np.load(npz_path)
@@ -293,6 +307,7 @@ def cache_summary(cache: SentenceCache) -> str:
         f"Pitch source  : {cache.meta.pitch_target_source}",
         f"Accent phrases: {len(cache.meta.accent_phrases)}",
         f"Reference text: {cache.meta.reference_text}",
+        f"Reference src : {cache.meta.reference_source}",
         f"Boundary mode : {cache.meta.ref_boundary_method}",
         f"Ref duration  : {cache.meta.ref_duration_sec:.3f} sec",
         f"Cache prefix  : {cache.prefix}",

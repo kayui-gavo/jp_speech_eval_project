@@ -184,6 +184,7 @@ def unify_evaluation_result(
         "asr_transcript": asr_transcript or _pick(details, "asr", "text") or _pick(details, "content_match", "transcript"),
         "cache_prefix": raw.get("cache_prefix"),
         "alignment_mode": raw.get("alignment_mode"),
+        "reference_source": details.get("reference_source"),
     }
     if extra_input:
         input_info.update(extra_input)

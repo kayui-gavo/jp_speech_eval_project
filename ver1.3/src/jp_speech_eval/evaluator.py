@@ -511,6 +511,7 @@ def evaluate_utterance(
             "prosody_metrics": prosody_metrics,
             "score_adjustments": score_adjustments,
             "accent_phrases": text_info.accent_phrases,
+            "reference_source": cache.meta.reference_source if cache else None,
             "fluency": fluency_details,
             "tone": tone_details,
         },
