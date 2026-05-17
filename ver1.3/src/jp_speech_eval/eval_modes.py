@@ -29,15 +29,14 @@ def voice_conditioned_cache_prefix(text: str, speaker_wav_path: str | Path, root
     return Path(root) / f"kanade_{digest}"
 
 
-def evaluate_asr_pseudo_reference(
+def _transcribe_for_dynamic_reference(
     wav_path: str | Path,
     *,
-    base_cache_path: str | Path = "cache/ramen_kudasai",
-    scoring_config_path: str | Path | None = None,
-    generated_cache_dir: str | Path = "outputs/generated_refs",
-) -> Dict[str, Any]:
-    t_cache = load_sentence_cache(base_cache_path)
-    audio = load_audio(str(wav_path), sr=t_cache.meta.sr)
+    base_cache_path: str | Path,
+    scoring_config_path: str | Path | None,
+) -> tuple[Any, Any]:
+    base_cache = load_sentence_cache(base_cache_path)
+    audio = load_audio(str(wav_path), sr=base_cache.meta.sr)
     y_speech, _region = trim_to_speech(audio.y, audio.sr)
     config = load_scoring_config(scoring_config_path)
     content_cfg = config.get("content_match", {})
@@ -47,18 +46,47 @@ def evaluate_asr_pseudo_reference(
         model_name=str(content_cfg.get("asr_model", "small")),
         provider=str(content_cfg.get("asr_provider", "auto")),
     )
+    return base_cache, transcript
+
+
+def _build_dynamic_tts_cache(
+    text: str,
+    *,
+    sr: int,
+    generated_cache_dir: str | Path,
+) -> Path:
+    generated_prefix = generated_cache_prefix(text, root=generated_cache_dir)
+    build_sentence_cache(
+        text,
+        generated_prefix,
+        sr=sr,
+        save_reference_wav=True,
+    )
+    return generated_prefix
+
+
+def evaluate_asr_pseudo_reference(
+    wav_path: str | Path,
+    *,
+    base_cache_path: str | Path = "cache/ramen_kudasai",
+    scoring_config_path: str | Path | None = None,
+    generated_cache_dir: str | Path = "outputs/generated_refs",
+) -> Dict[str, Any]:
+    t_cache, transcript = _transcribe_for_dynamic_reference(
+        wav_path,
+        base_cache_path=base_cache_path,
+        scoring_config_path=scoring_config_path,
+    )
     if not transcript.available or not transcript.text:
         result = evaluate_reference_free_acoustic(wav_path, sample_rate=t_cache.meta.sr)
         result["details"]["mode"] = "asr_pseudo_reference_fallback_acoustic"
         result["details"]["asr"] = transcript.to_dict()
         return result
 
-    generated_prefix = generated_cache_prefix(transcript.text, root=generated_cache_dir)
-    build_sentence_cache(
+    generated_prefix = _build_dynamic_tts_cache(
         transcript.text,
-        generated_prefix,
         sr=t_cache.meta.sr,
-        save_reference_wav=True,
+        generated_cache_dir=generated_cache_dir,
     )
     eval_result = evaluate_utterance(
         wav_path=wav_path,
@@ -124,6 +152,76 @@ def evaluate_kanade_voice_reference(
     return result
 
 
+def evaluate_kanade_asr_voice_reference(
+    wav_path: str | Path,
+    *,
+    base_cache_path: str | Path = "cache/ramen_kudasai",
+    speaker_wav_path: str | Path | None = None,
+    scoring_config_path: str | Path | None = None,
+    generated_cache_dir: str | Path = "outputs/generated_refs",
+    model_id: str = "frothywater/kanade-25hz-clean",
+) -> Dict[str, Any]:
+    base_cache, transcript = _transcribe_for_dynamic_reference(
+        wav_path,
+        base_cache_path=base_cache_path,
+        scoring_config_path=scoring_config_path,
+    )
+    if not transcript.available or not transcript.text:
+        result = evaluate_reference_free_acoustic(wav_path, sample_rate=base_cache.meta.sr)
+        result["details"]["mode"] = "kanade_asr_voice_reference_fallback_acoustic"
+        result["details"]["asr"] = transcript.to_dict()
+        return result
+
+    scoring_prefix = _build_dynamic_tts_cache(
+        transcript.text,
+        sr=base_cache.meta.sr,
+        generated_cache_dir=generated_cache_dir,
+    )
+    scoring_cache = load_sentence_cache(scoring_prefix)
+    eval_result = evaluate_utterance(
+        wav_path=wav_path,
+        alignment_mode="cached_dtw",
+        cache_path=scoring_prefix,
+        scoring_config_path=scoring_config_path,
+        profile=False,
+        use_content_match=False,
+    )
+    result = eval_result.to_dict()
+
+    speaker_path = Path(speaker_wav_path or wav_path)
+    voice_prefix = voice_conditioned_cache_prefix(
+        transcript.text,
+        speaker_path,
+        root=Path(generated_cache_dir) / "voice_playback",
+    )
+    voice_prefix.parent.mkdir(parents=True, exist_ok=True)
+    voice_ref_y = generate_voice_conditioned_reference(
+        scoring_cache.ref_y,
+        target_sr=scoring_cache.meta.sr,
+        speaker_wav_path=speaker_path,
+        model_id=model_id,
+    )
+    generated_wav = voice_prefix.with_suffix(".voice.ref.wav")
+    sf.write(str(generated_wav), voice_ref_y, scoring_cache.meta.sr)
+    build_sentence_cache(
+        transcript.text,
+        voice_prefix,
+        sr=scoring_cache.meta.sr,
+        save_reference_wav=True,
+        reference_wav_path=generated_wav,
+        reference_source="kanade_voice_conditioned_playback_pseudo_reference",
+    )
+
+    result["details"]["mode"] = "kanade_asr_voice_reference"
+    result["details"]["asr"] = transcript.to_dict()
+    result["details"]["reference_warning"] = "asr_tts_pseudo_reference_used_for_scoring;kanade_reference_is_playback_only"
+    result["details"]["playback_reference_source"] = "kanade_voice_conditioned_playback_pseudo_reference"
+    result["details"]["voice_reference_cache_prefix"] = str(voice_prefix)
+    result["details"]["speaker_reference_audio"] = str(speaker_path)
+    result["details"]["kanade_model_id"] = model_id
+    return result
+
+
 def evaluate_mode(
     mode: str,
     wav_path: str | Path,
@@ -163,6 +261,14 @@ def evaluate_mode(
         if cache_path is None:
             raise ValueError("kanade_voice_reference mode requires a base cache for target text.")
         return evaluate_kanade_voice_reference(
+            wav_path,
+            base_cache_path=cache_path,
+            scoring_config_path=scoring_config_path,
+        )
+    if mode in {"kanade_asr_voice_reference", "voice_conditioned_asr_reference"}:
+        if cache_path is None:
+            raise ValueError("kanade_asr_voice_reference mode requires a base cache for sample rate/config context.")
+        return evaluate_kanade_asr_voice_reference(
             wav_path,
             base_cache_path=cache_path,
             scoring_config_path=scoring_config_path,

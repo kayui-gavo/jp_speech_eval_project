@@ -22,7 +22,12 @@ from jp_speech_eval.audio_features import load_audio
 from jp_speech_eval.audio_features import median_f0_by_mora
 from jp_speech_eval.acoustic_evaluator import evaluate_reference_free_acoustic
 from jp_speech_eval.config import load_scoring_config
-from jp_speech_eval.eval_modes import evaluate_asr_pseudo_reference, evaluate_kanade_voice_reference, evaluate_mode
+from jp_speech_eval.eval_modes import (
+    evaluate_asr_pseudo_reference,
+    evaluate_kanade_asr_voice_reference,
+    evaluate_kanade_voice_reference,
+    evaluate_mode,
+)
 from jp_speech_eval.evaluation_log import append_jsonl, export_feature_table
 from jp_speech_eval.evaluator import evaluate_utterance
 from jp_speech_eval.realtime_evaluator import RealtimeEvaluator
@@ -240,6 +245,27 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 self.server.latest_reference_wav = generated_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
                 reference_audio_url = f"/api/latest-reference.wav?mode=kanade_voice_reference&cache={generated_prefix.name}"
                 realtime = []
+            elif mode == "kanade_asr_voice_reference":
+                result = evaluate_kanade_asr_voice_reference(
+                    wav_path,
+                    base_cache_path=self.server.cache_prefix,  # type: ignore[attr-defined]
+                    scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
+                    generated_cache_dir=ROOT / "outputs" / "debug_ui" / "generated_refs",
+                )
+                asr_text = result.get("details", {}).get("asr", {}).get("text", "")
+                scoring_prefix = Path(result.get("cache_prefix", ""))
+                voice_prefix = Path(result.get("details", {}).get("voice_reference_cache_prefix", ""))
+                if result.get("details", {}).get("mode") == "kanade_asr_voice_reference" and asr_text:
+                    reference = _reference_payload(scoring_prefix)
+                    self.server.latest_reference_wav = voice_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
+                    reference_audio_url = (
+                        f"/api/latest-reference.wav?mode=kanade_asr_voice_reference"
+                        f"&text={hashlib.sha1(asr_text.encode('utf-8')).hexdigest()[:12]}"
+                    )
+                else:
+                    reference = None
+                    reference_audio_url = None
+                realtime = []
             else:
                 eval_result = evaluate_utterance(
                     wav_path=wav_path,
@@ -352,7 +378,14 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         default="reference",
-        choices=["reference", "asr_pseudo_reference", "kanade_voice_reference", "acoustic", "transcript_assisted_light"],
+        choices=[
+            "reference",
+            "asr_pseudo_reference",
+            "kanade_voice_reference",
+            "kanade_asr_voice_reference",
+            "acoustic",
+            "transcript_assisted_light",
+        ],
     )
     parser.add_argument("--config", default=None)
     parser.add_argument("--chunk-ms", type=float, default=20.0)

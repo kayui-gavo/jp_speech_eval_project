@@ -569,7 +569,7 @@
             <span>Evaluation mode</span>
             <select id="evalMode">
               <option value="reference">Reference fixed sentence</option>
-              <option value="kanade_voice_reference">Kanade voice reference experimental</option>
+              <option value="kanade_asr_voice_reference">Kanade ASR voice reference experimental</option>
               <option value="asr_pseudo_reference">ASR pseudo-reference</option>
               <option value="transcript_assisted_light">Transcript-assisted light</option>
               <option value="acoustic">Acoustic only experimental</option>
@@ -770,16 +770,16 @@
       state.activeReference = null;
       $("referenceAudio").removeAttribute("src");
       $("referenceAudio").load();
-      if (mode === "kanade_voice_reference") {
-        $("cachePath").textContent = state.config?.cache_prefix || "fixed target";
-        $("referenceLabel").textContent = "Voice-conditioned reference after scoring";
+      if (mode === "kanade_asr_voice_reference") {
+        $("cachePath").textContent = "Waiting for ASR";
+        $("referenceLabel").textContent = "Voice-conditioned playback after scoring";
         renderPrompt({
-          target_text: state.config?.target_text,
-          kana: state.config?.kana,
-          moras: state.config?.moras,
-          target_pitch: state.config?.target_pitch
+          target_text: "Speak freely, then ASR will generate the reference",
+          kana: "Transcript / kana will appear after scoring",
+          moras: [],
+          target_pitch: []
         });
-        $("pitchSummary").textContent = "Voice-conditioned contour after scoring";
+        $("pitchSummary").textContent = "ASR scoring contour after scoring";
       } else if (mode === "asr_pseudo_reference") {
         $("cachePath").textContent = "Waiting for ASR";
         $("referenceLabel").textContent = "Generated reference after scoring";
@@ -832,6 +832,11 @@
         const method = payload.reference?.ref_boundary_method || "generated";
         $("referenceLabel").textContent = `Generated reference from ASR (${method})`;
         $("cacheLabel").textContent = asrText;
+      } else if (mode === "kanade_asr_voice_reference") {
+        const asrText = result.details?.asr?.text || result.target_text || "ASR transcript";
+        $("cachePath").textContent = "ASR scoring reference + Kanade playback";
+        $("referenceLabel").textContent = "Kanade playback; scoring uses ASR TTS";
+        $("cacheLabel").textContent = asrText;
       } else if (mode === "kanade_voice_reference") {
         const method = payload.reference?.ref_boundary_method || "generated";
         $("cachePath").textContent = "Voice-conditioned pseudo-reference";
@@ -868,13 +873,13 @@
       const mode = currentMode();
       const hints = {
         reference: "uses target + reference",
-        kanade_voice_reference: "same target + your voice timbre",
+        kanade_asr_voice_reference: "free speech + your voice playback",
         asr_pseudo_reference: "ASR transcript + generated reference",
         transcript_assisted_light: "ASR transcript + acoustic proxy",
         acoustic: "fast: no ASR, risk proxy only"
       };
       $("modeHint").textContent = hints[mode] || mode;
-      $("modeHint").className = mode === "reference" ? "pill good" : mode === "kanade_voice_reference" || mode === "asr_pseudo_reference" || mode === "transcript_assisted_light" ? "pill warn" : "pill";
+      $("modeHint").className = mode === "reference" ? "pill good" : mode === "kanade_asr_voice_reference" || mode === "asr_pseudo_reference" || mode === "transcript_assisted_light" ? "pill warn" : "pill";
     }
 
     function renderScores(result) {

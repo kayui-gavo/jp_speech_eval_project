@@ -146,18 +146,18 @@ uv venv --python 3.12 ../.venv-kanade
 uv pip install --python ../.venv-kanade/bin/python \
   git+https://github.com/frothywater/kanade-tokenizer
 
-# Start the debug UI, then choose "Kanade voice reference experimental"
-python scripts/debug_ui.py --mode kanade_voice_reference
+# Start the debug UI, then choose "Kanade ASR voice reference experimental"
+python scripts/debug_ui.py --mode kanade_asr_voice_reference
 ```
 
 This experimental mode uses the current uploaded/recorded wav as temporary
-speaker enrollment, keeps the fixed target sentence from the base cache, and
-builds a `kanade_voice_conditioned_pseudo_reference` before scoring. It is
-useful for A/B testing whether user-voice references are more usable than plain
-TTS, but it is not yet a validated scoring reference and it is intentionally not
-part of the default path. The Kanade worker lives in `../.venv-kanade` because
-the upstream package currently requires Python 3.12 while the main project keeps
-its existing Python 3.11 environment.
+speaker enrollment, transcribes the user's actual utterance, builds the normal
+ASR-driven TTS pseudo-reference for scoring, and separately builds a
+Kanade-conditioned playback reference in the user's timbre. The Kanade audio is
+currently playback-only because its Japanese articulation still needs validation;
+it is not used as the scoring reference. The Kanade worker lives in
+`../.venv-kanade` because the upstream package currently requires Python 3.12
+while the main project keeps its existing Python 3.11 environment.
 
 The slow work is done here, not during realtime use.
 
