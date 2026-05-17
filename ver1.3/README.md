@@ -207,16 +207,22 @@ OpenJTalk voice.
 
 The slow work is done here, not during realtime use.
 
-Public-demo deployment:
+Full web deployment:
 
 ```bash
-python scripts/debug_ui.py --host 0.0.0.0 --port 7860 --public-demo
+python scripts/debug_ui.py \
+  --host 0.0.0.0 \
+  --port 7860 \
+  --mode asr_pseudo_reference \
+  --tts-backend aivis_http \
+  --tts-url http://127.0.0.1:10101 \
+  --tts-speaker 888753760
 ```
 
-`--public-demo` exposes only the stable fixed-reference and acoustic-only modes,
-deletes uploaded recordings after each request, and disables persistent JSONL
-logs. Use the repository-root `Dockerfile` when deploying this UI on a hosted
-container platform.
+Use the repository-root `Dockerfile` for a hosted full-stack deployment. It
+starts AivisSpeech Engine in the same container and installs the isolated
+Python 3.12 Kanade worker so the web UI can expose the same experimental modes
+as the local setup.
 
 ---
 

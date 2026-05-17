@@ -34,24 +34,24 @@ Then open `http://127.0.0.1:8765/`.
 For the full setup guide, evaluation limitations, and optional AivisSpeech /
 Kanade experiments, see [`ver1.3/README.md`](ver1.3/README.md).
 
-## Public Web Demo
+## Full Web Demo
 
-The repository includes a Dockerized public-demo configuration:
+The repository includes a Dockerized full-stack web deployment:
 
 ```bash
 docker build -t jp-speech-eval-demo .
 docker run --rm -p 7860:7860 jp-speech-eval-demo
 ```
 
-This starts the UI on `http://127.0.0.1:7860/` with public-safe defaults:
-
-- fixed-reference and acoustic-only modes only
-- uploaded recordings deleted after scoring
-- no persistent JSONL evaluation logs
+This starts the UI on `http://127.0.0.1:7860/` with the same evaluation modes as
+the local debug UI, including ASR-generated references, AivisSpeech-backed TTS,
+and Kanade voice-reference experiments. The container starts AivisSpeech Engine
+internally and installs the isolated Python 3.12 Kanade worker used by the local
+setup.
 
 The same `Dockerfile` can be deployed on a container host such as Hugging Face
-Docker Spaces or Render. For a private research session with all local
-experimental modes, continue using `python scripts/debug_ui.py` from `ver1.3/`.
+Docker Spaces or Render. This is intentionally a heavy deployment: first startup
+downloads AivisSpeech model assets and runtime latency depends on the host CPU.
 
 ## Important Caveat
 
