@@ -3,6 +3,11 @@
 Research-oriented prototype for Japanese speaking evaluation, with the current
 implementation in [`ver1.3/`](ver1.3/README.md).
 
+For a teammate-facing snapshot of the current research progress, start with:
+
+- [Chinese research progress note](docs/research_progress_zh.md)
+- [Chinese 5-minute demo guide](docs/team_demo_guide_zh.md)
+
 The project focuses on lightweight, inspectable evaluation rather than opaque
 end-to-end scoring. Current capabilities include:
 
