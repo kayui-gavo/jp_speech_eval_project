@@ -5,6 +5,7 @@ import cgi
 import hashlib
 import io
 import json
+import os
 import sys
 import tempfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -115,6 +116,26 @@ def _field_value(form: cgi.FieldStorage, name: str, default: str) -> str:
     return str(value or default)
 
 
+ALL_MODES = [
+    "reference",
+    "asr_pseudo_reference",
+    "kanade_voice_reference",
+    "kanade_asr_voice_reference",
+    "acoustic",
+    "transcript_assisted_light",
+]
+
+
+def _mode_labels() -> Dict[str, str]:
+    return {
+        "reference": "Reference fixed sentence",
+        "kanade_asr_voice_reference": "Kanade ASR voice reference experimental",
+        "asr_pseudo_reference": "ASR pseudo-reference",
+        "transcript_assisted_light": "Transcript-assisted light",
+        "acoustic": "Acoustic only experimental",
+    }
+
+
 class DebugUiHandler(SimpleHTTPRequestHandler):
     server_version = "JpSpeechEvalDebugUI/1.0"
 
@@ -139,6 +160,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "feature_csv": str(self.server.feature_csv.relative_to(ROOT)),  # type: ignore[attr-defined]
                 "reference": _reference_payload(self.server.cache_prefix),  # type: ignore[attr-defined]
                 "reference_audio_url": "/api/reference.wav",
+                "available_modes": self.server.available_modes,  # type: ignore[attr-defined]
+                "mode_labels": _mode_labels(),
+                "server_label": self.server.server_label,  # type: ignore[attr-defined]
             }
             _json_response(self, payload)
             return
@@ -190,17 +214,26 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             _error_response(self, "Missing audio file field named 'audio'")
             return
         mode = _field_value(form, "mode", self.server.eval_mode)  # type: ignore[attr-defined]
+        if mode not in self.server.available_modes:  # type: ignore[attr-defined]
+            _error_response(self, f"Mode is not enabled in this deployment: {mode}")
+            return
 
         upload_dir = ROOT / "outputs" / "debug_ui"
         upload_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(prefix="recording_", suffix=".wav", dir=upload_dir, delete=False) as f:
             wav_path = Path(f.name)
             f.write(file_item.file.read())
-        self._evaluate_wav(wav_path, mode=mode)
+        try:
+            self._evaluate_wav(wav_path, mode=mode)
+        finally:
+            if not self.server.retain_uploads:  # type: ignore[attr-defined]
+                wav_path.unlink(missing_ok=True)
 
     def _evaluate_wav(self, wav_path: Path, mode: str | None = None) -> None:
         try:
             mode = (mode or self.server.eval_mode).strip()  # type: ignore[attr-defined]
+            if mode not in self.server.available_modes:  # type: ignore[attr-defined]
+                raise ValueError(f"Mode is not enabled in this deployment: {mode}")
             if mode == "acoustic":
                 result = evaluate_reference_free_acoustic(wav_path)
                 realtime = []
@@ -297,7 +330,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 mode=result.get("details", {}).get("mode") or mode,
                 audio_path=wav_path,
             )
-            append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
+            if self.server.enable_logs:  # type: ignore[attr-defined]
+                append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
             _json_response(self, {
@@ -315,7 +349,11 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
 
     def _compare_sample(self) -> None:
-        modes = ["reference", "acoustic", "transcript_assisted_light", "asr_pseudo_reference"]
+        modes = [
+            mode
+            for mode in ["reference", "acoustic", "transcript_assisted_light", "asr_pseudo_reference"]
+            if mode in self.server.available_modes  # type: ignore[attr-defined]
+        ]
         rows: List[Dict[str, Any]] = []
         for mode in modes:
             try:
@@ -333,7 +371,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                     mode=result.get("details", {}).get("mode") or mode,
                     audio_path=self.server.sample_wav,  # type: ignore[attr-defined]
                 )
-                append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
+                if self.server.enable_logs:  # type: ignore[attr-defined]
+                    append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
                 rows.append({
                     "mode": unified.mode,
                     "scores": unified.scores,
@@ -379,22 +418,15 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a local product-like debug UI for jp_speech_eval")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8765")))
     parser.add_argument("--cache", default="cache/ramen_kudasai")
     parser.add_argument("--wav", default="data/ramen.wav", help="Sample wav used by the Try sample button")
     parser.add_argument("--alignment", default="cached_dtw", choices=["cached_dtw", "dtw", "equal"])
     parser.add_argument(
         "--mode",
         default="reference",
-        choices=[
-            "reference",
-            "asr_pseudo_reference",
-            "kanade_voice_reference",
-            "kanade_asr_voice_reference",
-            "acoustic",
-            "transcript_assisted_light",
-        ],
+        choices=ALL_MODES,
     )
     parser.add_argument("--config", default=None)
     parser.add_argument("--tts-backend", default="pyopenjtalk", help="pyopenjtalk, voicevox_http, or aivis_http for generated references")
@@ -403,7 +435,30 @@ def main() -> None:
     parser.add_argument("--chunk-ms", type=float, default=20.0)
     parser.add_argument("--log-jsonl", default="outputs/debug_ui/eval_log.jsonl")
     parser.add_argument("--feature-csv", default="outputs/debug_ui/features.csv")
+    parser.add_argument(
+        "--available-modes",
+        default=None,
+        help="Comma-separated modes exposed in the UI. Defaults to all local modes.",
+    )
+    parser.add_argument(
+        "--public-demo",
+        action="store_true",
+        help="Public-safe defaults: fixed reference/acoustic modes only, no retained uploads, no JSONL logs.",
+    )
     args = parser.parse_args()
+
+    default_public_modes = ["reference", "acoustic"]
+    if args.available_modes:
+        available_modes = [mode.strip() for mode in args.available_modes.split(",") if mode.strip()]
+    elif args.public_demo:
+        available_modes = default_public_modes
+    else:
+        available_modes = list(ALL_MODES)
+    invalid_modes = sorted(set(available_modes) - set(ALL_MODES))
+    if invalid_modes:
+        raise ValueError(f"Unknown modes in --available-modes: {', '.join(invalid_modes)}")
+    if args.mode not in available_modes:
+        args.mode = available_modes[0]
 
     server = ThreadingHTTPServer((args.host, args.port), DebugUiHandler)
     server.cache_prefix = (ROOT / args.cache).resolve() if not Path(args.cache).is_absolute() else Path(args.cache)
@@ -417,6 +472,10 @@ def main() -> None:
     server.chunk_ms = float(args.chunk_ms)
     server.log_jsonl = (ROOT / args.log_jsonl).resolve() if not Path(args.log_jsonl).is_absolute() else Path(args.log_jsonl)
     server.feature_csv = (ROOT / args.feature_csv).resolve() if not Path(args.feature_csv).is_absolute() else Path(args.feature_csv)
+    server.available_modes = available_modes
+    server.retain_uploads = not args.public_demo
+    server.enable_logs = not args.public_demo
+    server.server_label = "Public demo" if args.public_demo else "Local debug"
     default_ref = server.cache_prefix.with_suffix(".ref.wav")
     server.latest_reference_wav = default_ref if default_ref.exists() else server.sample_wav
 

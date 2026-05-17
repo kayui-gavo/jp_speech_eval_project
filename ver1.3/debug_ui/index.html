@@ -721,7 +721,7 @@
     ];
 
     function setBusy(isBusy, label = "Scoring") {
-      $("serverState").textContent = isBusy ? label : "Local debug";
+      $("serverState").textContent = isBusy ? label : (state.config?.server_label || "Local debug");
       $("serverState").className = isBusy ? "pill warn" : "pill";
       $("recordBtn").disabled = isBusy;
       $("sampleBtn").disabled = isBusy;
@@ -731,6 +731,13 @@
 
     function renderConfig(config) {
       state.config = config;
+      if (Array.isArray(config.available_modes) && config.available_modes.length) {
+        const labels = config.mode_labels || {};
+        $("evalMode").innerHTML = config.available_modes
+          .map((mode) => `<option value="${mode}">${labels[mode] || mode}</option>`)
+          .join("");
+      }
+      $("serverState").textContent = config.server_label || "Local debug";
       $("cachePath").textContent = config.cache_prefix;
       state.activeReference = config.reference;
       renderPrompt({

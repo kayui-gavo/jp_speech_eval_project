@@ -207,6 +207,17 @@ OpenJTalk voice.
 
 The slow work is done here, not during realtime use.
 
+Public-demo deployment:
+
+```bash
+python scripts/debug_ui.py --host 0.0.0.0 --port 7860 --public-demo
+```
+
+`--public-demo` exposes only the stable fixed-reference and acoustic-only modes,
+deletes uploaded recordings after each request, and disables persistent JSONL
+logs. Use the repository-root `Dockerfile` when deploying this UI on a hosted
+container platform.
+
 ---
 
 ## 4. Record a test wav

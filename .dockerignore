@@ -1,0 +1,13 @@
+.git
+.DS_Store
+.venv
+.venv-kanade
+JANON
+datasets
+lambda_tradeoff.pdf
+lambda_tradeoff.png
+plot_lambda_tradeoff.py
+ver1.0
+ver1.3/outputs
+ver1.3/src/jp_speech_eval.egg-info
+**/__pycache__
