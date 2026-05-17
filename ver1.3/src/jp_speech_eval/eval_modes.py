@@ -4,11 +4,14 @@ import hashlib
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import soundfile as sf
+
 from .acoustic_evaluator import evaluate_reference_free_acoustic
 from .asr import transcribe_japanese
 from .audio_features import load_audio
 from .config import load_scoring_config
 from .evaluator import evaluate_utterance
+from .kanade_reference import generate_voice_conditioned_reference
 from .sentence_cache import build_sentence_cache, load_sentence_cache
 from .transcript_assisted import evaluate_transcript_assisted_light
 from .vad import trim_to_speech
@@ -17,6 +20,13 @@ from .vad import trim_to_speech
 def generated_cache_prefix(text: str, root: str | Path = "outputs/generated_refs") -> Path:
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
     return Path(root) / f"asr_{digest}"
+
+
+def voice_conditioned_cache_prefix(text: str, speaker_wav_path: str | Path, root: str | Path) -> Path:
+    speaker_path = Path(speaker_wav_path)
+    digest_source = f"{text}|{speaker_path.resolve()}|{speaker_path.stat().st_mtime_ns}|{speaker_path.stat().st_size}"
+    digest = hashlib.sha1(digest_source.encode("utf-8")).hexdigest()[:12]
+    return Path(root) / f"kanade_{digest}"
 
 
 def evaluate_asr_pseudo_reference(
@@ -65,6 +75,55 @@ def evaluate_asr_pseudo_reference(
     return result
 
 
+def evaluate_kanade_voice_reference(
+    wav_path: str | Path,
+    *,
+    base_cache_path: str | Path = "cache/ramen_kudasai",
+    speaker_wav_path: str | Path | None = None,
+    scoring_config_path: str | Path | None = None,
+    generated_cache_dir: str | Path = "outputs/generated_refs",
+    model_id: str = "frothywater/kanade-25hz-clean",
+) -> Dict[str, Any]:
+    base_cache = load_sentence_cache(base_cache_path)
+    speaker_path = Path(speaker_wav_path or wav_path)
+    generated_prefix = voice_conditioned_cache_prefix(
+        base_cache.meta.text,
+        speaker_path,
+        root=generated_cache_dir,
+    )
+    generated_prefix.parent.mkdir(parents=True, exist_ok=True)
+
+    voice_ref_y = generate_voice_conditioned_reference(
+        base_cache.ref_y,
+        target_sr=base_cache.meta.sr,
+        speaker_wav_path=speaker_path,
+        model_id=model_id,
+    )
+    generated_wav = generated_prefix.with_suffix(".voice.ref.wav")
+    sf.write(str(generated_wav), voice_ref_y, base_cache.meta.sr)
+    build_sentence_cache(
+        base_cache.meta.text,
+        generated_prefix,
+        sr=base_cache.meta.sr,
+        save_reference_wav=True,
+        reference_wav_path=generated_wav,
+        reference_source="kanade_voice_conditioned_pseudo_reference",
+    )
+    eval_result = evaluate_utterance(
+        wav_path=wav_path,
+        alignment_mode="cached_dtw",
+        cache_path=generated_prefix,
+        scoring_config_path=scoring_config_path,
+        profile=False,
+    )
+    result = eval_result.to_dict()
+    result["details"]["mode"] = "kanade_voice_reference"
+    result["details"]["reference_warning"] = "kanade_voice_conditioned_pseudo_reference_not_native_reference"
+    result["details"]["speaker_reference_audio"] = str(speaker_path)
+    result["details"]["kanade_model_id"] = model_id
+    return result
+
+
 def evaluate_mode(
     mode: str,
     wav_path: str | Path,
@@ -96,6 +155,14 @@ def evaluate_mode(
         if cache_path is None:
             raise ValueError("asr_pseudo_reference mode requires a base cache for sample rate/config context")
         return evaluate_asr_pseudo_reference(
+            wav_path,
+            base_cache_path=cache_path,
+            scoring_config_path=scoring_config_path,
+        )
+    if mode in {"kanade_voice_reference", "voice_conditioned_reference"}:
+        if cache_path is None:
+            raise ValueError("kanade_voice_reference mode requires a base cache for target text.")
+        return evaluate_kanade_voice_reference(
             wav_path,
             base_cache_path=cache_path,
             scoring_config_path=scoring_config_path,

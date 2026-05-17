@@ -11,6 +11,7 @@ __pycache__/
 
 # Virtual environments and local installs
 .venv/
+.venv-kanade/
 venv/
 env/
 *.egg-info/

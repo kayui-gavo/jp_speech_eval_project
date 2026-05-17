@@ -569,6 +569,7 @@
             <span>Evaluation mode</span>
             <select id="evalMode">
               <option value="reference">Reference fixed sentence</option>
+              <option value="kanade_voice_reference">Kanade voice reference experimental</option>
               <option value="asr_pseudo_reference">ASR pseudo-reference</option>
               <option value="transcript_assisted_light">Transcript-assisted light</option>
               <option value="acoustic">Acoustic only experimental</option>
@@ -769,7 +770,17 @@
       state.activeReference = null;
       $("referenceAudio").removeAttribute("src");
       $("referenceAudio").load();
-      if (mode === "asr_pseudo_reference") {
+      if (mode === "kanade_voice_reference") {
+        $("cachePath").textContent = state.config?.cache_prefix || "fixed target";
+        $("referenceLabel").textContent = "Voice-conditioned reference after scoring";
+        renderPrompt({
+          target_text: state.config?.target_text,
+          kana: state.config?.kana,
+          moras: state.config?.moras,
+          target_pitch: state.config?.target_pitch
+        });
+        $("pitchSummary").textContent = "Voice-conditioned contour after scoring";
+      } else if (mode === "asr_pseudo_reference") {
         $("cachePath").textContent = "Waiting for ASR";
         $("referenceLabel").textContent = "Generated reference after scoring";
         renderPrompt({
@@ -821,6 +832,10 @@
         const method = payload.reference?.ref_boundary_method || "generated";
         $("referenceLabel").textContent = `Generated reference from ASR (${method})`;
         $("cacheLabel").textContent = asrText;
+      } else if (mode === "kanade_voice_reference") {
+        const method = payload.reference?.ref_boundary_method || "generated";
+        $("cachePath").textContent = "Voice-conditioned pseudo-reference";
+        $("referenceLabel").textContent = `Kanade reference (${method})`;
       } else if (mode === "transcript_assisted_light") {
         const asrText = result.details?.asr?.text || result.target_text || "Transcript-assisted diagnosis";
         $("cachePath").textContent = "Transcript-assisted light";
@@ -853,12 +868,13 @@
       const mode = currentMode();
       const hints = {
         reference: "uses target + reference",
+        kanade_voice_reference: "same target + your voice timbre",
         asr_pseudo_reference: "ASR transcript + generated reference",
         transcript_assisted_light: "ASR transcript + acoustic proxy",
         acoustic: "fast: no ASR, risk proxy only"
       };
       $("modeHint").textContent = hints[mode] || mode;
-      $("modeHint").className = mode === "reference" ? "pill good" : mode === "asr_pseudo_reference" || mode === "transcript_assisted_light" ? "pill warn" : "pill";
+      $("modeHint").className = mode === "reference" ? "pill good" : mode === "kanade_voice_reference" || mode === "asr_pseudo_reference" || mode === "transcript_assisted_light" ? "pill warn" : "pill";
     }
 
     function renderScores(result) {
@@ -1290,6 +1306,7 @@
 
     async function init() {
       const config = await fetch("/api/config").then((r) => r.json());
+      if (config.eval_mode) $("evalMode").value = config.eval_mode;
       renderConfig(config);
       $("sampleBtn").onclick = async () => {
         setBusy(true, "Sample");

@@ -22,7 +22,7 @@ from jp_speech_eval.audio_features import load_audio
 from jp_speech_eval.audio_features import median_f0_by_mora
 from jp_speech_eval.acoustic_evaluator import evaluate_reference_free_acoustic
 from jp_speech_eval.config import load_scoring_config
-from jp_speech_eval.eval_modes import evaluate_asr_pseudo_reference, evaluate_mode
+from jp_speech_eval.eval_modes import evaluate_asr_pseudo_reference, evaluate_kanade_voice_reference, evaluate_mode
 from jp_speech_eval.evaluation_log import append_jsonl, export_feature_table
 from jp_speech_eval.evaluator import evaluate_utterance
 from jp_speech_eval.realtime_evaluator import RealtimeEvaluator
@@ -62,6 +62,7 @@ def _reference_payload(cache_prefix: Path) -> Dict[str, Any]:
         "target_pitch": cache.meta.target_pitch,
         "pitch_target_source": cache.meta.pitch_target_source,
         "reference_text": cache.meta.reference_text,
+        "reference_source": cache.meta.reference_source,
         "ref_boundary_method": cache.meta.ref_boundary_method,
         "ref_duration_sec": cache.meta.ref_duration_sec,
         "ref_mora_boundaries": cache.meta.ref_mora_boundaries,
@@ -126,6 +127,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "target_pitch": cache.meta.target_pitch,
                 "pitch_target_source": cache.meta.pitch_target_source,
                 "cache_prefix": str(cache.prefix),
+                "eval_mode": self.server.eval_mode,  # type: ignore[attr-defined]
                 "sample_wav": str(self.server.sample_wav.relative_to(ROOT)),  # type: ignore[attr-defined]
                 "chunk_ms": self.server.chunk_ms,  # type: ignore[attr-defined]
                 "log_jsonl": str(self.server.log_jsonl.relative_to(ROOT)),  # type: ignore[attr-defined]
@@ -225,6 +227,18 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 else:
                     reference = None
                     reference_audio_url = None
+                realtime = []
+            elif mode == "kanade_voice_reference":
+                result = evaluate_kanade_voice_reference(
+                    wav_path,
+                    base_cache_path=self.server.cache_prefix,  # type: ignore[attr-defined]
+                    scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
+                    generated_cache_dir=ROOT / "outputs" / "debug_ui" / "generated_refs",
+                )
+                generated_prefix = Path(result.get("cache_prefix", ""))
+                reference = _reference_payload(generated_prefix)
+                self.server.latest_reference_wav = generated_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
+                reference_audio_url = f"/api/latest-reference.wav?mode=kanade_voice_reference&cache={generated_prefix.name}"
                 realtime = []
             else:
                 eval_result = evaluate_utterance(
@@ -335,7 +349,11 @@ def main() -> None:
     parser.add_argument("--cache", default="cache/ramen_kudasai")
     parser.add_argument("--wav", default="data/ramen.wav", help="Sample wav used by the Try sample button")
     parser.add_argument("--alignment", default="cached_dtw", choices=["cached_dtw", "dtw", "equal"])
-    parser.add_argument("--mode", default="reference", choices=["reference", "asr_pseudo_reference", "acoustic", "transcript_assisted_light"])
+    parser.add_argument(
+        "--mode",
+        default="reference",
+        choices=["reference", "asr_pseudo_reference", "kanade_voice_reference", "acoustic", "transcript_assisted_light"],
+    )
     parser.add_argument("--config", default=None)
     parser.add_argument("--chunk-ms", type=float, default=20.0)
     parser.add_argument("--log-jsonl", default="outputs/debug_ui/eval_log.jsonl")
