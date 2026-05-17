@@ -54,6 +54,9 @@ def _build_dynamic_tts_cache(
     *,
     sr: int,
     generated_cache_dir: str | Path,
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
 ) -> Path:
     generated_prefix = generated_cache_prefix(text, root=generated_cache_dir)
     build_sentence_cache(
@@ -61,6 +64,9 @@ def _build_dynamic_tts_cache(
         generated_prefix,
         sr=sr,
         save_reference_wav=True,
+        tts_backend=tts_backend,
+        tts_backend_url=tts_backend_url,
+        tts_speaker=tts_speaker,
     )
     return generated_prefix
 
@@ -71,6 +77,9 @@ def evaluate_asr_pseudo_reference(
     base_cache_path: str | Path = "cache/ramen_kudasai",
     scoring_config_path: str | Path | None = None,
     generated_cache_dir: str | Path = "outputs/generated_refs",
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
 ) -> Dict[str, Any]:
     t_cache, transcript = _transcribe_for_dynamic_reference(
         wav_path,
@@ -87,6 +96,9 @@ def evaluate_asr_pseudo_reference(
         transcript.text,
         sr=t_cache.meta.sr,
         generated_cache_dir=generated_cache_dir,
+        tts_backend=tts_backend,
+        tts_backend_url=tts_backend_url,
+        tts_speaker=tts_speaker,
     )
     eval_result = evaluate_utterance(
         wav_path=wav_path,
@@ -111,6 +123,9 @@ def evaluate_kanade_voice_reference(
     scoring_config_path: str | Path | None = None,
     generated_cache_dir: str | Path = "outputs/generated_refs",
     model_id: str = "frothywater/kanade-25hz-clean",
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
 ) -> Dict[str, Any]:
     base_cache = load_sentence_cache(base_cache_path)
     speaker_path = Path(speaker_wav_path or wav_path)
@@ -160,6 +175,9 @@ def evaluate_kanade_asr_voice_reference(
     scoring_config_path: str | Path | None = None,
     generated_cache_dir: str | Path = "outputs/generated_refs",
     model_id: str = "frothywater/kanade-25hz-clean",
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
 ) -> Dict[str, Any]:
     base_cache, transcript = _transcribe_for_dynamic_reference(
         wav_path,
@@ -176,6 +194,9 @@ def evaluate_kanade_asr_voice_reference(
         transcript.text,
         sr=base_cache.meta.sr,
         generated_cache_dir=generated_cache_dir,
+        tts_backend=tts_backend,
+        tts_backend_url=tts_backend_url,
+        tts_speaker=tts_speaker,
     )
     scoring_cache = load_sentence_cache(scoring_prefix)
     eval_result = evaluate_utterance(
@@ -231,6 +252,9 @@ def evaluate_mode(
     transcript: Optional[str] = None,
     scoring_config_path: str | Path | None = None,
     sample_rate: int = 16000,
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
 ) -> Dict[str, Any]:
     mode = mode.strip()
     if mode in {"reference", "reference_based", "reference_fixed_sentence"}:
@@ -256,6 +280,9 @@ def evaluate_mode(
             wav_path,
             base_cache_path=cache_path,
             scoring_config_path=scoring_config_path,
+            tts_backend=tts_backend,
+            tts_backend_url=tts_backend_url,
+            tts_speaker=tts_speaker,
         )
     if mode in {"kanade_voice_reference", "voice_conditioned_reference"}:
         if cache_path is None:
@@ -264,6 +291,9 @@ def evaluate_mode(
             wav_path,
             base_cache_path=cache_path,
             scoring_config_path=scoring_config_path,
+            tts_backend=tts_backend,
+            tts_backend_url=tts_backend_url,
+            tts_speaker=tts_speaker,
         )
     if mode in {"kanade_asr_voice_reference", "voice_conditioned_asr_reference"}:
         if cache_path is None:
@@ -272,6 +302,9 @@ def evaluate_mode(
             wav_path,
             base_cache_path=cache_path,
             scoring_config_path=scoring_config_path,
+            tts_backend=tts_backend,
+            tts_backend_url=tts_backend_url,
+            tts_speaker=tts_speaker,
         )
     if mode in {"transcript_assisted", "transcript_assisted_light"}:
         return evaluate_transcript_assisted_light(

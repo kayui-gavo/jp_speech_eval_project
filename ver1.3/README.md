@@ -120,6 +120,49 @@ cache/ramen_kudasai.npz
 cache/ramen_kudasai.ref.wav   # optional
 ```
 
+The default `pyopenjtalk` reference backend is intentionally lightweight, not a
+naturalness target. For a more realistic Japanese pseudo-reference, use a
+VOICEVOX-compatible engine such as AivisSpeech or VOICEVOX:
+
+```bash
+# AivisSpeech example: engine already running on 127.0.0.1:10101
+python scripts/prepare_cache.py \
+  --text "ラーメンをください" \
+  --out cache/ramen_aivis \
+  --tts-backend aivis_http \
+  --tts-url http://127.0.0.1:10101 \
+  --tts-speaker 888753760 \
+  --save-ref-wav
+```
+
+Use the same backend for dynamic ASR-generated references in the debug UI:
+
+```bash
+python scripts/debug_ui.py \
+  --mode asr_pseudo_reference \
+  --tts-backend aivis_http \
+  --tts-url http://127.0.0.1:10101 \
+  --tts-speaker 888753760
+```
+
+Generate side-by-side audition samples before choosing a backend:
+
+```bash
+python scripts/audition_tts_backends.py \
+  --backend pyopenjtalk \
+  --backend aivis_http \
+  --tts-url '' \
+  --tts-url http://127.0.0.1:10101 \
+  --tts-speaker 0 \
+  --tts-speaker 888753760
+```
+
+List available engine voices/styles before choosing a speaker id:
+
+```bash
+python scripts/list_tts_speakers.py --tts-url http://127.0.0.1:10101
+```
+
 If you already generated a same-text pseudo-reference outside this package, you
 can cache it without changing the evaluator:
 
@@ -158,6 +201,9 @@ currently playback-only because its Japanese articulation still needs validation
 it is not used as the scoring reference. The Kanade worker lives in
 `../.venv-kanade` because the upstream package currently requires Python 3.12
 while the main project keeps its existing Python 3.11 environment.
+When a stronger TTS backend is available, pass the same `--tts-*` options above
+to seed both scoring and Kanade playback from that backend instead of the default
+OpenJTalk voice.
 
 The slow work is done here, not during realtime use.
 

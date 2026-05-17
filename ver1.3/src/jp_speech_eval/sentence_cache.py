@@ -11,6 +11,7 @@ import numpy as np
 
 from .audio_features import extract_f0, load_audio, trim_silence
 from .text_frontend import TextInfo, build_text_info
+from .tts_backends import synthesize_reference
 
 
 @dataclass(frozen=True)
@@ -56,24 +57,22 @@ def safe_cache_prefix(text: str, cache_dir: str | Path = "cache") -> Path:
     return Path(cache_dir) / f"{short}_{digest}"
 
 
-def tts_reference(text: str, sr: int = 16000) -> np.ndarray:
-    """Generate trimmed normalized reference speech using pyopenjtalk.tts."""
-    import pyopenjtalk
-
-    out = pyopenjtalk.tts(text)
-    if isinstance(out, tuple):
-        wav, tts_sr = out
-    else:
-        wav, tts_sr = out, 48000
-    wav = np.asarray(wav, dtype=np.float64)
-    if wav.ndim > 1:
-        wav = wav.mean(axis=1)
-    if np.max(np.abs(wav)) > 0:
-        wav = wav / (np.max(np.abs(wav)) + 1e-9)
-    if int(tts_sr) != sr:
-        wav = librosa.resample(wav, orig_sr=int(tts_sr), target_sr=sr)
-    wav, _ = trim_silence(wav, top_db=30.0)
-    return wav.astype(np.float64)
+def tts_reference(
+    text: str,
+    sr: int = 16000,
+    *,
+    backend: str = "pyopenjtalk",
+    backend_url: str | None = None,
+    speaker: int | None = None,
+) -> np.ndarray:
+    """Generate trimmed normalized reference speech through the selected TTS backend."""
+    return synthesize_reference(
+        text,
+        sr=sr,
+        backend=backend,
+        base_url=backend_url,
+        speaker=speaker,
+    ).y
 
 
 def _mfcc(y: np.ndarray, sr: int, hop: int = 160, n_fft: int = 512, n_mfcc: int = 13) -> np.ndarray:
@@ -144,19 +143,29 @@ def _tts_chunks(text: str) -> List[str]:
     return chunks or [text]
 
 
-def chunked_tts_reference(text: str, sr: int = 16000) -> Tuple[np.ndarray, List[Tuple[float, float]], str, str]:
+def chunked_tts_reference(
+    text: str,
+    sr: int = 16000,
+    *,
+    backend: str = "pyopenjtalk",
+    backend_url: str | None = None,
+    speaker: int | None = None,
+) -> Tuple[np.ndarray, List[Tuple[float, float]], str, str, str]:
     chunks = _tts_chunks(text)
     if len(chunks) <= 1:
-        y = tts_reference(text, sr=sr)
+        synth = synthesize_reference(text, sr=sr, backend=backend, base_url=backend_url, speaker=speaker)
         mora_count = len(build_text_info(text).moras)
-        return y, _equal_boundaries(len(y) / sr, mora_count), text, "equal_mora"
+        return synth.y, _equal_boundaries(len(synth.y) / sr, mora_count), text, "equal_mora", synth.source
 
     pieces: List[np.ndarray] = []
     boundaries: List[Tuple[float, float]] = []
     offset = 0.0
     gap = np.zeros(int(round(sr * 0.12)), dtype=np.float64)
+    source = None
     for idx, chunk in enumerate(chunks):
-        y = tts_reference(chunk, sr=sr)
+        synth = synthesize_reference(chunk, sr=sr, backend=backend, base_url=backend_url, speaker=speaker)
+        y = synth.y
+        source = synth.source
         chunk_moras = build_text_info(chunk).moras
         duration = len(y) / sr
         for start, end in _equal_boundaries(duration, len(chunk_moras)):
@@ -167,7 +176,7 @@ def chunked_tts_reference(text: str, sr: int = 16000) -> Tuple[np.ndarray, List[
             pieces.append(gap)
             offset += len(gap) / sr
 
-    return np.concatenate(pieces), boundaries, "、".join(chunks), "chunked_equal_mora"
+    return np.concatenate(pieces), boundaries, "、".join(chunks), "chunked_equal_mora", source or "unknown_tts_pseudo_reference"
 
 
 def build_sentence_cache(
@@ -177,13 +186,16 @@ def build_sentence_cache(
     save_reference_wav: bool = False,
     reference_wav_path: str | Path | None = None,
     reference_source: str | None = None,
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
 ) -> SentenceCache:
     """
     Build and save cache for a target sentence.
 
     Slow work done here:
-    - OpenJTalk frontend
-    - TTS reference waveform
+    - Japanese text frontend
+    - pseudo-reference waveform
     - reference MFCC
     - reference F0
     """
@@ -203,8 +215,14 @@ def build_sentence_cache(
         boundary_method = "external_equal_mora"
         reference_source_name = reference_source or "external_reference_wav"
     else:
-        ref_y, ref_boundaries, reference_text, boundary_method = chunked_tts_reference(text, sr=sr)
-        reference_source_name = reference_source or "pyopenjtalk_tts_pseudo_reference"
+        ref_y, ref_boundaries, reference_text, boundary_method, generated_source = chunked_tts_reference(
+            text,
+            sr=sr,
+            backend=tts_backend,
+            backend_url=tts_backend_url,
+            speaker=tts_speaker,
+        )
+        reference_source_name = reference_source or generated_source
     ref_duration = len(ref_y) / sr
     if len(ref_boundaries) != len(text_info.moras):
         ref_boundaries = _equal_boundaries(ref_duration, len(text_info.moras))

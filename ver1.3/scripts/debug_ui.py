@@ -222,6 +222,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                     base_cache_path=self.server.cache_prefix,  # type: ignore[attr-defined]
                     scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
                     generated_cache_dir=ROOT / "outputs" / "debug_ui" / "generated_refs",
+                    tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
+                    tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
+                    tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
                 )
                 asr_text = result.get("details", {}).get("asr", {}).get("text", "")
                 if result.get("details", {}).get("mode") == "asr_pseudo_reference" and asr_text:
@@ -251,6 +254,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                     base_cache_path=self.server.cache_prefix,  # type: ignore[attr-defined]
                     scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
                     generated_cache_dir=ROOT / "outputs" / "debug_ui" / "generated_refs",
+                    tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
+                    tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
+                    tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
                 )
                 asr_text = result.get("details", {}).get("asr", {}).get("text", "")
                 scoring_prefix = Path(result.get("cache_prefix", ""))
@@ -318,6 +324,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                     self.server.sample_wav,  # type: ignore[attr-defined]
                     cache_path=self.server.cache_prefix if mode in {"reference", "asr_pseudo_reference"} else None,  # type: ignore[attr-defined]
                     scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
+                    tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
+                    tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
+                    tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
                 )
                 unified = unify_evaluation_result(
                     result,
@@ -388,6 +397,9 @@ def main() -> None:
         ],
     )
     parser.add_argument("--config", default=None)
+    parser.add_argument("--tts-backend", default="pyopenjtalk", help="pyopenjtalk, voicevox_http, or aivis_http for generated references")
+    parser.add_argument("--tts-url", default=None)
+    parser.add_argument("--tts-speaker", type=int, default=None)
     parser.add_argument("--chunk-ms", type=float, default=20.0)
     parser.add_argument("--log-jsonl", default="outputs/debug_ui/eval_log.jsonl")
     parser.add_argument("--feature-csv", default="outputs/debug_ui/features.csv")
@@ -399,6 +411,9 @@ def main() -> None:
     server.alignment_mode = args.alignment
     server.eval_mode = args.mode
     server.config_path = args.config
+    server.tts_backend = args.tts_backend
+    server.tts_url = args.tts_url
+    server.tts_speaker = args.tts_speaker
     server.chunk_ms = float(args.chunk_ms)
     server.log_jsonl = (ROOT / args.log_jsonl).resolve() if not Path(args.log_jsonl).is_absolute() else Path(args.log_jsonl)
     server.feature_csv = (ROOT / args.feature_csv).resolve() if not Path(args.feature_csv).is_absolute() else Path(args.feature_csv)

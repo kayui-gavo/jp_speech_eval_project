@@ -22,6 +22,9 @@ def main() -> None:
         default=None,
         help="Optional provenance label stored in cache metadata, e.g. kanade_voice_conditioned_pseudo_reference.",
     )
+    parser.add_argument("--tts-backend", default="pyopenjtalk", help="pyopenjtalk, voicevox_http, or aivis_http")
+    parser.add_argument("--tts-url", default=None, help="Optional backend base URL, e.g. http://127.0.0.1:10101")
+    parser.add_argument("--tts-speaker", type=int, default=None, help="VOICEVOX speaker id or AivisSpeech style id")
     args = parser.parse_args()
 
     out = Path(args.out) if args.out else safe_cache_prefix(args.text)
@@ -32,6 +35,9 @@ def main() -> None:
         save_reference_wav=args.save_ref_wav,
         reference_wav_path=args.reference_wav,
         reference_source=args.reference_source,
+        tts_backend=args.tts_backend,
+        tts_backend_url=args.tts_url,
+        tts_speaker=args.tts_speaker,
     )
     print("Prepared sentence cache")
     print(cache_summary(cache))
