@@ -1,12 +1,13 @@
-# 给开发队友看的 5 分钟演示指南
+# Demo 使用指南
 
-## 演示目标
+## 目标
 
-不要把它讲成“我已经做出了最终自动评分器”。
+该 demo 用于展示一个研究型日语语音评价原型。系统当前重点是：
 
-更准确的说法是：
-
-> 我现在把系统推进到了一个更科学的研究原型：它开始按日语 mora / accent phrase 处理韵律，能区分发音、流利度和表达风格，并且在证据不足时会主动降级，而不是乱给强反馈。
+- 按日语的 `mora` / `accent phrase` 结构处理韵律
+- 区分发音、流利度和表达风格
+- 在证据不足时通过 reliability gate 降级
+- 明确区分 pseudo-reference、ASR transcript 与 ground truth
 
 ## 演示前准备
 
@@ -29,9 +30,9 @@ http://127.0.0.1:8765/
 
 如果只是快速展示固定句模式，也可以直接用默认启动命令。
 
-## 现场顺序
+## 推荐演示顺序
 
-### 1. 先讲“分析单位变了”
+### 1. 查看日语分析单位
 
 打开固定句：
 
@@ -39,70 +40,48 @@ http://127.0.0.1:8765/
 ラーメンをください
 ```
 
-可以说：
-
-- 旧思路容易把它当成普通音节串
-- 现在系统按 mora 看
+- 系统按 mora 分析，而不是按英语式音节分析
 - 长音 `ー`、撥音 `ン` 这类特殊拍会进入时长和节奏分析
 - 目标韵律不再只是孤立词拼接，而会考虑 accent phrase
 
-### 2. 展示 realtime 只做轻反馈
+### 2. 查看 realtime 轻反馈
 
-录音时让队友看实时状态：
+录音时可观察：
 
 - 是否已经开始说话
 - 音量是否太弱
 - 是否有明显停顿
 - F0 是否在运动
 
-可以强调：
+realtime 层只提供低风险反馈；完整判断在句末评估阶段完成。
 
-> 这里故意不做最终发音判定。实时层只做低风险反馈，句末再做完整分析。
+### 3. 查看句末输出和 reliability gate
 
-### 3. 展示句末输出和 reliability gate
-
-录完后重点看：
+录音完成后，可查看：
 
 - pronunciation / prosody / fluency / tone proxy
 - reliability
 - warnings
 - mora evidence
 
-建议你现场指出：
-
 - 录音质量不好时，系统会先降可靠性
 - F0 coverage 不足时，不会假装自己能稳定判断音调
 - equal-time fallback 时，系统会抑制强反馈
 
-这一步最能体现你这段时间的研究不是“加指标”，而是在修正评价逻辑。
-
-### 4. 展示 ASR 不是 ground truth
-
-可以讲你已经遇到的真实例子：
-
-```text
-我说：私は東京大学の1年生です
-ASR 可能听成：私は東京大学 終始家庭の1年生です
-```
-
-然后解释：
+### 4. 查看 ASR 相关模式的限制
 
 - ASR 只能作为 transcript hypothesis
 - `asr_pseudo_reference` 模式的 reference 也是基于 ASR 假设生成
 - 如果 transcript 本身错了，后面的语义和伪参考都会被带歪
 - 所以系统明确把它叫 pseudo-reference，并保留 reliability / warning
 
-这比假装“识别出来的就是用户真实说的”更靠谱。
+### 5. 查看后续研究方向
 
-### 5. 最后讲下一步
+1. 使用 JANON-SPEECH 与后续数据做阈值校准
+2. 补充更可靠的 accent target 与 segmental evidence
+3. 用教师标注验证规则特征与人类评分之间的相关性
 
-建议只讲三件事：
-
-1. 用 JANON-SPEECH 和后续数据做校准，不再只靠手调阈值
-2. 补更可靠的 accent target 与 segmental evidence
-3. 用教师标注验证哪些规则真的提高了人类评分相关性
-
-## 建议现场准备的三个样例
+## 推荐样例
 
 ### 样例 A：标准固定句
 
@@ -110,7 +89,7 @@ ASR 可能听成：私は東京大学 終始家庭の1年生です
 ラーメンをください
 ```
 
-用途：
+可用于：
 
 - 展示 mora
 - 展示 contour
@@ -122,37 +101,29 @@ ASR 可能听成：私は東京大学 終始家庭の1年生です
 切符を買って待っています
 ```
 
-用途：
+可用于：
 
 - 展示促音、长音、鼻音这类时间结构
 - 说明为什么只看“整体像不像”不够
 
-### 样例 C：ASR 容易误解的自由句
+### 样例 C：自由发话模式
 
 ```text
 私は東京大学の1年生です
 ```
 
-用途：
+可用于：
 
 - 展示 ASR transcript 不是 ground truth
 - 说明为什么自由说话模式必须更保守
 
-## 你可以直接说的三句话
+## 相关文档
 
-1. “我现在最重视的不是多打几个分，而是让每个分数知道自己凭什么成立。”
-2. “日语这里我已经从孤立词重音，推进到句子级 accent phrase 和 mora 结构了。”
-3. “目前这些还是 proxy，不是已经被教师标注验证过的最终评分器；下一步重点就是做校准和消融。”
-
-## 如果队友想往下看
-
-先让他们看：
-
-- [`research_progress_zh.md`](research_progress_zh.md)
+- [`research_overview_zh.md`](research_overview_zh.md)
 - [`../ver1.3/docs/theory_basis.md`](../ver1.3/docs/theory_basis.md)
 - [`../ver1.3/docs/evaluation_infrastructure.md`](../ver1.3/docs/evaluation_infrastructure.md)
 
-如果他们想直接看实现，再去看：
+## 相关实现
 
 - [`../ver1.3/src/jp_speech_eval/text_frontend.py`](../ver1.3/src/jp_speech_eval/text_frontend.py)
 - [`../ver1.3/src/jp_speech_eval/mora_evidence.py`](../ver1.3/src/jp_speech_eval/mora_evidence.py)

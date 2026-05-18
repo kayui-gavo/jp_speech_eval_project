@@ -9,10 +9,10 @@ Public demo:
 https://kayui-gavo-jp-speech-eval-demo.hf.space/
 ```
 
-For a teammate-facing snapshot of the current research progress, start with:
+For a concise overview of the current research direction and demo workflow:
 
-- [Chinese research progress note](docs/research_progress_zh.md)
-- [Chinese 5-minute demo guide](docs/team_demo_guide_zh.md)
+- [Chinese research overview](docs/research_overview_zh.md)
+- [Chinese demo guide](docs/demo_guide_zh.md)
 
 The project focuses on lightweight, inspectable evaluation rather than opaque
 end-to-end scoring. Current capabilities include:
