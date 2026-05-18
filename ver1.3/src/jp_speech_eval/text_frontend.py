@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+from .verified_targets import lookup_verified_target
+
 SMALL_KANA = set("ァィゥェォャュョヮぁぃぅぇぉゃゅょゎ")
 PUNCT = set("、。！？!?,.・「」『』（）()[]【】 　\n\t'’")
 
@@ -199,6 +201,23 @@ class TextInfo:
 
 
 def build_text_info(text: str) -> TextInfo:
+    verified = lookup_verified_target(text)
+    if verified:
+        kana = kata_normalize(str(verified.get("kana") or text_to_kana(text)))
+        moras = list(verified.get("moras") or split_mora(kana))
+        target_pitch = [str(label).upper() for label in verified.get("target_pitch") or []]
+        accent_phrases = list(verified.get("accent_phrases") or [])
+        if len(target_pitch) == len(moras) and all(label in {"H", "L"} for label in target_pitch):
+            return TextInfo(
+                text=text,
+                kana=kana,
+                moras=moras,
+                target_pitch=target_pitch,
+                pitch_target_source=str(verified.get("pitch_target_source") or "verified"),
+                is_question=is_question_sentence(text, kana),
+                accent_phrases=accent_phrases,
+            )
+
     kana = text_to_kana(text)
     moras = split_mora(kana)
     target_pitch, pitch_target_source, accent_phrases = phrase_aware_target_pitch_pattern(text, moras)

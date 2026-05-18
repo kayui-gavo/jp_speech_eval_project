@@ -34,6 +34,13 @@ Transition agreement is weighted by accent-phrase role: accent-nucleus drops and
 phrase-initial rises matter more, while phrase-boundary transitions are judged
 more softly.
 
+Verified target note: exact-text overrides in
+`configs/verified_accent_targets.json` take priority over automatic OpenJTalk
+targets. This is the intended integration point for OJAD-reviewed / manually
+verified pitch targets. An `ojad_verified` target is treated as stronger
+evidence than an automatic frontend hypothesis; it does not turn a TTS waveform
+into ground truth.
+
 Evidence-gate note: when mora alignment falls back to equal-time segmentation,
 too few morae have acoustic evidence, F0 coverage is low, or overall reliability
 is below stable-evaluation range, pronunciation/prosody/total scores are capped.
@@ -97,6 +104,23 @@ Expected output includes:
 Kana: ラーメンヲクダサイ
 Mora: ラ・ー・メ・ン・ヲ・ク・ダ・サ・イ
 ```
+
+To register an OJAD-reviewed sentence target after manual verification:
+
+```bash
+python scripts/import_verified_target.py \
+  --text "<exact sentence text>" \
+  --kana "<verified katakana reading>" \
+  --target-pitch "<one reviewed H/L label per mora>" \
+  --source ojad_verified \
+  --phrase-lengths "<comma-separated mora counts per accent phrase>" \
+  --accent-positions "<comma-separated accent positions>" \
+  --note "Checked against OJAD Suzuki-kun on YYYY-MM-DD"
+```
+
+Exact-text matches in `configs/verified_accent_targets.json` are used before
+OpenJTalk fallback. Keep the source label honest: use `ojad_verified` only after
+human review, because OJAD sentence analysis is still automatic.
 
 ---
 

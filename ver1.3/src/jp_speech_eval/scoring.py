@@ -450,7 +450,7 @@ def score_prosody(
     heuristic_hl_match = float(np.mean([
         reference_pattern[i] == target_pattern[i] for i in heuristic_hl_valid
     ])) if heuristic_hl_valid else 0.0
-    if hl_target_source in {"dictionary", "manual"}:
+    if hl_target_source in {"dictionary", "manual", "ojad_verified"}:
         pitch_target_consistency = "trusted"
     elif hl_target_source.startswith("openjtalk"):
         if heuristic_hl_match >= 0.70 and heuristic_dir_match >= 0.55:
@@ -479,7 +479,7 @@ def score_prosody(
     dynamics = _prosody_dynamics(z, ref_z)
 
     hl_match = float(np.mean([observed_pattern[i] == target_pattern[i] for i in valid_idx]))
-    if hl_target_source in {"dictionary", "manual"}:
+    if hl_target_source in {"dictionary", "manual", "ojad_verified"}:
         hl_weight = 0.20
     elif pitch_target_consistency in {"high", "medium", "tool_generated_high", "tool_generated_medium"}:
         hl_weight = 0.08
@@ -553,7 +553,7 @@ def score_prosody(
     elif final_intonation_match is False:
         feedback.append("句末语调和示范音不太一致。")
 
-    trusted_hl = hl_target_source in {"dictionary", "manual"} or pitch_target_consistency in {"high", "medium"}
+    trusted_hl = hl_target_source in {"dictionary", "manual", "ojad_verified"} or pitch_target_consistency in {"high", "medium"}
     large_dev = []
     for i in valid_idx:
         if i >= len(ref_z) or not np.isfinite(ref_z[i]) or not np.isfinite(z[i]):

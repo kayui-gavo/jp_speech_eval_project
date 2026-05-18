@@ -278,10 +278,10 @@ def load_sentence_cache(prefix: str | Path) -> SentenceCache:
     target_pitch = list(raw["target_pitch"])
     pitch_target_source = str(raw.get("pitch_target_source", "heuristic"))
     accent_phrases = list(raw.get("accent_phrases", []))
-    if not accent_phrases or pitch_target_source == "heuristic":
+    if not accent_phrases or pitch_target_source == "heuristic" or pitch_target_source.startswith("openjtalk"):
         try:
             upgraded = build_text_info(str(raw["text"]))
-            if len(upgraded.moras) == len(raw["moras"]):
+            if len(upgraded.moras) == len(raw["moras"]) and upgraded.pitch_target_source != pitch_target_source:
                 target_pitch = upgraded.target_pitch
                 pitch_target_source = upgraded.pitch_target_source
                 accent_phrases = upgraded.accent_phrases
