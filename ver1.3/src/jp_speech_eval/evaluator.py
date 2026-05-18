@@ -134,6 +134,65 @@ def _score_to_level(score: float) -> str:
     return "low"
 
 
+def _dedupe(items: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in items:
+        text = str(item).strip()
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out
+
+
+def _build_learner_feedback(
+    *,
+    pronunciation_feedback: List[str],
+    prosody_feedback: List[str],
+    fluency_feedback: List[str],
+    tone_feedback: List[str],
+    reliability: Dict,
+    mora_evidence_summary: Dict,
+    content_match,
+    mora_count: int,
+) -> List[str]:
+    """Create short user-facing feedback; keep diagnostics in details instead."""
+    if content_match and content_match.status == "fail":
+        return ["我没能确认你读的是目标句。请看着句子再读一次。"]
+
+    feedback: List[str] = []
+    if content_match and content_match.status == "uncertain":
+        feedback.append("我不太确定这次是否读对了目标句，建议再试一次。")
+
+    avg_mora_duration = float(reliability.get("avg_mora_duration_sec", 1.0) or 1.0)
+    judgement_count = int(mora_evidence_summary.get("judgement_available_count", 0) or 0)
+    judgement_needed = max(3, int(mora_count * 0.55))
+    low_f0_coverage = float(reliability.get("f0_coverage", 0.0) or 0.0) < 0.50
+    if avg_mora_duration < 0.09:
+        feedback.append("你说得太快了。先放慢一点，把每个音说清楚。")
+    elif judgement_count < judgement_needed or str(reliability.get("level")) == "low":
+        feedback.append("这次录音里有些地方不够清楚，重录一次会更准。")
+    elif bool(reliability.get("score_is_diagnostic")):
+        feedback.append("这次结果只能作参考，建议再录一次确认。")
+    if low_f0_coverage:
+        feedback.append("这次录音里的音高信息不够清楚，重录一次会更准。")
+
+    # Put actionable issues before praise; keep the panel short enough to scan.
+    groups = [fluency_feedback]
+    if judgement_count >= judgement_needed and avg_mora_duration >= 0.09:
+        groups.append(pronunciation_feedback)
+    if not low_f0_coverage:
+        groups.append(prosody_feedback)
+    groups.append(tone_feedback)
+    for group in groups:
+        feedback.extend(group)
+
+    clean = _dedupe(feedback)
+    if not clean:
+        return ["整体听起来比较自然。"]
+    return clean[:5]
+
+
 def _build_reliability(
     endpointing: Dict,
     alignment_mode: str,
@@ -434,26 +493,17 @@ def evaluate_utterance(
             )
         )
 
-    feedback = pron_fb + prosody_fb + fluency_fb + tone_fb
-    if score_adjustments:
-        feedback = [f"证据门控：{msg}" for msg in score_adjustments] + feedback
-    if content_match and content_match.status == "fail":
-        feedback = [
-            "检测到这段录音和目标句的内容匹配度很低，因此不输出正常发音分数。请确认读的是「ラーメンをください」。",
-            "当前版本还没有真正的 ASR/假名识别；这里使用的是参考音频相似度 gate，详细假名识别需要后续接入 CTC/ASR/forced alignment。",
-        ]
-    elif content_match and content_match.status == "uncertain":
-        feedback = [
-            "这段录音和目标句的内容匹配不够确定，分数已降级为诊断结果；请确认读的是目标句。",
-        ] + feedback
-    if reliability["score_is_diagnostic"] and not (content_match and content_match.status == "fail"):
-        feedback = ["当前分析可靠性有限，分数更适合作为调试诊断，不建议直接当作学习者能力评价。"] + feedback
-    if mora_evidence_summary.get("judgement_available_count", 0) < max(3, int(len(text_info.moras) * 0.55)):
-        feedback = ["mora-level 证据不足，本次不适合输出强假名级纠错；建议放慢语速或重录。"] + feedback
-    if reliability.get("avg_mora_duration_sec", 1.0) < 0.09:
-        feedback = ["语速过快导致每拍时间太短，当前轻量级切分难以稳定比较假名和相对音高。"] + feedback
-    if not feedback:
-        feedback = ["整体比较自然。"]
+    technical_feedback = pron_fb + prosody_fb + fluency_fb + tone_fb
+    feedback = _build_learner_feedback(
+        pronunciation_feedback=pron_fb,
+        prosody_feedback=prosody_fb,
+        fluency_feedback=fluency_fb,
+        tone_feedback=tone_fb,
+        reliability=reliability,
+        mora_evidence_summary=mora_evidence_summary,
+        content_match=content_match,
+        mora_count=len(text_info.moras),
+    )
 
     prosody_metrics = {
         "contour_corr": prosody_details.get("contour_corr"),
@@ -493,6 +543,10 @@ def evaluate_utterance(
                 "note": "no_sentence_cache_available_for_content_match",
             },
             "reliability": reliability,
+            "technical_feedback": {
+                "score_adjustments": score_adjustments,
+                "raw_feedback": technical_feedback,
+            },
             "recording_quality": recording_quality,
             "mora_evidence": mora_evidence,
             "mora_evidence_summary": mora_evidence_summary,

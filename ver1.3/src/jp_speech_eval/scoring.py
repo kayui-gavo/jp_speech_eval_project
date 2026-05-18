@@ -43,10 +43,10 @@ def score_fluency(
         feedback.append("语速稍快，可能影响清晰度。")
     elif fast < speech_rate <= very_fast:
         rate_score = 55.0 - (speech_rate - fast) / max(very_fast - fast, 1e-6) * 25.0
-        feedback.append("语速明显偏快，当前轻量级对齐可能无法稳定切分每个 mora。")
+        feedback.append("语速明显偏快，容易让人听不清。")
     else:
         rate_score = 25.0
-        feedback.append("语速偏离自然范围较多，结果更适合作为调试诊断。")
+        feedback.append("语速和自然说话差得有些多。")
 
     pause_ratio = float(pause_info.get("pause_ratio", 0.0))
     pause_count = int(pause_info.get("pause_count", 0))
@@ -98,10 +98,10 @@ def score_pronunciation_rhythm(
     for m, d in zip(moras, durations):
         if m in ["ー", "ン", "ッ"] and d < special_short_ratio * avg:
             special_penalty += float(c["special_mora_penalty"])
-            feedback.append(f"「{m}」这一拍可能太短。")
+            feedback.append(f"「{m}」这个音可能太短。")
 
     if cv > float(c["rhythm_cv_warning"]):
-        feedback.append("mora 节奏不太稳定，可能有拖音或卡顿。")
+        feedback.append("节奏不太稳定，可能有拖音或卡顿。")
 
     details = {
         "dimension_label": "core_pronunciation_related_proxy",
@@ -382,7 +382,7 @@ def score_prosody(
         }
     min_reliable = max(3, int(np.ceil(len(moras) * 0.5)))
     if len(valid_idx) < min_reliable or len(contour_valid_idx) < min_reliable:
-        return 50, [f"只有 {len(valid_idx)}/{len(moras)} 个 mora 有可靠 F0，语调评分可靠性较低，可能是切分或 F0 提取不足。"], {
+        return 50, ["这次录音里的音高信息不够清楚，建议再录一次。"], {
             "dimension_label": "core_pronunciation_related_prosody",
             "observed_pitch": observed_pattern,
             "reference_pitch": reference_pattern,
@@ -512,29 +512,27 @@ def score_prosody(
     )
 
     if contour_corr >= 0.70 and transition_agreement >= 0.60:
-        feedback.append("整体音高轮廓接近参考音。")
+        feedback.append("整体音高和示范音比较接近。")
     elif contour_corr >= 0.45:
-        feedback.append("整体音高走向有接近参考的部分，但还有一些起伏差异。")
+        feedback.append("整体音高有接近示范音的地方，但还有一些起伏差异。")
     else:
-        feedback.append("整体音高轮廓和参考音差异较明显。")
+        feedback.append("整体音高和示范音差得比较明显。")
 
     if dynamics.get("available"):
         slope_corr = dynamics.get("slope_corr")
         best_lag = int(dynamics.get("best_lag_mora", 0) or 0)
-        if isinstance(slope_corr, (int, float)) and slope_corr >= 0.60:
-            feedback.append("诊断参考：音高上升/下降的动态走势和参考比较接近。")
-        elif isinstance(slope_corr, (int, float)) and slope_corr < 0.20:
-            feedback.append("诊断参考：音高上升/下降的动态走势和参考不太一致。")
+        if isinstance(slope_corr, (int, float)) and slope_corr < 0.20:
+            feedback.append("音高起伏的走向和示范音不太一致。")
         if best_lag:
-            feedback.append("诊断参考：音高变化的时机和参考略有错位。")
+            feedback.append("有些音高变化出现得稍早或稍晚。")
         if float(dynamics.get("overshoot_ratio", 0.0) or 0.0) >= 0.34:
-            feedback.append("诊断参考：部分音高变化幅度偏大，可能有过冲或夸张。")
+            feedback.append("有些音高变化幅度偏大，听起来可能有点用力。")
 
     early_valid = [i for i in range(min(3, len(reference_dir), len(observed_dir))) if reference_dir[i] != "?" and observed_dir[i] != "?"]
     if early_valid:
         early_match = float(np.mean([_direction_match(reference_dir[i], observed_dir[i]) for i in early_valid]))
         if early_match >= 0.67:
-            feedback.append("前半部分的音高起伏比较自然。")
+            feedback.append("前半句的音高起伏比较自然。")
 
     lift_indices = [i for i, d in enumerate(reference_dir) if d == "↑" and i < len(observed_dir)]
     weak_lifts = [
@@ -543,17 +541,17 @@ def score_prosody(
     ]
     if weak_lifts:
         i = weak_lifts[0]
-        feedback.append(f"参考音在「{moras[i]}〜{moras[i + 1]}」附近有更明显的上扬，你的上扬可以再清楚一点。")
+        feedback.append(f"在「{moras[i]}〜{moras[i + 1]}」附近，音高可以再抬清楚一点。")
 
     if accent_drop_agreement is not None and accent_drop_agreement < 0.5:
         drop_i = accent_drop_indices[0]
         if drop_i + 1 < len(moras):
-            feedback.append(f"重音核后的下降在「{moras[drop_i]}〜{moras[drop_i + 1]}」附近不够明显。")
+            feedback.append(f"在「{moras[drop_i]}〜{moras[drop_i + 1]}」附近，音高下降还不够明显。")
 
     if final_intonation_match is True:
-        feedback.append("句末语调接近参考音。")
+        feedback.append("句末语调和示范音比较接近。")
     elif final_intonation_match is False:
-        feedback.append("句末语调和参考音不太一致。")
+        feedback.append("句末语调和示范音不太一致。")
 
     trusted_hl = hl_target_source in {"dictionary", "manual"} or pitch_target_consistency in {"high", "medium"}
     large_dev = []
@@ -568,7 +566,7 @@ def score_prosody(
                 f"第 {i + 1} 拍「{moras[i]}」的音高和目标差异较大，可以单独确认。"
             )
     elif pitch_target_consistency in {"low", "tool_generated_low"}:
-        feedback.append("当前 H/L 标签来自自动前端/启发式规则，且和参考 F0 轮廓不完全一致，因此不按单拍 H/L 强判错。")
+        feedback.append("这次音高细节还不能稳定判断。")
 
     details = {
         "dimension_label": "core_pronunciation_related_prosody",
