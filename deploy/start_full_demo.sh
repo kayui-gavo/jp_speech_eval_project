@@ -34,10 +34,28 @@ else:
     raise RuntimeError(f"AivisSpeech did not become ready: {last_error}")
 PY
 
+# Prewarm the lazy-loaded Japanese frontend and default AivisSpeech style before
+# the browser sees the app. This keeps the first visible interaction from paying
+# those one-time costs.
+python - <<'PY'
+from jp_speech_eval.text_frontend import build_text_info
+from jp_speech_eval.tts_backends import synthesize_reference
+
+build_text_info("ラーメンをください")
+synthesize_reference(
+    "ラーメンをください",
+    sr=16000,
+    backend="aivis_http",
+    base_url="http://127.0.0.1:10101",
+    speaker=888753760,
+)
+PY
+
 exec python scripts/debug_ui.py \
   --host 0.0.0.0 \
   --port "${APP_PORT}" \
-  --mode asr_pseudo_reference \
+  --mode reference \
+  --wav cache/ramen_kudasai.ref.wav \
   --tts-backend aivis_http \
   --tts-url "${AIVIS_URL}" \
   --tts-speaker "${AIVIS_SPEAKER}"
