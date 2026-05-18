@@ -22,6 +22,9 @@ rsync -a \
   --exclude '.venv/' \
   --exclude '.venv-kanade/' \
   --exclude '.DS_Store' \
+  --exclude 'JANON/' \
+  --exclude 'ver1.0/' \
+  --exclude 'ver1.3/outputs/' \
   --exclude 'lambda_tradeoff.*' \
   --exclude 'plot_lambda_tradeoff.py' \
   "${root_dir}/" "${bundle_dir}/"
