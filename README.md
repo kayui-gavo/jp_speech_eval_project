@@ -3,6 +3,12 @@
 Research-oriented prototype for Japanese speaking evaluation, with the current
 implementation in [`ver1.3/`](ver1.3/README.md).
 
+Public demo:
+
+```text
+https://kayui-gavo-jp-speech-eval-demo.hf.space/
+```
+
 For a teammate-facing snapshot of the current research progress, start with:
 
 - [Chinese research progress note](docs/research_progress_zh.md)
