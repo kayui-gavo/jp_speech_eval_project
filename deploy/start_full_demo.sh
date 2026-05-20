@@ -58,4 +58,5 @@ exec python scripts/debug_ui.py \
   --wav cache/ramen_kudasai.ref.wav \
   --tts-backend aivis_http \
   --tts-url "${AIVIS_URL}" \
-  --tts-speaker "${AIVIS_SPEAKER}"
+  --tts-speaker "${AIVIS_SPEAKER}" \
+  --public-demo

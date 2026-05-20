@@ -1,0 +1,46 @@
+{
+  "enabled": true,
+  "default_provider": "local_pyopenjtalk",
+  "cache_dir": "data/tts_cache",
+  "allow_cloud_generation_at_runtime": false,
+  "fallback_order": [
+    "cached",
+    "local_aivis",
+    "local_voicevox",
+    "local_pyopenjtalk"
+  ],
+  "providers": {
+    "local_pyopenjtalk": {
+      "enabled": true
+    },
+    "local_aivis": {
+      "enabled": true,
+      "url_env": "AIVIS_TTS_URL"
+    },
+    "local_voicevox": {
+      "enabled": true,
+      "url_env": "VOICEVOX_TTS_URL"
+    },
+    "local_style_bert_vits2": {
+      "enabled": false,
+      "url_env": "STYLE_BERT_VITS2_URL"
+    },
+    "openai": {
+      "enabled": false,
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    "google": {
+      "enabled": false,
+      "credentials_env": "GOOGLE_APPLICATION_CREDENTIALS"
+    },
+    "elevenlabs": {
+      "enabled": false,
+      "api_key_env": "ELEVENLABS_API_KEY"
+    },
+    "azure": {
+      "enabled": false,
+      "api_key_env": "AZURE_SPEECH_KEY",
+      "region_env": "AZURE_SPEECH_REGION"
+    }
+  }
+}

@@ -348,12 +348,13 @@ def evaluate_utterance(
 
     ts = time.perf_counter()
     content_cfg = config.get("content_match", {})
-    should_use_content_match = bool(content_cfg.get("use_asr", True)) if use_content_match is None else bool(use_content_match)
+    should_use_content_match = bool(content_cfg.get("enabled", True)) if use_content_match is None else bool(use_content_match)
     content_match = estimate_content_match(
         cache,
         y_speech,
         audio.sr,
-        use_asr=should_use_content_match,
+        use_asr=bool(content_cfg.get("use_asr", True)),
+        asr_policy=str(content_cfg.get("asr_policy", "if_acoustic_uncertain")),
         asr_model=str(content_cfg.get("asr_model", "small")),
         asr_provider=str(content_cfg.get("asr_provider", "auto")),
     ) if cache and should_use_content_match else None
@@ -448,11 +449,24 @@ def evaluate_utterance(
             "F0 覆盖不足 50%，韵律分已封顶。"
         )
 
+    aggregate_cfg = config.get("aggregate", {})
+    aggregate_weights = {
+        "pronunciation": float(aggregate_cfg.get("pronunciation_weight", 0.35)),
+        "prosody": float(aggregate_cfg.get("prosody_weight", 0.40)),
+        "fluency": float(aggregate_cfg.get("fluency_weight", 0.25)),
+        "tone": float(aggregate_cfg.get("tone_weight", 0.0)),
+    }
+    aggregate_denominator = sum(max(0.0, value) for value in aggregate_weights.values())
+    if aggregate_denominator <= 0:
+        raise ValueError("aggregate score weights must sum to a positive value")
     total_score = round(
-        0.30 * pronunciation_score
-        + 0.30 * prosody_score
-        + 0.25 * fluency_score
-        + 0.15 * tone_score
+        (
+            aggregate_weights["pronunciation"] * pronunciation_score
+            + aggregate_weights["prosody"] * prosody_score
+            + aggregate_weights["fluency"] * fluency_score
+            + aggregate_weights["tone"] * tone_score
+        )
+        / aggregate_denominator
     )
     if float(reliability.get("overall", 0.0) or 0.0) < 0.75:
         total_score = min(total_score, 70)
@@ -563,9 +577,18 @@ def evaluate_utterance(
             "pronunciation": pron_details,
             "prosody": prosody_details,
             "prosody_metrics": prosody_metrics,
+            "aggregate": {
+                "weights": aggregate_weights,
+                "score_interpretation": "pronunciation_oriented_total_excludes_expression_style_when_tone_weight_is_zero",
+            },
             "score_adjustments": score_adjustments,
             "accent_phrases": text_info.accent_phrases,
             "reference_source": cache.meta.reference_source if cache else None,
+            "reference_id": cache.meta.reference_id if cache else None,
+            "reference_provider": cache.meta.reference_provider if cache else None,
+            "reference_model": cache.meta.reference_model if cache else None,
+            "reference_voice": cache.meta.reference_voice if cache else None,
+            "reference_config_hash": cache.meta.reference_config_hash if cache else None,
             "fluency": fluency_details,
             "tone": tone_details,
         },

@@ -4,13 +4,15 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import librosa
 import numpy as np
 
 from .audio_features import extract_f0, load_audio, trim_silence
+from .reference_store import build_reference_config, build_reference_hash
 from .text_frontend import TextInfo, build_text_info
+from .tts_adapter import canonical_provider_name
 from .tts_backends import synthesize_reference
 
 
@@ -30,6 +32,15 @@ class SentenceMeta:
     reference_text: str
     reference_source: str
     ref_boundary_method: str
+    reference_id: Optional[str] = None
+    reference_provider: Optional[str] = None
+    reference_model: Optional[str] = None
+    reference_voice: Optional[str] = None
+    reference_speed: Optional[float] = None
+    reference_style: Optional[str] = None
+    reference_prompt: Optional[str] = None
+    reference_language: Optional[str] = None
+    reference_config_hash: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -186,9 +197,16 @@ def build_sentence_cache(
     save_reference_wav: bool = False,
     reference_wav_path: str | Path | None = None,
     reference_source: str | None = None,
+    reference_id: str | None = None,
     tts_backend: str = "pyopenjtalk",
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
 ) -> SentenceCache:
     """
     Build and save cache for a target sentence.
@@ -207,6 +225,14 @@ def build_sentence_cache(
 
     text_info: TextInfo = build_text_info(text)
     frontend_raw = run_frontend(text)
+    reference_provider = None
+    reference_model = None
+    reference_voice = None
+    reference_speed = None
+    reference_style = None
+    reference_prompt = None
+    reference_language = None
+    reference_config_hash = None
     if reference_wav_path is not None:
         external_audio = load_audio(str(reference_wav_path), sr=sr)
         ref_y, _ = trim_silence(external_audio.y, top_db=30.0)
@@ -215,6 +241,25 @@ def build_sentence_cache(
         boundary_method = "external_equal_mora"
         reference_source_name = reference_source or "external_reference_wav"
     else:
+        reference_provider = canonical_provider_name(tts_backend)
+        reference_model = tts_model
+        reference_voice = tts_voice if tts_voice is not None else (None if tts_speaker is None else str(tts_speaker))
+        reference_speed = tts_speed
+        reference_style = tts_style
+        reference_prompt = tts_prompt
+        reference_language = tts_language
+        reference_config = build_reference_config(
+            text=text,
+            provider=reference_provider,
+            model=reference_model,
+            voice=reference_voice,
+            speed=reference_speed,
+            style=reference_style,
+            prompt=reference_prompt,
+            language=reference_language,
+            sample_rate=sr,
+        )
+        reference_config_hash = build_reference_hash(reference_config)
         ref_y, ref_boundaries, reference_text, boundary_method, generated_source = chunked_tts_reference(
             text,
             sr=sr,
@@ -245,6 +290,15 @@ def build_sentence_cache(
         reference_text=reference_text,
         reference_source=reference_source_name,
         ref_boundary_method=boundary_method,
+        reference_id=reference_id,
+        reference_provider=reference_provider,
+        reference_model=reference_model,
+        reference_voice=reference_voice,
+        reference_speed=reference_speed,
+        reference_style=reference_style,
+        reference_prompt=reference_prompt,
+        reference_language=reference_language,
+        reference_config_hash=reference_config_hash,
     )
 
     with (out_prefix.with_suffix(".json")).open("w", encoding="utf-8") as f:
@@ -302,6 +356,15 @@ def load_sentence_cache(prefix: str | Path) -> SentenceCache:
         reference_text=str(raw.get("reference_text", raw["text"])),
         reference_source=str(raw.get("reference_source", "pyopenjtalk_tts_pseudo_reference")),
         ref_boundary_method=str(raw.get("ref_boundary_method", "equal_mora")),
+        reference_id=raw.get("reference_id"),
+        reference_provider=raw.get("reference_provider"),
+        reference_model=raw.get("reference_model"),
+        reference_voice=raw.get("reference_voice"),
+        reference_speed=raw.get("reference_speed"),
+        reference_style=raw.get("reference_style"),
+        reference_prompt=raw.get("reference_prompt"),
+        reference_language=raw.get("reference_language"),
+        reference_config_hash=raw.get("reference_config_hash"),
     )
     data = np.load(npz_path)
     # Prefix should be suffix-less for downstream display.
@@ -326,6 +389,9 @@ def cache_summary(cache: SentenceCache) -> str:
         f"Accent phrases: {len(cache.meta.accent_phrases)}",
         f"Reference text: {cache.meta.reference_text}",
         f"Reference src : {cache.meta.reference_source}",
+        f"Reference id  : {cache.meta.reference_id or '-'}",
+        f"Provider      : {cache.meta.reference_provider or '-'}",
+        f"Config hash   : {cache.meta.reference_config_hash or '-'}",
         f"Boundary mode : {cache.meta.ref_boundary_method}",
         f"Ref duration  : {cache.meta.ref_duration_sec:.3f} sec",
         f"Cache prefix  : {cache.prefix}",

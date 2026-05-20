@@ -1,23 +1,25 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Japanese Speech Eval Debug UI</title>
+  <title>日语口语评价</title>
   <style>
     :root {
-      --bg: #f6f7f9;
+      --bg: #f4f6f7;
       --panel: #ffffff;
-      --ink: #18202a;
+      --ink: #182230;
       --muted: #667085;
-      --line: #d7dde5;
-      --accent: #0f766e;
-      --accent-dark: #115e59;
-      --warn: #b45309;
+      --line: #d6dde5;
+      --accent: #087f8c;
+      --accent-dark: #075d67;
+      --accent-soft: #e8f6f7;
+      --blue: #2457c5;
+      --warn: #b54708;
       --bad: #b42318;
-      --good: #047857;
-      --soft: #eef6f5;
-      --shadow: 0 8px 24px rgba(24, 32, 42, 0.08);
+      --good: #067647;
+      --soft: #f8fafb;
+      --shadow: 0 10px 24px rgba(16, 24, 40, 0.07);
     }
 
     * { box-sizing: border-box; }
@@ -25,7 +27,7 @@
       margin: 0;
       background: var(--bg);
       color: var(--ink);
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.45;
     }
 
@@ -41,11 +43,19 @@
     .topbar {
       max-width: 1560px;
       margin: 0 auto;
-      padding: 14px 20px;
+      padding: 15px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .brand {
@@ -57,7 +67,7 @@
 
     h1 {
       margin: 0;
-      font-size: 18px;
+      font-size: 19px;
       font-weight: 720;
       letter-spacing: 0;
       white-space: nowrap;
@@ -71,12 +81,40 @@
       white-space: nowrap;
     }
 
+    .language-switch {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .language-switch button {
+      min-height: 32px;
+      min-width: 40px;
+      padding: 0 10px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      border-radius: 0;
+      font-size: 12px;
+      background: transparent;
+    }
+
+    .language-switch button:last-child {
+      border-right: 0;
+    }
+
+    .language-switch button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
     main {
       max-width: 1560px;
       margin: 0 auto;
-      padding: 22px 20px 36px;
+      padding: 20px 20px 36px;
       display: grid;
-      grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+      grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
       gap: 18px;
       align-items: start;
     }
@@ -115,6 +153,18 @@
 
     .panel-body { padding: 14px 16px 16px; }
 
+    .prompt-section {
+      border-top: 3px solid var(--accent);
+    }
+
+    .score-section {
+      border-top: 3px solid var(--blue);
+    }
+
+    .feedback-section {
+      border-top: 3px solid var(--accent);
+    }
+
     .prompt {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -123,7 +173,7 @@
     }
 
     .jp {
-      font-size: clamp(26px, 2.4vw, 42px);
+      font-size: clamp(28px, 2.4vw, 42px);
       font-weight: 760;
       line-height: 1.05;
       letter-spacing: 0;
@@ -172,7 +222,7 @@
       padding: 5px 8px;
       border: 1px solid var(--line);
       border-radius: 6px;
-      background: #fbfcfd;
+      background: var(--soft);
       font-weight: 650;
       max-width: 100%;
       min-width: 0;
@@ -218,6 +268,64 @@
       color: var(--muted);
       font-size: 13px;
       font-weight: 650;
+    }
+
+    .mode-description {
+      margin: -4px 0 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .mode-description-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .mode-description strong {
+      color: var(--ink);
+      font-weight: 760;
+    }
+
+    .mode-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .mode-tag {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .mode-tag.good {
+      color: var(--good);
+      background: #ecfdf3;
+      border-color: #abefc6;
+    }
+
+    .mode-tag.warn {
+      color: var(--warn);
+      background: #fffaeb;
+      border-color: #fedf89;
+    }
+
+    .mode-tag.bad {
+      color: var(--bad);
+      background: #fef3f2;
+      border-color: #fecdca;
     }
 
     select {
@@ -269,7 +377,7 @@
     .meter-wrap {
       margin-top: 14px;
       height: 12px;
-      background: #e8edf2;
+      background: #e5edf0;
       border-radius: 999px;
       overflow: hidden;
     }
@@ -316,8 +424,17 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 10px 12px;
-      background: #fbfcfd;
+      background: var(--soft);
       min-height: 84px;
+    }
+
+    .score.total {
+      background: linear-gradient(135deg, #e8f6f7 0%, #eef4ff 100%);
+      border-color: #b9d8e9;
+    }
+
+    .score.total strong {
+      color: var(--accent-dark);
     }
 
     .score strong {
@@ -343,7 +460,7 @@
       border: 1px solid var(--line);
       border-radius: 7px;
       padding: 10px;
-      background: #fbfcfd;
+      background: var(--soft);
       min-width: 0;
     }
 
@@ -419,7 +536,7 @@
       height: 300px;
       border: 1px solid var(--line);
       border-radius: 7px;
-      background: #fbfcfd;
+      background: var(--soft);
       display: block;
     }
 
@@ -442,7 +559,7 @@
       margin-right: 6px;
     }
 
-    .swatch.ref { background: #0f766e; }
+    .swatch.ref { background: var(--accent); }
     .swatch.user { background: #b45309; }
 
     .chart-note {
@@ -457,6 +574,47 @@
     }
 
     .feedback-list li { margin: 8px 0; }
+
+    .advanced-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .advanced-panel summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .advanced-panel summary::-webkit-details-marker { display: none; }
+
+    .advanced-panel summary::after {
+      content: "+";
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .advanced-panel[open] summary::after {
+      content: "-";
+    }
+
+    .advanced-body {
+      border-top: 1px solid var(--line);
+      padding: 14px 16px 16px;
+    }
+
+    .advanced-body .controls-mini {
+      margin-bottom: 12px;
+    }
 
     .realtime-table {
       max-height: 310px;
@@ -505,7 +663,7 @@
       padding: 20px;
       border: 1px dashed var(--line);
       border-radius: 7px;
-      background: #fbfcfd;
+      background: var(--soft);
     }
 
     @media (max-width: 920px) {
@@ -516,6 +674,7 @@
       .prompt { grid-template-columns: 1fr; }
       .topbar { align-items: flex-start; flex-direction: column; }
       .brand { width: 100%; }
+      .topbar-actions { width: 100%; justify-content: space-between; }
     }
   </style>
 </head>
@@ -523,19 +682,27 @@
   <header>
     <div class="topbar">
       <div class="brand">
-        <h1>Speech Practice</h1>
-        <div class="target" id="cacheLabel">Loading target...</div>
+        <h1 id="appTitle" data-i18n="appTitle">日语口语评价</h1>
+        <div class="target" id="cacheLabel">正在加载练习句...</div>
       </div>
-      <span class="pill" id="serverState">Local debug</span>
+      <div class="topbar-actions">
+        <div class="language-switch" id="languageSwitch" aria-label="Language">
+          <button type="button" data-locale="zh-CN" title="简体中文">简</button>
+          <button type="button" data-locale="zh-TW" title="繁體中文">繁</button>
+          <button type="button" data-locale="ja" title="日本語">日</button>
+          <button type="button" data-locale="en" title="English">EN</button>
+        </div>
+        <span class="pill" id="serverState">本地调试</span>
+      </div>
     </div>
   </header>
 
   <main>
     <div class="workspace">
-      <section>
+      <section class="prompt-section">
         <div class="panel-head">
-          <h2>Practice Prompt</h2>
-          <span class="pill" id="cachePath">cache</span>
+          <h2 data-i18n="practicePrompt">练习句</h2>
+          <span class="pill" id="cachePath">固定句模式</span>
         </div>
         <div class="panel-body">
           <div class="prompt">
@@ -546,14 +713,14 @@
             </div>
             <div class="reference-tools">
               <div class="audio-block">
-                <span class="audio-label" id="referenceLabel">Model reference</span>
+                <span class="audio-label" id="referenceLabel">参考音</span>
                 <audio id="referenceAudio" controls src="/api/reference.wav"></audio>
               </div>
               <div class="audio-block">
-                <span class="audio-label">Saved user sample</span>
+                <span class="audio-label" data-i18n="sampleRecording">示例录音</span>
                 <audio id="sampleAudio" controls src="/api/sample.wav"></audio>
               </div>
-              <button id="sampleBtn">Evaluate saved sample</button>
+              <button id="sampleBtn" data-i18n="evaluateSample">评估示例录音</button>
             </div>
           </div>
         </div>
@@ -561,26 +728,26 @@
 
       <section>
         <div class="panel-head">
-          <h2>Record Or Upload</h2>
-          <span class="pill" id="recordState">Ready</span>
+          <h2 data-i18n="recording">录音</h2>
+          <span class="pill" id="recordState">就绪</span>
         </div>
         <div class="panel-body">
           <div class="mode-row">
-            <span>Evaluation mode</span>
+            <span data-i18n="evaluationMode">评价模式</span>
             <select id="evalMode">
-              <option value="reference">Reference fixed sentence</option>
-              <option value="kanade_asr_voice_reference">Kanade ASR voice reference experimental</option>
-              <option value="asr_pseudo_reference">ASR pseudo-reference</option>
-              <option value="transcript_assisted_light">Transcript-assisted light</option>
-              <option value="acoustic">Acoustic only experimental</option>
+              <option value="reference">固定句参考评价</option>
+              <option value="asr_pseudo_reference">ASR 生成参考</option>
+              <option value="transcript_assisted_light">转写辅助轻量评价</option>
+              <option value="acoustic">录音质量/声学诊断</option>
             </select>
-            <span class="pill" id="modeHint">target text required</span>
+            <span class="pill" id="modeHint">需要目标句</span>
           </div>
+          <div class="mode-description" id="modeDescription"></div>
           <div class="controls">
-            <button class="primary" id="recordBtn">● Start recording</button>
-            <button id="stopBtn" disabled>■ Stop & score</button>
-            <button id="playLastBtn" disabled>▶ Play last recording</button>
-            <label class="file-label" for="fileInput">↑ Upload wav</label>
+            <button class="primary" id="recordBtn" data-i18n="startRecording">● 开始录音</button>
+            <button id="stopBtn" disabled data-i18n="stopAndScore">■ 停止并评价</button>
+            <button id="playLastBtn" disabled data-i18n="playLastRecording">▶ 播放刚才录音</button>
+            <label class="file-label" for="fileInput" data-i18n="uploadWav">↑ 上传 wav</label>
             <input id="fileInput" type="file" accept="audio/wav,audio/x-wav">
           </div>
           <audio id="lastRecordingAudio" controls></audio>
@@ -588,16 +755,16 @@
           <div class="status-row">
             <span class="pill" id="liveTime">0.00s</span>
             <span class="pill" id="liveRms">rms 0.000</span>
-            <span class="pill" id="liveHint">Waiting</span>
-            <span class="pill" id="evalLatency">wait --</span>
+            <span class="pill" id="liveHint">等待中</span>
+            <span class="pill" id="evalLatency">等待 --</span>
           </div>
         </div>
       </section>
 
-      <section>
+      <section class="score-section">
         <div class="panel-head">
-          <h2>Scores</h2>
-          <span class="pill" id="wavPath">No wav yet</span>
+          <h2 data-i18n="scores">评分</h2>
+          <span class="pill" id="wavPath">等待录音</span>
         </div>
         <div class="panel-body">
           <div class="score-grid" id="scoreGrid"></div>
@@ -606,8 +773,8 @@
 
       <section>
         <div class="panel-head">
-          <h2>Reliability</h2>
-          <span class="pill" id="reliabilityLevel">No data</span>
+          <h2 data-i18n="reliability">本次结果可信度</h2>
+          <span class="pill" id="reliabilityLevel">暂无数据</span>
         </div>
         <div class="panel-body">
           <div class="reliability-grid" id="reliabilityGrid"></div>
@@ -617,8 +784,8 @@
 
       <section>
         <div class="panel-head">
-          <h2>Endpointing</h2>
-          <span class="pill" id="speechRatio">speech ratio</span>
+          <h2 data-i18n="speechRegion">说话区间</h2>
+          <span class="pill" id="speechRatio">语音占比</span>
         </div>
         <div class="panel-body">
           <div class="timeline" id="timeline"><div class="speech-region" id="speechRegion"></div></div>
@@ -628,25 +795,36 @@
 
       <section>
         <div class="panel-head">
-          <h2>Relative F0 Contour</h2>
-          <span class="pill" id="pitchSummary">speaker-normalized</span>
+          <h2 data-i18n="pitchContour">音高走势</h2>
+          <span class="pill" id="pitchSummary">按说话人归一化</span>
         </div>
         <div class="panel-body">
           <canvas class="pitch-compare" id="pitchCanvas"></canvas>
           <div class="legend">
-            <span><span class="swatch ref"></span>Model reference example</span>
-            <span><span class="swatch user"></span>Your relative contour</span>
+            <span><span class="swatch ref"></span><span data-i18n="referenceAudio">参考音</span></span>
+            <span><span class="swatch user"></span><span data-i18n="yourRecording">你的录音</span></span>
           </div>
-          <div class="chart-note">Prosody scoring primarily compares the speaker-normalized reference contour with your contour. Heuristic H/L labels are debug cues unless backed by dictionary/manual targets.</div>
+          <div class="chart-note" data-i18n="pitchChartNote">这里主要比较相对音高走势；高低型标签仅作辅助参考。</div>
         </div>
       </section>
     </div>
 
     <div class="workspace">
+      <section class="feedback-section">
+        <div class="panel-head">
+          <h2 data-i18n="feedback">反馈</h2>
+          <span class="pill" id="feedbackCount">0</span>
+        </div>
+        <div class="panel-body">
+          <div class="empty" id="feedbackEmpty" data-i18n="feedbackEmpty">完成一次评价后，这里会显示给学习者看的反馈。</div>
+          <ul class="feedback-list" id="feedbackList"></ul>
+        </div>
+      </section>
+
       <section>
         <div class="panel-head">
-          <h2>Realtime States</h2>
-          <span class="pill" id="stateSummary">No data</span>
+          <h2 data-i18n="realtimeReplay">实时状态回放</h2>
+          <span class="pill" id="stateSummary">暂无数据</span>
         </div>
         <div class="panel-body">
           <div class="bars" id="stateBars"></div>
@@ -654,39 +832,26 @@
         <div class="realtime-table">
           <table>
             <thead>
-              <tr><th>time</th><th>state</th><th>mora</th><th>vol</th><th>pitch</th></tr>
+              <tr><th data-i18n="time">时间</th><th data-i18n="state">状态</th><th data-i18n="mora">拍</th><th data-i18n="volume">音量</th><th data-i18n="pitch">音高</th></tr>
             </thead>
             <tbody id="realtimeRows">
-              <tr><td colspan="5">No realtime rows yet</td></tr>
+              <tr><td colspan="5">还没有实时回放数据</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
-      <section>
-        <div class="panel-head">
-          <h2>Feedback</h2>
-          <span class="pill" id="feedbackCount">0</span>
-        </div>
-        <div class="panel-body">
-          <div class="empty" id="feedbackEmpty">Score an utterance to see learner-facing feedback.</div>
-          <ul class="feedback-list" id="feedbackList"></ul>
-        </div>
-      </section>
-
-      <section>
-        <div class="panel-head">
-          <h2>Raw JSON</h2>
+      <details class="advanced-panel">
+        <summary data-i18n="researchDebug">研究调试</summary>
+        <div class="advanced-body">
           <div class="controls-mini">
-            <button id="compareModesBtn">Compare sample modes</button>
-            <button id="exportFeaturesBtn">Export CSV</button>
-            <button id="copyJsonBtn" disabled>Copy</button>
+            <button id="compareModesBtn" data-i18n="compareModes">比较模式</button>
+            <button id="exportFeaturesBtn" data-i18n="exportCsv">导出 CSV</button>
+            <button id="copyJsonBtn" disabled data-i18n="copyJson">复制 JSON</button>
           </div>
-        </div>
-        <div class="panel-body">
           <pre class="raw" id="rawJson">{}</pre>
         </div>
-      </section>
+      </details>
     </div>
   </main>
 
@@ -709,19 +874,880 @@
       config: null,
       activeReference: null,
       activeMoras: null,
-      activeTargetPitch: null
+      activeTargetPitch: null,
+      locale: localStorage.getItem("jpSpeechEvalLocale") || "zh-CN",
+      recordStatusKey: "ready",
+      liveHintKey: "waiting",
+      busyKey: null
     };
 
-    const scoreMeta = [
-      ["total_score", "Total"],
-      ["pronunciation_score", "Pronunciation"],
-      ["prosody_score", "Prosody"],
-      ["fluency_score", "Fluency"],
-      ["tone_score", "Expression"]
+    const scoreKeys = [
+      "total_score",
+      "pronunciation_score",
+      "prosody_score",
+      "fluency_score",
+      "tone_score"
     ];
 
-    function setBusy(isBusy, label = "Scoring") {
-      $("serverState").textContent = isBusy ? label : (state.config?.server_label || "Local debug");
+    const locales = {
+      "zh-CN": {
+        htmlLang: "zh-CN",
+        appTitle: "日语口语评价",
+        loadingPrompt: "正在加载练习句...",
+        localDebug: "本地调试",
+        publicDemo: "公开演示",
+        practicePrompt: "练习句",
+        fixedSentenceMode: "固定句模式",
+        referenceAudio: "参考音",
+        sampleRecording: "示例录音",
+        evaluateSample: "评估示例录音",
+        recording: "录音",
+        ready: "就绪",
+        evaluationMode: "评价模式",
+        startRecording: "● 开始录音",
+        stopAndScore: "■ 停止并评价",
+        playLastRecording: "▶ 播放刚才录音",
+        uploadWav: "↑ 上传 wav",
+        waiting: "等待中",
+        waitShort: "等待",
+        scores: "评分",
+        waitingForRecording: "等待录音",
+        reliability: "本次结果可信度",
+        noData: "暂无数据",
+        speechRegion: "说话区间",
+        speechRatio: "语音占比",
+        pitchContour: "音高走势",
+        speakerNormalized: "按说话人归一化",
+        yourRecording: "你的录音",
+        pitchChartNote: "这里主要比较相对音高走势；高低型标签仅作辅助参考。",
+        feedback: "反馈",
+        feedbackEmpty: "完成一次评价后，这里会显示给学习者看的反馈。",
+        realtimeReplay: "实时状态回放",
+        time: "时间",
+        state: "状态",
+        mora: "拍",
+        volume: "音量",
+        pitch: "音高",
+        noRealtimeRows: "还没有实时回放数据",
+        researchDebug: "研究调试",
+        compareModes: "比较模式",
+        exportCsv: "导出 CSV",
+        copyJson: "复制 JSON",
+        noTargetText: "当前模式没有目标文本",
+        noMoraTarget: "没有拍级目标",
+        acousticOnlyDiagnosis: "仅声学诊断",
+        waitingForAsr: "等待 ASR",
+        waitingForTranscript: "等待转写",
+        voiceReferenceAfterScoring: "评价后生成声线参考",
+        referenceAfterScoring: "评价后生成参考音",
+        noGeneratedReference: "不生成参考音",
+        speakFreely: "自由说一句日语",
+        transcriptAfterScoring: "评价后会显示转写和读音",
+        pitchAfterScoring: "评价后显示音高走势",
+        noGeneratedContourYet: "尚未生成参考走势",
+        noContourInMode: "该模式不生成参考走势",
+        noTextReference: "没有文本参考",
+        noTranscriptOrTargetKana: "当前模式没有转写和目标读音",
+        noTargetContourInMode: "当前模式没有目标走势",
+        asrTranscript: "ASR 转写",
+        asrGeneratedReference: "ASR 生成参考",
+        asrReferenceWithMethod: "ASR 参考音（{method}）",
+        asrScoringVoicePlayback: "ASR 评分参考 + 声线播放",
+        voicePlaybackScoringAsrTts: "播放用声线参考；评分仍用 ASR TTS",
+        voicePseudoReference: "声线伪参考",
+        kanadeReferenceWithMethod: "Kanade 参考音（{method}）",
+        transcriptAssistedDiagnosis: "转写辅助诊断",
+        transcriptAssistedLight: "转写辅助轻量评价",
+        fixedReference: "固定参考",
+        modeHintReference: "需要目标句",
+        modeHintKanade: "自由说话，实验模式",
+        modeHintAsr: "依赖 ASR 转写",
+        modeHintLight: "轻量保底",
+        modeHintAcoustic: "只看声学状态",
+        high: "高",
+        medium: "中",
+        low: "低",
+        unknown: "未知",
+        same: "一致",
+        different: "不同",
+        contentPrefix: "内容匹配",
+        asrPrefix: "ASR 转写",
+        prosodyTargetPrefix: "韵律目标",
+        prosodyTargetNote: "主依据 {primary}；高低型来源 {source}",
+        acousticModeWarning: "仅声学模式：没有文本、没有 ASR，也不判断拍级正误。",
+        transcriptModeWarning: "转写辅助模式：转写只用于估计拍数，不做假名级纠错。",
+        speechLabel: "语音",
+        totalDuration: "总时长",
+        speechStart: "开口",
+        speechDuration: "说话",
+        trailingSilence: "尾部静音",
+        noReplayCurrentMode: "当前模式不提供回放",
+        fixedModeReplayAfterScoring: "固定句模式会在评价后显示一次离线回放。",
+        sentenceFinalOnly: "当前模式只做句末分析，不显示实时回放。",
+        offlineReplay: "离线回放",
+        generatedContourAfterScoring: "评价后会显示根据 ASR 生成的参考走势。",
+        lightNoGeneratedContour: "轻量模式只估计拍数，不生成参考走势。",
+        acousticNoMoraOrContour: "仅声学模式没有目标拍和参考走势。",
+        lightNoReferenceContour: "轻量模式估计语速，但不生成参考走势。",
+        acousticSeeReliability: "仅声学模式没有目标走势，可查看下方可信度信息。",
+        compareContourAfterScoring: "完成一次评价后，这里会显示相对音高走势。",
+        relative: "相对",
+        targetAbbr: "目",
+        observedAbbr: "实",
+        comparedMoras: "已比较 {valid}/{total} 拍 · 可信度 {level}",
+        referenceOnly: "仅显示参考音",
+        evaluated: "已完成评价",
+        uploadedRecording: "已上传录音",
+        serverTime: "服务端",
+        evaluating: "评价中",
+        sampleBusy: "评估示例",
+        exporting: "导出中",
+        comparing: "比较中",
+        getReady: "准备",
+        speakNow: "请开始",
+        processing: "处理中",
+        scoreLabels: {
+          total_score: "总分",
+          pronunciation_score: "发音",
+          prosody_score: "韵律",
+          fluency_score: "流畅度",
+          tone_score: "表达"
+        },
+        modeLabels: {
+          reference: "固定句参考评价",
+          asr_pseudo_reference: "自由说话：ASR 生成参考",
+          transcript_assisted_light: "自由说话：轻量转写诊断",
+          acoustic: "录音质量/声学诊断",
+          kanade_voice_reference: "实验：固定句声线参考",
+          kanade_asr_voice_reference: "实验：自由说话声线参考"
+        },
+        statusLabels: {
+          waiting_for_speech: "等待开口",
+          speaking: "说话中",
+          maybe_ending: "可能结束",
+          ended: "已结束",
+          warming_up: "准备中",
+          waiting: "等待中"
+        },
+        volumeLabels: { ok: "正常", low: "偏低", high: "偏高", quiet: "安静" },
+        pitchLabels: { up: "上扬", down: "下降", flat: "平稳", unknown: "未知" },
+        reliabilityLabels: {
+          content: "内容匹配",
+          kana: "假名相似度",
+          prosodyTarget: "韵律目标",
+          hlSource: "高低型来源",
+          targetConsistency: "目标一致性",
+          contourCorr: "轮廓相关",
+          contourRmse: "轮廓误差",
+          transition: "转折一致",
+          finalIntonation: "句末语调",
+          evalMode: "评价模式",
+          voicedRatio: "有声占比",
+          f0Range: "音高范围",
+          recordingQuality: "录音质量",
+          snr: "信噪比",
+          moraEvidence: "拍级证据",
+          judgeableMoras: "可判定拍数",
+          endpointing: "端点检测",
+          alignment: "对齐质量",
+          f0Coverage: "F0 覆盖",
+          validMoraF0: "有效拍 F0",
+          dtw: "DTW 距离",
+          durationRatio: "时长比例"
+        }
+      },
+      "zh-TW": {
+        htmlLang: "zh-Hant",
+        appTitle: "日語口語評價",
+        loadingPrompt: "正在載入練習句...",
+        localDebug: "本機除錯",
+        publicDemo: "公開展示",
+        practicePrompt: "練習句",
+        fixedSentenceMode: "固定句模式",
+        referenceAudio: "參考音",
+        sampleRecording: "範例錄音",
+        evaluateSample: "評估範例錄音",
+        recording: "錄音",
+        ready: "就緒",
+        evaluationMode: "評價模式",
+        startRecording: "● 開始錄音",
+        stopAndScore: "■ 停止並評價",
+        playLastRecording: "▶ 播放剛才錄音",
+        uploadWav: "↑ 上傳 wav",
+        waiting: "等待中",
+        waitShort: "等待",
+        scores: "評分",
+        waitingForRecording: "等待錄音",
+        reliability: "本次結果可信度",
+        noData: "暫無資料",
+        speechRegion: "說話區間",
+        speechRatio: "語音占比",
+        pitchContour: "音高走勢",
+        speakerNormalized: "依說話人正規化",
+        yourRecording: "你的錄音",
+        pitchChartNote: "這裡主要比較相對音高走勢；高低型標籤僅作輔助參考。",
+        feedback: "回饋",
+        feedbackEmpty: "完成一次評價後，這裡會顯示給學習者看的回饋。",
+        realtimeReplay: "即時狀態回放",
+        time: "時間",
+        state: "狀態",
+        mora: "拍",
+        volume: "音量",
+        pitch: "音高",
+        noRealtimeRows: "還沒有即時回放資料",
+        researchDebug: "研究除錯",
+        compareModes: "比較模式",
+        exportCsv: "匯出 CSV",
+        copyJson: "複製 JSON",
+        noTargetText: "目前模式沒有目標文字",
+        noMoraTarget: "沒有拍級目標",
+        acousticOnlyDiagnosis: "僅聲學診斷",
+        waitingForAsr: "等待 ASR",
+        waitingForTranscript: "等待轉寫",
+        voiceReferenceAfterScoring: "評價後生成聲線參考",
+        referenceAfterScoring: "評價後生成參考音",
+        noGeneratedReference: "不生成參考音",
+        speakFreely: "自由說一句日語",
+        transcriptAfterScoring: "評價後會顯示轉寫與讀音",
+        pitchAfterScoring: "評價後顯示音高走勢",
+        noGeneratedContourYet: "尚未生成參考走勢",
+        noContourInMode: "此模式不生成參考走勢",
+        noTextReference: "沒有文字參考",
+        noTranscriptOrTargetKana: "目前模式沒有轉寫與目標讀音",
+        noTargetContourInMode: "目前模式沒有目標走勢",
+        asrTranscript: "ASR 轉寫",
+        asrGeneratedReference: "ASR 生成參考",
+        asrReferenceWithMethod: "ASR 參考音（{method}）",
+        asrScoringVoicePlayback: "ASR 評分參考 + 聲線播放",
+        voicePlaybackScoringAsrTts: "播放用聲線參考；評分仍用 ASR TTS",
+        voicePseudoReference: "聲線偽參考",
+        kanadeReferenceWithMethod: "Kanade 參考音（{method}）",
+        transcriptAssistedDiagnosis: "轉寫輔助診斷",
+        transcriptAssistedLight: "轉寫輔助輕量評價",
+        fixedReference: "固定參考",
+        modeHintReference: "需要目標句",
+        modeHintKanade: "自由說話，實驗模式",
+        modeHintAsr: "依賴 ASR 轉寫",
+        modeHintLight: "輕量保底",
+        modeHintAcoustic: "只看聲學狀態",
+        high: "高",
+        medium: "中",
+        low: "低",
+        unknown: "未知",
+        same: "一致",
+        different: "不同",
+        contentPrefix: "內容匹配",
+        asrPrefix: "ASR 轉寫",
+        prosodyTargetPrefix: "韻律目標",
+        prosodyTargetNote: "主要依據 {primary}；高低型來源 {source}",
+        acousticModeWarning: "僅聲學模式：沒有文字、沒有 ASR，也不判斷拍級正誤。",
+        transcriptModeWarning: "轉寫輔助模式：轉寫只用於估計拍數，不做假名級糾錯。",
+        speechLabel: "語音",
+        totalDuration: "總時長",
+        speechStart: "開口",
+        speechDuration: "說話",
+        trailingSilence: "尾部靜音",
+        noReplayCurrentMode: "目前模式不提供回放",
+        fixedModeReplayAfterScoring: "固定句模式會在評價後顯示一次離線回放。",
+        sentenceFinalOnly: "目前模式只做句末分析，不顯示即時回放。",
+        offlineReplay: "離線回放",
+        generatedContourAfterScoring: "評價後會顯示根據 ASR 生成的參考走勢。",
+        lightNoGeneratedContour: "輕量模式只估計拍數，不生成參考走勢。",
+        acousticNoMoraOrContour: "僅聲學模式沒有目標拍與參考走勢。",
+        lightNoReferenceContour: "輕量模式估計語速，但不生成參考走勢。",
+        acousticSeeReliability: "僅聲學模式沒有目標走勢，可查看下方可信度資訊。",
+        compareContourAfterScoring: "完成一次評價後，這裡會顯示相對音高走勢。",
+        relative: "相對",
+        targetAbbr: "目",
+        observedAbbr: "實",
+        comparedMoras: "已比較 {valid}/{total} 拍 · 可信度 {level}",
+        referenceOnly: "僅顯示參考音",
+        evaluated: "已完成評價",
+        uploadedRecording: "已上傳錄音",
+        serverTime: "伺服端",
+        evaluating: "評價中",
+        sampleBusy: "評估範例",
+        exporting: "匯出中",
+        comparing: "比較中",
+        getReady: "準備",
+        speakNow: "請開始",
+        processing: "處理中",
+        scoreLabels: {
+          total_score: "總分",
+          pronunciation_score: "發音",
+          prosody_score: "韻律",
+          fluency_score: "流暢度",
+          tone_score: "表達"
+        },
+        modeLabels: {
+          reference: "固定句參考評價",
+          asr_pseudo_reference: "自由說話：ASR 生成參考",
+          transcript_assisted_light: "自由說話：輕量轉寫診斷",
+          acoustic: "錄音品質/聲學診斷",
+          kanade_voice_reference: "實驗：固定句聲線參考",
+          kanade_asr_voice_reference: "實驗：自由說話聲線參考"
+        },
+        statusLabels: {
+          waiting_for_speech: "等待開口",
+          speaking: "說話中",
+          maybe_ending: "可能結束",
+          ended: "已結束",
+          warming_up: "準備中",
+          waiting: "等待中"
+        },
+        volumeLabels: { ok: "正常", low: "偏低", high: "偏高", quiet: "安靜" },
+        pitchLabels: { up: "上揚", down: "下降", flat: "平穩", unknown: "未知" },
+        reliabilityLabels: {
+          content: "內容匹配",
+          kana: "假名相似度",
+          prosodyTarget: "韻律目標",
+          hlSource: "高低型來源",
+          targetConsistency: "目標一致性",
+          contourCorr: "輪廓相關",
+          contourRmse: "輪廓誤差",
+          transition: "轉折一致",
+          finalIntonation: "句末語調",
+          evalMode: "評價模式",
+          voicedRatio: "有聲占比",
+          f0Range: "音高範圍",
+          recordingQuality: "錄音品質",
+          snr: "信噪比",
+          moraEvidence: "拍級證據",
+          judgeableMoras: "可判定拍數",
+          endpointing: "端點檢測",
+          alignment: "對齊品質",
+          f0Coverage: "F0 覆蓋",
+          validMoraF0: "有效拍 F0",
+          dtw: "DTW 距離",
+          durationRatio: "時長比例"
+        }
+      },
+      ja: {
+        htmlLang: "ja",
+        appTitle: "日本語スピーキング評価",
+        loadingPrompt: "練習文を読み込み中...",
+        localDebug: "ローカルデバッグ",
+        publicDemo: "公開デモ",
+        practicePrompt: "練習文",
+        fixedSentenceMode: "固定文モード",
+        referenceAudio: "参考音声",
+        sampleRecording: "サンプル録音",
+        evaluateSample: "サンプルを評価",
+        recording: "録音",
+        ready: "準備完了",
+        evaluationMode: "評価モード",
+        startRecording: "● 録音開始",
+        stopAndScore: "■ 停止して評価",
+        playLastRecording: "▶ 直前の録音を再生",
+        uploadWav: "↑ wav をアップロード",
+        waiting: "待機中",
+        waitShort: "待機",
+        scores: "スコア",
+        waitingForRecording: "録音待ち",
+        reliability: "今回の結果の信頼度",
+        noData: "データなし",
+        speechRegion: "発話区間",
+        speechRatio: "発話率",
+        pitchContour: "ピッチ推移",
+        speakerNormalized: "話者正規化",
+        yourRecording: "あなたの録音",
+        pitchChartNote: "ここでは相対的なピッチ推移を主に比較します。H/L ラベルは補助情報です。",
+        feedback: "フィードバック",
+        feedbackEmpty: "評価後、学習者向けのフィードバックがここに表示されます。",
+        realtimeReplay: "リアルタイム状態の再生",
+        time: "時間",
+        state: "状態",
+        mora: "モーラ",
+        volume: "音量",
+        pitch: "ピッチ",
+        noRealtimeRows: "まだ再生データがありません",
+        researchDebug: "研究用デバッグ",
+        compareModes: "モード比較",
+        exportCsv: "CSV を出力",
+        copyJson: "JSON をコピー",
+        noTargetText: "このモードには目標文がありません",
+        noMoraTarget: "モーラ目標なし",
+        acousticOnlyDiagnosis: "音響のみの診断",
+        waitingForAsr: "ASR 待ち",
+        waitingForTranscript: "書き起こし待ち",
+        voiceReferenceAfterScoring: "評価後に声質参照を生成",
+        referenceAfterScoring: "評価後に参照音声を生成",
+        noGeneratedReference: "参照音声は生成しません",
+        speakFreely: "自由に日本語を話してください",
+        transcriptAfterScoring: "評価後に書き起こしと読みを表示",
+        pitchAfterScoring: "評価後にピッチ推移を表示",
+        noGeneratedContourYet: "参照推移はまだありません",
+        noContourInMode: "このモードでは参照推移を生成しません",
+        noTextReference: "テキスト参照なし",
+        noTranscriptOrTargetKana: "このモードには書き起こしも目標読みもありません",
+        noTargetContourInMode: "このモードには目標推移がありません",
+        asrTranscript: "ASR 書き起こし",
+        asrGeneratedReference: "ASR 生成参照",
+        asrReferenceWithMethod: "ASR 参照音声（{method}）",
+        asrScoringVoicePlayback: "ASR 評価参照 + 声質再生",
+        voicePlaybackScoringAsrTts: "再生は声質参照、評価は ASR TTS",
+        voicePseudoReference: "声質疑似参照",
+        kanadeReferenceWithMethod: "Kanade 参照音声（{method}）",
+        transcriptAssistedDiagnosis: "書き起こし補助診断",
+        transcriptAssistedLight: "書き起こし補助ライト評価",
+        fixedReference: "固定参照",
+        modeHintReference: "目標文が必要",
+        modeHintKanade: "自由発話・実験モード",
+        modeHintAsr: "ASR 書き起こしに依存",
+        modeHintLight: "軽量フォールバック",
+        modeHintAcoustic: "音響状態のみ",
+        high: "高",
+        medium: "中",
+        low: "低",
+        unknown: "不明",
+        same: "一致",
+        different: "不一致",
+        contentPrefix: "内容一致",
+        asrPrefix: "ASR 書き起こし",
+        prosodyTargetPrefix: "韻律目標",
+        prosodyTargetNote: "主根拠 {primary}；H/L ソース {source}",
+        acousticModeWarning: "音響のみモード：テキストも ASR も使わず、モーラ単位の正誤も判定しません。",
+        transcriptModeWarning: "書き起こし補助モード：書き起こしはモーラ数の推定だけに使い、仮名単位の訂正はしません。",
+        speechLabel: "発話",
+        totalDuration: "全体",
+        speechStart: "開始",
+        speechDuration: "発話",
+        trailingSilence: "末尾無音",
+        noReplayCurrentMode: "このモードでは再生しません",
+        fixedModeReplayAfterScoring: "固定文モードでは評価後にオフライン再生を表示します。",
+        sentenceFinalOnly: "このモードは文末解析のみで、再生は表示しません。",
+        offlineReplay: "オフライン再生",
+        generatedContourAfterScoring: "評価後、ASR から生成した参照推移を表示します。",
+        lightNoGeneratedContour: "ライトモードはモーラ数のみ推定し、参照推移は生成しません。",
+        acousticNoMoraOrContour: "音響のみモードには目標モーラも参照推移もありません。",
+        lightNoReferenceContour: "ライトモードは話速を推定しますが、参照推移は生成しません。",
+        acousticSeeReliability: "音響のみモードには目標推移がありません。下の信頼度情報を確認してください。",
+        compareContourAfterScoring: "評価後、相対的なピッチ推移をここに表示します。",
+        relative: "相対",
+        targetAbbr: "目",
+        observedAbbr: "観",
+        comparedMoras: "{valid}/{total} モーラ比較済み · 信頼度 {level}",
+        referenceOnly: "参照音声のみ表示",
+        evaluated: "評価完了",
+        uploadedRecording: "録音をアップロード済み",
+        serverTime: "サーバー",
+        evaluating: "評価中",
+        sampleBusy: "サンプル評価中",
+        exporting: "出力中",
+        comparing: "比較中",
+        getReady: "準備",
+        speakNow: "話してください",
+        processing: "処理中",
+        scoreLabels: {
+          total_score: "総合",
+          pronunciation_score: "発音",
+          prosody_score: "韻律",
+          fluency_score: "流暢さ",
+          tone_score: "表現"
+        },
+        modeLabels: {
+          reference: "固定文参照評価",
+          asr_pseudo_reference: "自由発話：ASR 生成参照",
+          transcript_assisted_light: "自由発話：軽量書き起こし診断",
+          acoustic: "録音品質/音響診断",
+          kanade_voice_reference: "実験：固定文の声質参照",
+          kanade_asr_voice_reference: "実験：自由発話の声質参照"
+        },
+        statusLabels: {
+          waiting_for_speech: "発話待ち",
+          speaking: "発話中",
+          maybe_ending: "終了候補",
+          ended: "終了",
+          warming_up: "準備中",
+          waiting: "待機中"
+        },
+        volumeLabels: { ok: "正常", low: "小さい", high: "大きい", quiet: "無音" },
+        pitchLabels: { up: "上昇", down: "下降", flat: "平坦", unknown: "不明" },
+        reliabilityLabels: {
+          content: "内容一致",
+          kana: "仮名類似度",
+          prosodyTarget: "韻律目標",
+          hlSource: "H/L ソース",
+          targetConsistency: "目標整合性",
+          contourCorr: "輪郭相関",
+          contourRmse: "輪郭誤差",
+          transition: "遷移一致",
+          finalIntonation: "文末イントネーション",
+          evalMode: "評価モード",
+          voicedRatio: "有声率",
+          f0Range: "F0 範囲",
+          recordingQuality: "録音品質",
+          snr: "SNR",
+          moraEvidence: "モーラ証拠",
+          judgeableMoras: "判定可能モーラ",
+          endpointing: "端点検出",
+          alignment: "アラインメント",
+          f0Coverage: "F0 被覆",
+          validMoraF0: "有効モーラ F0",
+          dtw: "DTW 距離",
+          durationRatio: "長さ比"
+        }
+      },
+      en: {
+        htmlLang: "en",
+        appTitle: "Japanese Speech Evaluation",
+        loadingPrompt: "Loading practice prompt...",
+        localDebug: "Local debug",
+        publicDemo: "Public demo",
+        practicePrompt: "Practice prompt",
+        fixedSentenceMode: "Fixed sentence mode",
+        referenceAudio: "Reference audio",
+        sampleRecording: "Sample recording",
+        evaluateSample: "Evaluate sample",
+        recording: "Recording",
+        ready: "Ready",
+        evaluationMode: "Evaluation mode",
+        startRecording: "● Start recording",
+        stopAndScore: "■ Stop and score",
+        playLastRecording: "▶ Play last recording",
+        uploadWav: "↑ Upload wav",
+        waiting: "Waiting",
+        waitShort: "wait",
+        scores: "Scores",
+        waitingForRecording: "Waiting for recording",
+        reliability: "Result reliability",
+        noData: "No data",
+        speechRegion: "Speech region",
+        speechRatio: "Speech ratio",
+        pitchContour: "Pitch contour",
+        speakerNormalized: "Speaker-normalized",
+        yourRecording: "Your recording",
+        pitchChartNote: "This view mainly compares relative pitch movement; H/L labels are supporting cues only.",
+        feedback: "Feedback",
+        feedbackEmpty: "Learner-facing feedback will appear here after an evaluation.",
+        realtimeReplay: "Realtime replay",
+        time: "Time",
+        state: "State",
+        mora: "Mora",
+        volume: "Volume",
+        pitch: "Pitch",
+        noRealtimeRows: "No realtime replay rows yet",
+        researchDebug: "Research debug",
+        compareModes: "Compare modes",
+        exportCsv: "Export CSV",
+        copyJson: "Copy JSON",
+        noTargetText: "No target text in this mode",
+        noMoraTarget: "No mora target",
+        acousticOnlyDiagnosis: "Acoustic-only diagnosis",
+        waitingForAsr: "Waiting for ASR",
+        waitingForTranscript: "Waiting for transcript",
+        voiceReferenceAfterScoring: "Voice reference after scoring",
+        referenceAfterScoring: "Reference after scoring",
+        noGeneratedReference: "No generated reference",
+        speakFreely: "Speak one Japanese sentence freely",
+        transcriptAfterScoring: "Transcript and reading appear after scoring",
+        pitchAfterScoring: "Pitch contour appears after scoring",
+        noGeneratedContourYet: "No generated contour yet",
+        noContourInMode: "This mode does not generate a reference contour",
+        noTextReference: "No text reference",
+        noTranscriptOrTargetKana: "No transcript or target reading in this mode",
+        noTargetContourInMode: "No target contour in this mode",
+        asrTranscript: "ASR transcript",
+        asrGeneratedReference: "ASR-generated reference",
+        asrReferenceWithMethod: "ASR reference ({method})",
+        asrScoringVoicePlayback: "ASR scoring reference + voice playback",
+        voicePlaybackScoringAsrTts: "Voice playback only; scoring still uses ASR TTS",
+        voicePseudoReference: "Voice-conditioned pseudo-reference",
+        kanadeReferenceWithMethod: "Kanade reference ({method})",
+        transcriptAssistedDiagnosis: "Transcript-assisted diagnosis",
+        transcriptAssistedLight: "Transcript-assisted light",
+        fixedReference: "Fixed reference",
+        modeHintReference: "target text required",
+        modeHintKanade: "free speech, experimental",
+        modeHintAsr: "depends on ASR transcript",
+        modeHintLight: "light fallback",
+        modeHintAcoustic: "acoustic state only",
+        high: "high",
+        medium: "medium",
+        low: "low",
+        unknown: "unknown",
+        same: "match",
+        different: "different",
+        contentPrefix: "Content match",
+        asrPrefix: "ASR transcript",
+        prosodyTargetPrefix: "Prosody target",
+        prosodyTargetNote: "primary {primary}; H/L source {source}",
+        acousticModeWarning: "Acoustic-only mode: no text, no ASR, and no mora-level correctness judgement.",
+        transcriptModeWarning: "Transcript-assisted mode: transcript estimates mora count only; no kana-level correction.",
+        speechLabel: "speech",
+        totalDuration: "Raw",
+        speechStart: "Start",
+        speechDuration: "Speech",
+        trailingSilence: "Trailing",
+        noReplayCurrentMode: "No replay in this mode",
+        fixedModeReplayAfterScoring: "Fixed-sentence mode shows an offline replay after scoring.",
+        sentenceFinalOnly: "This mode runs sentence-final analysis only and does not show replay rows.",
+        offlineReplay: "offline replay",
+        generatedContourAfterScoring: "The ASR-generated reference contour appears after scoring.",
+        lightNoGeneratedContour: "Light mode estimates mora count only and does not generate a reference contour.",
+        acousticNoMoraOrContour: "Acoustic-only mode has no target mora or reference contour.",
+        lightNoReferenceContour: "Light mode estimates speech rate but does not generate a reference contour.",
+        acousticSeeReliability: "Acoustic-only mode has no target contour; see reliability details below.",
+        compareContourAfterScoring: "Relative pitch movement appears here after an evaluation.",
+        relative: "rel.",
+        targetAbbr: "T",
+        observedAbbr: "O",
+        comparedMoras: "{valid}/{total} mora compared · {level} reliability",
+        referenceOnly: "Reference only",
+        evaluated: "Evaluated",
+        uploadedRecording: "Uploaded recording",
+        serverTime: "server",
+        evaluating: "Scoring",
+        sampleBusy: "Sample",
+        exporting: "Export",
+        comparing: "Compare",
+        getReady: "Get ready",
+        speakNow: "Speak now",
+        processing: "Processing",
+        scoreLabels: {
+          total_score: "Total",
+          pronunciation_score: "Pronunciation",
+          prosody_score: "Prosody",
+          fluency_score: "Fluency",
+          tone_score: "Expression"
+        },
+        modeLabels: {
+          reference: "Fixed-sentence reference scoring",
+          asr_pseudo_reference: "Free speech: ASR-generated reference",
+          transcript_assisted_light: "Free speech: light transcript diagnosis",
+          acoustic: "Recording/acoustic diagnosis",
+          kanade_voice_reference: "Experimental: fixed-sentence voice reference",
+          kanade_asr_voice_reference: "Experimental: free-speech voice reference"
+        },
+        statusLabels: {
+          waiting_for_speech: "waiting",
+          speaking: "speaking",
+          maybe_ending: "maybe ending",
+          ended: "ended",
+          warming_up: "warming up",
+          waiting: "waiting"
+        },
+        volumeLabels: { ok: "ok", low: "low", high: "high", quiet: "quiet" },
+        pitchLabels: { up: "up", down: "down", flat: "flat", unknown: "unknown" },
+        reliabilityLabels: {
+          content: "Content match",
+          kana: "Kana similarity",
+          prosodyTarget: "Prosody target",
+          hlSource: "H/L source",
+          targetConsistency: "Target consistency",
+          contourCorr: "Contour corr",
+          contourRmse: "Contour RMSE",
+          transition: "Transition",
+          finalIntonation: "Final intonation",
+          evalMode: "Eval mode",
+          voicedRatio: "Voiced ratio",
+          f0Range: "F0 range",
+          recordingQuality: "Recording",
+          snr: "SNR",
+          moraEvidence: "Mora evidence",
+          judgeableMoras: "Judgeable moras",
+          endpointing: "Endpointing",
+          alignment: "Alignment",
+          f0Coverage: "F0 coverage",
+          validMoraF0: "Valid mora F0",
+          dtw: "DTW cost",
+          durationRatio: "Duration ratio"
+        }
+      }
+    };
+
+    const modeCatalog = {
+      reference: { group: "core", hint: "modeHintReference", tone: "good", tags: ["最适合正式评分", "需要目标句", "有参考音"] },
+      asr_pseudo_reference: { group: "free", hint: "modeHintAsr", tone: "warn", tags: ["自由说话", "依赖 ASR", "会生成伪参考"] },
+      transcript_assisted_light: { group: "free", hint: "modeHintLight", tone: "warn", tags: ["自由说话", "轻量", "不生成参考音"] },
+      acoustic: { group: "diagnostic", hint: "modeHintAcoustic", tone: "", tags: ["录音质量", "声学代理分", "不判断内容"] },
+      kanade_voice_reference: { group: "experimental", hint: "modeHintKanade", tone: "bad", tags: ["实验", "声线参考", "不作正式评分依据"] },
+      kanade_asr_voice_reference: { group: "experimental", hint: "modeHintKanade", tone: "bad", tags: ["实验", "ASR + 声线播放", "可能回退"] }
+    };
+
+    const modeText = {
+      "zh-CN": {
+        groups: { core: "主评价模式", free: "自由说话模式", diagnostic: "诊断工具", experimental: "实验功能" },
+        fallbackAcoustic: "当前链路没有成功生成可用于评分的参考音，系统已回退为纯声学诊断；这个结果不能解释为 Kanade 或 ASR 参考评分。",
+        descriptions: {
+          reference: { title: "固定句参考评价", body: "用于目标句已知的朗读练习。系统比较你的录音和缓存参考音，重点看发音可懂度、拍/时长、音高走势和流畅度。", score: "这是目前最适合认真看的评分模式。" },
+          asr_pseudo_reference: { title: "自由说话：ASR 生成参考", body: "先把你说的话转写成文本，再生成 pseudo-reference 做弱参考评价。适合探索自由发话，但 ASR 错误会污染结果。", score: "分数只适合作为调试诊断，不能当成严格能力评价。" },
+          transcript_assisted_light: { title: "自由说话：轻量转写诊断", body: "只使用转写估计大致拍数和节奏，不生成参考音，也不做假名级纠错。", score: "适合快速看语速、停顿、录音质量和大致流畅度。" },
+          acoustic: { title: "录音质量/声学诊断", body: "完全不看文本和内容，只看音量、有效语音、停顿、语速、F0 活动和录音质量。", score: "它不是发音正确率，只是判断这段音频能不能被可靠分析。" },
+          kanade_voice_reference: { title: "实验：固定句声线参考", body: "尝试用你的声线生成固定目标句参考音，用来听和调试。", score: "声线参考不等于标准教师音，也不应作为正式评分真值。" },
+          kanade_asr_voice_reference: { title: "实验：自由说话声线参考", body: "先 ASR 转写，再尝试生成声线参考音；评分仍以普通 pseudo-reference/声学特征为主。", score: "如果 ASR 或声线生成失败，会明确回退为纯声学诊断。" }
+        }
+      },
+      "zh-TW": {
+        groups: { core: "主評價模式", free: "自由說話模式", diagnostic: "診斷工具", experimental: "實驗功能" },
+        fallbackAcoustic: "目前鏈路沒有成功生成可用於評分的參考音，系統已回退為純聲學診斷；這個結果不能解釋為 Kanade 或 ASR 參考評分。",
+        descriptions: {
+          reference: { title: "固定句參考評價", body: "用於目標句已知的朗讀練習。系統比較你的錄音與快取參考音，重點看發音可懂度、拍/時長、音高走勢與流暢度。", score: "這是目前最適合正式查看的評分模式。" },
+          asr_pseudo_reference: { title: "自由說話：ASR 生成參考", body: "先把你說的話轉寫成文字，再生成 pseudo-reference 做弱參考評價。適合探索自由發話，但 ASR 錯誤會污染結果。", score: "分數只適合作為調試診斷，不能當成嚴格能力評價。" },
+          transcript_assisted_light: { title: "自由說話：輕量轉寫診斷", body: "只使用轉寫估計大致拍數與節奏，不生成參考音，也不做假名級糾錯。", score: "適合快速看語速、停頓、錄音品質與大致流暢度。" },
+          acoustic: { title: "錄音品質/聲學診斷", body: "完全不看文字和內容，只看音量、有效語音、停頓、語速、F0 活動與錄音品質。", score: "它不是發音正確率，只是判斷這段音訊能不能被可靠分析。" },
+          kanade_voice_reference: { title: "實驗：固定句聲線參考", body: "嘗試用你的聲線生成固定目標句參考音，用來聽和調試。", score: "聲線參考不等於標準教師音，也不應作為正式評分真值。" },
+          kanade_asr_voice_reference: { title: "實驗：自由說話聲線參考", body: "先 ASR 轉寫，再嘗試生成聲線參考音；評分仍以普通 pseudo-reference/聲學特徵為主。", score: "如果 ASR 或聲線生成失敗，會明確回退為純聲學診斷。" }
+        }
+      },
+      ja: {
+        groups: { core: "主評価", free: "自由発話", diagnostic: "診断ツール", experimental: "実験機能" },
+        fallbackAcoustic: "参照音声を生成できなかったため、音響のみ診断にフォールバックしました。この結果は Kanade や ASR 参照評価ではありません。",
+        descriptions: {
+          reference: { title: "固定文参照評価", body: "目標文が分かっている朗読練習向けです。録音と参照音声を比較し、発音の聞き取りやすさ、モーラの長さ、ピッチ推移、流暢さを見ます。", score: "現時点で最も正式評価に近いモードです。" },
+          asr_pseudo_reference: { title: "自由発話：ASR 生成参照", body: "発話を ASR で文字化し、pseudo-reference を生成して弱い参照評価を行います。ASR 誤りの影響があります。", score: "スコアは厳密な能力評価ではなく診断用です。" },
+          transcript_assisted_light: { title: "自由発話：軽量書き起こし診断", body: "書き起こしから大まかなモーラ数とリズムを推定します。参照音声生成や仮名単位の訂正は行いません。", score: "話速、ポーズ、録音品質、流暢さの確認向けです。" },
+          acoustic: { title: "録音品質/音響診断", body: "テキストや内容を使わず、音量、有声区間、ポーズ、話速、F0 活動、録音品質だけを見ます。", score: "発音正誤ではなく、解析できる音声かを判断するためのモードです。" },
+          kanade_voice_reference: { title: "実験：固定文の声質参照", body: "あなたの声質で固定目標文の参照音声生成を試します。主に試聴とデバッグ用です。", score: "標準教師音声ではなく、正式な真値として扱いません。" },
+          kanade_asr_voice_reference: { title: "実験：自由発話の声質参照", body: "ASR 後に声質参照音声生成を試します。評価は通常の pseudo-reference/音響特徴が中心です。", score: "ASR や声質生成が失敗した場合は音響のみ診断へ戻ります。" }
+        }
+      },
+      en: {
+        groups: { core: "Main scoring", free: "Free speech", diagnostic: "Diagnostics", experimental: "Experimental" },
+        fallbackAcoustic: "The reference chain did not produce a usable scoring reference, so this result fell back to acoustic-only diagnosis. Do not read it as Kanade or ASR-reference scoring.",
+        descriptions: {
+          reference: { title: "Fixed-sentence reference scoring", body: "Use this when the target sentence is known. The system compares your recording with a cached reference and checks intelligibility, mora timing, pitch movement, and fluency.", score: "This is the most meaningful scoring mode right now." },
+          asr_pseudo_reference: { title: "Free speech: ASR-generated reference", body: "The system transcribes what you said, generates a pseudo-reference, then runs weak reference-based scoring. ASR mistakes can pollute the result.", score: "Use the score as diagnostic evidence, not a strict proficiency grade." },
+          transcript_assisted_light: { title: "Free speech: light transcript diagnosis", body: "Uses transcript only to estimate rough mora count and rhythm. It does not generate reference audio or kana-level corrections.", score: "Good for quick speech-rate, pause, recording-quality, and fluency checks." },
+          acoustic: { title: "Recording/acoustic diagnosis", body: "Ignores text and content. It checks volume, voiced speech, pauses, speed, F0 movement, and recording quality.", score: "This is not pronunciation correctness; it tells whether the audio is analyzable." },
+          kanade_voice_reference: { title: "Experimental: fixed-sentence voice reference", body: "Tries to synthesize the fixed target sentence in your voice for listening and debugging.", score: "This is not a native teacher reference and should not be treated as scoring truth." },
+          kanade_asr_voice_reference: { title: "Experimental: free-speech voice reference", body: "Runs ASR and tries voice-conditioned playback. Scoring still relies on ordinary pseudo-reference/acoustic features.", score: "If ASR or voice generation fails, the UI shows an acoustic-only fallback." }
+        }
+      }
+    };
+
+    if (!locales[state.locale]) state.locale = "zh-CN";
+
+    function localePack() {
+      return locales[state.locale] || locales["zh-CN"];
+    }
+
+    function t(key, vars = {}) {
+      const raw = localePack()[key] ?? locales["zh-CN"][key] ?? key;
+      if (typeof raw !== "string") return raw;
+      return raw.replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
+    }
+
+    function tGroup(group, key) {
+      return localePack()[group]?.[key] ?? locales["zh-CN"][group]?.[key] ?? key;
+    }
+
+    function tMode(mode) {
+      return tGroup("modeLabels", mode);
+    }
+
+    function activeModeText() {
+      return modeText[state.locale] || modeText["zh-CN"];
+    }
+
+    function tModeGroup(group) {
+      return activeModeText().groups[group] || modeText["zh-CN"].groups[group] || group;
+    }
+
+    function tModeDescription(mode) {
+      return activeModeText().descriptions[mode] || modeText["zh-CN"].descriptions[mode] || {
+        title: tMode(mode),
+        body: "",
+        score: ""
+      };
+    }
+
+    function tStatus(value) {
+      return tGroup("statusLabels", value) || value || t("unknown");
+    }
+
+    function tVolume(value) {
+      return tGroup("volumeLabels", value) || value || t("unknown");
+    }
+
+    function tPitch(value) {
+      return tGroup("pitchLabels", value) || value || t("unknown");
+    }
+
+    function setRecordStatus(key, className = "pill") {
+      state.recordStatusKey = key;
+      $("recordState").textContent = t(key);
+      $("recordState").className = className;
+    }
+
+    function setLiveHint(key) {
+      state.liveHintKey = key;
+      $("liveHint").textContent = t(key);
+    }
+
+    function renderModeOptions() {
+      const select = $("evalMode");
+      const selected = select.value || state.config?.eval_mode || "reference";
+      const modes = Array.isArray(state.config?.available_modes) && state.config.available_modes.length
+        ? state.config.available_modes
+        : ["reference", "asr_pseudo_reference", "transcript_assisted_light", "acoustic"];
+      const groups = ["core", "free", "diagnostic", "experimental"];
+      select.innerHTML = groups.map((group) => {
+        const groupModes = modes.filter((mode) => (modeCatalog[mode]?.group || "diagnostic") === group);
+        if (!groupModes.length) return "";
+        const options = groupModes
+          .map((mode) => `<option value="${mode}">${tMode(mode)}</option>`)
+          .join("");
+        return `<optgroup label="${tModeGroup(group)}">${options}</optgroup>`;
+      }).join("");
+      if (modes.includes(selected)) select.value = selected;
+    }
+
+    function renderModeDescription(mode = currentMode()) {
+      const desc = tModeDescription(mode);
+      const group = modeCatalog[mode]?.group || "diagnostic";
+      const tone = modeCatalog[mode]?.tone || "";
+      $("modeDescription").innerHTML = `
+        <div class="mode-description-head">
+          <strong>${desc.title}</strong>
+          <span class="mode-tag ${tone}">${tModeGroup(group)}</span>
+        </div>
+        <div>${desc.body}</div>
+        <div class="mode-tags"><span class="mode-tag ${tone}">${desc.score}</span></div>
+      `;
+    }
+
+    function applyLocale() {
+      document.documentElement.lang = localePack().htmlLang;
+      document.title = t("appTitle");
+      document.querySelectorAll("[data-i18n]").forEach((node) => {
+        node.textContent = t(node.dataset.i18n);
+      });
+      document.querySelectorAll("#languageSwitch button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.locale === state.locale);
+      });
+      renderModeOptions();
+      setRecordStatus(state.recordStatusKey, $("recordState").className || "pill");
+      setLiveHint(state.liveHintKey);
+      if (state.busyKey) {
+        $("serverState").textContent = t(state.busyKey);
+      } else {
+        $("serverState").textContent = state.config?.server_label === "Public demo" ? t("publicDemo") : t("localDebug");
+      }
+      if (state.lastPayload) {
+        renderPayload(state.lastPayload);
+      } else if (state.config) {
+        $("wavPath").textContent = t("waitingForRecording");
+        $("reliabilityLevel").textContent = t("noData");
+        $("speechRatio").textContent = t("speechRatio");
+        $("stateSummary").textContent = t("noData");
+        $("evalLatency").textContent = `${t("waitShort")} --`;
+        $("realtimeRows").innerHTML = `<tr><td colspan="5">${t("noRealtimeRows")}</td></tr>`;
+        if (currentMode() === "reference") {
+          renderConfig(state.config);
+        } else {
+          renderModePlaceholder();
+          updateModeHint();
+        }
+      } else {
+        $("cacheLabel").textContent = t("loadingPrompt");
+        $("evalLatency").textContent = `${t("waitShort")} --`;
+      }
+    }
+
+    function setBusy(isBusy, key = "evaluating") {
+      state.busyKey = isBusy ? key : null;
+      $("serverState").textContent = isBusy ? t(key) : (state.config?.server_label === "Public demo" ? t("publicDemo") : t("localDebug"));
       $("serverState").className = isBusy ? "pill warn" : "pill";
       $("recordBtn").disabled = isBusy;
       $("sampleBtn").disabled = isBusy;
@@ -731,14 +1757,9 @@
 
     function renderConfig(config) {
       state.config = config;
-      if (Array.isArray(config.available_modes) && config.available_modes.length) {
-        const labels = config.mode_labels || {};
-        $("evalMode").innerHTML = config.available_modes
-          .map((mode) => `<option value="${mode}">${labels[mode] || mode}</option>`)
-          .join("");
-      }
-      $("serverState").textContent = config.server_label || "Local debug";
-      $("cachePath").textContent = config.cache_prefix;
+      renderModeOptions();
+      $("serverState").textContent = config.server_label === "Public demo" ? t("publicDemo") : t("localDebug");
+      $("cachePath").textContent = t("fixedSentenceMode");
       state.activeReference = config.reference;
       renderPrompt({
         target_text: config.target_text,
@@ -746,7 +1767,7 @@
         moras: config.moras,
         target_pitch: config.target_pitch
       });
-      $("referenceLabel").textContent = "Model reference";
+      $("referenceLabel").textContent = t("referenceAudio");
       if (config.reference_audio_url) {
         $("referenceAudio").src = config.reference_audio_url;
         $("referenceAudio").load();
@@ -760,12 +1781,12 @@
       const pitch = source?.target_pitch || [];
       state.activeMoras = moras;
       state.activeTargetPitch = pitch;
-      $("cacheLabel").textContent = source?.target_text || "Acoustic-only diagnosis";
-      $("targetText").textContent = source?.target_text || "Acoustic-only diagnosis";
-      $("kanaText").textContent = source?.kana || "No target text / no kana in this mode";
+      $("cacheLabel").textContent = source?.target_text || t("acousticOnlyDiagnosis");
+      $("targetText").textContent = source?.target_text || t("acousticOnlyDiagnosis");
+      $("kanaText").textContent = source?.kana || t("noTargetText");
       $("moraList").innerHTML = moras.length
         ? moras.map((m, i) => `<span class="mora">${m}<span class="pitch">${pitch[i] || "?"}</span></span>`).join("")
-        : `<span class="pill">No mora target</span>`;
+        : `<span class="pill">${t("noMoraTarget")}</span>`;
     }
 
     function renderModePlaceholder() {
@@ -777,46 +1798,56 @@
       state.activeReference = null;
       $("referenceAudio").removeAttribute("src");
       $("referenceAudio").load();
-      if (mode === "kanade_asr_voice_reference") {
-        $("cachePath").textContent = "Waiting for ASR";
-        $("referenceLabel").textContent = "Voice-conditioned playback after scoring";
+      if (mode === "kanade_voice_reference") {
+        $("cachePath").textContent = t("voicePseudoReference");
+        $("referenceLabel").textContent = t("voiceReferenceAfterScoring");
         renderPrompt({
-          target_text: "Speak freely, then ASR will generate the reference",
-          kana: "Transcript / kana will appear after scoring",
+          target_text: state.config?.target_text || t("speakFreely"),
+          kana: state.config?.kana || t("transcriptAfterScoring"),
+          moras: state.config?.moras || [],
+          target_pitch: state.config?.target_pitch || []
+        });
+        $("pitchSummary").textContent = t("pitchAfterScoring");
+      } else if (mode === "kanade_asr_voice_reference") {
+        $("cachePath").textContent = t("waitingForAsr");
+        $("referenceLabel").textContent = t("voiceReferenceAfterScoring");
+        renderPrompt({
+          target_text: t("speakFreely"),
+          kana: t("transcriptAfterScoring"),
           moras: [],
           target_pitch: []
         });
-        $("pitchSummary").textContent = "ASR scoring contour after scoring";
+        $("pitchSummary").textContent = t("pitchAfterScoring");
       } else if (mode === "asr_pseudo_reference") {
-        $("cachePath").textContent = "Waiting for ASR";
-        $("referenceLabel").textContent = "Generated reference after scoring";
+        $("cachePath").textContent = t("waitingForAsr");
+        $("referenceLabel").textContent = t("referenceAfterScoring");
         renderPrompt({
-          target_text: "Speak freely, then ASR will generate the reference",
-          kana: "Transcript / kana will appear after scoring",
+          target_text: t("speakFreely"),
+          kana: t("transcriptAfterScoring"),
           moras: [],
           target_pitch: []
         });
-        $("pitchSummary").textContent = "No generated contour yet";
+        $("pitchSummary").textContent = t("noGeneratedContourYet");
       } else if (mode === "transcript_assisted_light") {
-        $("cachePath").textContent = "Waiting for ASR transcript";
-        $("referenceLabel").textContent = "No generated reference";
+        $("cachePath").textContent = t("waitingForTranscript");
+        $("referenceLabel").textContent = t("noGeneratedReference");
         renderPrompt({
-          target_text: "Speak freely, then transcript-assisted analysis will estimate mora rate",
-          kana: "Transcript / kana will appear after scoring",
+          target_text: t("speakFreely"),
+          kana: t("transcriptAfterScoring"),
           moras: [],
           target_pitch: []
         });
-        $("pitchSummary").textContent = "No generated contour in this mode";
+        $("pitchSummary").textContent = t("noContourInMode");
       } else {
-        $("cachePath").textContent = "No text reference";
-        $("referenceLabel").textContent = "No generated reference";
+        $("cachePath").textContent = t("noTextReference");
+        $("referenceLabel").textContent = t("noGeneratedReference");
         renderPrompt({
-          target_text: "Acoustic-only diagnosis",
-          kana: "No transcript, no target kana in this mode",
+          target_text: t("acousticOnlyDiagnosis"),
+          kana: t("noTranscriptOrTargetKana"),
           moras: [],
           target_pitch: []
         });
-        $("pitchSummary").textContent = "No target contour in this mode";
+        $("pitchSummary").textContent = t("noTargetContourInMode");
       }
       drawPitchComparison(null);
     }
@@ -834,35 +1865,35 @@
         $("referenceAudio").load();
       }
       if (mode === "asr_pseudo_reference") {
-        const asrText = result.details?.asr?.text || result.target_text || "ASR transcript";
-        $("cachePath").textContent = "ASR generated reference";
+        const asrText = result.details?.asr?.text || result.target_text || t("asrTranscript");
+        $("cachePath").textContent = t("asrGeneratedReference");
         const method = payload.reference?.ref_boundary_method || "generated";
-        $("referenceLabel").textContent = `Generated reference from ASR (${method})`;
+        $("referenceLabel").textContent = t("asrReferenceWithMethod", { method });
         $("cacheLabel").textContent = asrText;
       } else if (mode === "kanade_asr_voice_reference") {
-        const asrText = result.details?.asr?.text || result.target_text || "ASR transcript";
-        $("cachePath").textContent = "ASR scoring reference + Kanade playback";
-        $("referenceLabel").textContent = "Kanade playback; scoring uses ASR TTS";
+        const asrText = result.details?.asr?.text || result.target_text || t("asrTranscript");
+        $("cachePath").textContent = t("asrScoringVoicePlayback");
+        $("referenceLabel").textContent = t("voicePlaybackScoringAsrTts");
         $("cacheLabel").textContent = asrText;
       } else if (mode === "kanade_voice_reference") {
         const method = payload.reference?.ref_boundary_method || "generated";
-        $("cachePath").textContent = "Voice-conditioned pseudo-reference";
-        $("referenceLabel").textContent = `Kanade reference (${method})`;
+        $("cachePath").textContent = t("voicePseudoReference");
+        $("referenceLabel").textContent = t("kanadeReferenceWithMethod", { method });
       } else if (mode === "transcript_assisted_light") {
-        const asrText = result.details?.asr?.text || result.target_text || "Transcript-assisted diagnosis";
-        $("cachePath").textContent = "Transcript-assisted light";
-        $("referenceLabel").textContent = "No generated reference";
+        const asrText = result.details?.asr?.text || result.target_text || t("transcriptAssistedDiagnosis");
+        $("cachePath").textContent = t("transcriptAssistedLight");
+        $("referenceLabel").textContent = t("noGeneratedReference");
         $("referenceAudio").removeAttribute("src");
         $("referenceAudio").load();
         $("cacheLabel").textContent = asrText;
       } else if (mode === "reference_free_acoustic" || mode === "acoustic" || mode.includes("fallback_acoustic")) {
-        $("cachePath").textContent = "No text reference";
-        $("referenceLabel").textContent = "No generated reference";
+        $("cachePath").textContent = t("noTextReference");
+        $("referenceLabel").textContent = t("noGeneratedReference");
         $("referenceAudio").removeAttribute("src");
         $("referenceAudio").load();
       } else {
-        $("cachePath").textContent = state.config?.cache_prefix || "fixed reference";
-        $("referenceLabel").textContent = "Model reference";
+        $("cachePath").textContent = state.config?.cache_prefix || t("fixedReference");
+        $("referenceLabel").textContent = t("referenceAudio");
       }
       renderPrompt({
         target_text: result.target_text,
@@ -879,20 +1910,25 @@
     function updateModeHint() {
       const mode = currentMode();
       const hints = {
-        reference: "uses target + reference",
-        kanade_asr_voice_reference: "free speech + your voice playback",
-        asr_pseudo_reference: "ASR transcript + generated reference",
-        transcript_assisted_light: "ASR transcript + acoustic proxy",
-        acoustic: "fast: no ASR, risk proxy only"
+        reference: t("modeHintReference"),
+        kanade_voice_reference: t("modeHintKanade"),
+        kanade_asr_voice_reference: t("modeHintKanade"),
+        asr_pseudo_reference: t("modeHintAsr"),
+        transcript_assisted_light: t("modeHintLight"),
+        acoustic: t("modeHintAcoustic")
       };
       $("modeHint").textContent = hints[mode] || mode;
-      $("modeHint").className = mode === "reference" ? "pill good" : mode === "kanade_asr_voice_reference" || mode === "asr_pseudo_reference" || mode === "transcript_assisted_light" ? "pill warn" : "pill";
+      const tone = modeCatalog[mode]?.tone || "";
+      $("modeHint").className = tone ? `pill ${tone}` : "pill";
+      renderModeDescription(mode);
     }
 
     function renderScores(result) {
-      $("scoreGrid").innerHTML = scoreMeta.map(([key, label]) => {
+      $("scoreGrid").innerHTML = scoreKeys.map((key) => {
+        const label = tGroup("scoreLabels", key);
         const value = result[key] ?? 0;
-        return `<div class="score"><span>${label}</span><strong>${value}</strong><span>/ 100</span></div>`;
+        const className = key === "total_score" ? "score total" : "score";
+        return `<div class="${className}"><span>${label}</span><strong>${value}</strong><span>/ 100</span></div>`;
       }).join("");
     }
 
@@ -905,57 +1941,65 @@
       const evidence = result.details?.mora_evidence_summary || {};
       const mode = result.details?.mode || state.lastPayload?.mode || "reference";
       const level = reliability.level || "unknown";
-      $("reliabilityLevel").textContent = `${level} ${(Number(reliability.overall || 0) * 100).toFixed(0)}%`;
+      const levelText = level === "high" ? t("high") : level === "medium" ? t("medium") : level === "low" ? t("low") : t("unknown");
+      $("reliabilityLevel").textContent = `${levelText} ${(Number(reliability.overall || 0) * 100).toFixed(0)}%`;
       $("reliabilityLevel").className = level === "high" ? "pill good" : level === "medium" ? "pill warn" : "pill bad";
       const items = [
-        ["Content match", content.status || "unknown"],
-        ["Kana similarity", content.kana_similarity],
-        ["Prosody target", prosody.pitch_target_source || "unknown"],
-        ["H/L source", prosody.hl_target_source || "unknown"],
-        ["Pitch consistency", prosody.pitch_target_consistency || "unknown"],
-        ["Contour corr", prosody.contour_corr],
-        ["Contour RMSE", prosody.contour_rmse],
-        ["Transition", prosody.transition_agreement],
-        ["Final intonation", prosody.final_intonation_match],
-        ["Eval mode", mode],
-        ["Voiced ratio", acoustic.voiced_ratio],
-        ["F0 range", acoustic.relative_log_f0_range],
-        ["Recording", reliability.recording_quality],
-        ["SNR", recording.snr_db],
-        ["Mora evidence", reliability.mora_evidence],
-        ["Mora judge", evidence.judgement_available_count !== undefined ? `${evidence.judgement_available_count}/${evidence.mora_count || result.moras?.length || 0}` : undefined],
-        ["Endpointing", reliability.endpointing],
-        ["Alignment", reliability.alignment],
-        ["F0 coverage", reliability.f0_coverage],
-        ["Mora F0", `${reliability.valid_mora_count || 0}/${reliability.mora_count || result.moras?.length || 0}`],
-        ["DTW cost", content.dtw_cost],
-        ["Duration ratio", content.duration_ratio]
+        ["content", content.status || "unknown"],
+        ["kana", content.kana_similarity],
+        ["prosodyTarget", prosody.pitch_target_source || "unknown"],
+        ["hlSource", prosody.hl_target_source || "unknown"],
+        ["targetConsistency", prosody.pitch_target_consistency || "unknown"],
+        ["contourCorr", prosody.contour_corr],
+        ["contourRmse", prosody.contour_rmse],
+        ["transition", prosody.transition_agreement],
+        ["finalIntonation", prosody.final_intonation_match],
+        ["evalMode", tMode(mode)],
+        ["voicedRatio", acoustic.voiced_ratio],
+        ["f0Range", acoustic.relative_log_f0_range],
+        ["recordingQuality", reliability.recording_quality],
+        ["snr", recording.snr_db],
+        ["moraEvidence", reliability.mora_evidence],
+        ["judgeableMoras", evidence.judgement_available_count !== undefined ? `${evidence.judgement_available_count}/${evidence.mora_count || result.moras?.length || 0}` : undefined],
+        ["endpointing", reliability.endpointing],
+        ["alignment", reliability.alignment],
+        ["f0Coverage", reliability.f0_coverage],
+        ["validMoraF0", `${reliability.valid_mora_count || 0}/${reliability.mora_count || result.moras?.length || 0}`],
+        ["dtw", content.dtw_cost],
+        ["durationRatio", content.duration_ratio]
       ];
-      $("reliabilityGrid").innerHTML = items.map(([label, value]) => {
+      $("reliabilityGrid").innerHTML = items.map(([key, value]) => {
+        const label = tGroup("reliabilityLabels", key);
         let text = value;
         if (typeof value === "number") {
-          text = label === "SNR"
+          text = key === "snr"
             ? `${value.toFixed(1)} dB`
-            : label === "DTW cost" || label === "Duration ratio" || label === "Contour corr" || label === "Contour RMSE"
+            : ["dtw", "durationRatio", "contourCorr", "contourRmse"].includes(key)
             ? value.toFixed(2)
             : `${(value * 100).toFixed(0)}%`;
         } else if (typeof value === "boolean") {
-          text = value ? "match" : "different";
+          text = value ? t("same") : t("different");
         }
         return `<div class="reliability-item"><span>${label}</span><strong>${text}</strong></div>`;
       }).join("");
-      const contentWarnings = content.note ? [`content_match: ${content.note}`] : [];
+      const contentWarnings = content.note ? [`${t("contentPrefix")}：${content.note}`] : [];
       if (content.transcript) {
-        contentWarnings.unshift(`ASR: ${content.transcript} / ${content.transcript_kana || ""}`);
+        contentWarnings.unshift(`${t("asrPrefix")}：${content.transcript} / ${content.transcript_kana || ""}`);
       }
       if (prosody.pitch_target_source) {
-        contentWarnings.push(`prosody: ${prosody.pitch_target_source} primary; H/L source = ${prosody.hl_target_source || "unknown"}`);
+        contentWarnings.push(`${t("prosodyTargetPrefix")}：${t("prosodyTargetNote", {
+          primary: prosody.pitch_target_source,
+          source: prosody.hl_target_source || t("unknown")
+        })}`);
       }
-      if (mode === "reference_free_acoustic") {
-        contentWarnings.push("acoustic-only: no text, no ASR, no mora correctness");
+      if (mode.includes("fallback_acoustic")) {
+        contentWarnings.unshift(activeModeText().fallbackAcoustic || modeText["zh-CN"].fallbackAcoustic);
+      }
+      if (mode === "reference_free_acoustic" || mode === "acoustic" || mode.includes("fallback_acoustic")) {
+        contentWarnings.push(t("acousticModeWarning"));
       }
       if (mode === "transcript_assisted_light") {
-        contentWarnings.push("transcript-assisted: transcript estimates mora count only; no kana-level correction");
+        contentWarnings.push(t("transcriptModeWarning"));
       }
       $("reliabilityWarnings").innerHTML = [...contentWarnings, ...(reliability.warnings || [])]
         .map((warning) => `<li>${warning}</li>`)
@@ -968,12 +2012,12 @@
       const width = Math.max(0, (endpointing.speech_duration || 0) / raw * 100);
       $("speechRegion").style.left = `${left}%`;
       $("speechRegion").style.width = `${width}%`;
-      $("speechRatio").textContent = `speech ${(endpointing.speech_ratio * 100).toFixed(1)}%`;
+      $("speechRatio").textContent = `${t("speechLabel")} ${(endpointing.speech_ratio * 100).toFixed(1)}%`;
       $("endpointStats").innerHTML = [
-        ["Raw", endpointing.raw_duration],
-        ["Start", endpointing.speech_start],
-        ["Speech", endpointing.speech_duration],
-        ["Trailing", endpointing.trailing_silence]
+        [t("totalDuration"), endpointing.raw_duration],
+        [t("speechStart"), endpointing.speech_start],
+        [t("speechDuration"), endpointing.speech_duration],
+        [t("trailingSilence"), endpointing.trailing_silence]
       ].map(([label, value]) => `<div><strong>${label}</strong><br>${Number(value || 0).toFixed(3)}s</div>`).join("");
     }
 
@@ -987,15 +2031,15 @@
     function renderRealtime(rows, mode) {
       if (!rows.length) {
         const reason = mode === "reference" || mode === "reference_based"
-          ? "No offline realtime simulation rows returned yet."
-          : "Not run in this mode";
+          ? t("noRealtimeRows")
+          : t("noReplayCurrentMode");
         $("stateSummary").textContent = reason;
         $("stateBars").innerHTML = ["waiting", "speaking", "ending", "ended"].map((label) =>
           `<div class="bar empty-bar" title="${label}: not available" style="height:2px"></div>`
         ).join("");
         $("realtimeRows").innerHTML = `<tr><td colspan="5">${mode === "reference" || mode === "reference_based"
-          ? "Reference mode shows offline replay rows after scoring. It is not live browser streaming."
-          : "Realtime state replay is only implemented for fixed reference mode. This mode uses sentence-final analysis."}</td></tr>`;
+          ? t("fixedModeReplayAfterScoring")
+          : t("sentenceFinalOnly")}</td></tr>`;
         return;
       }
       const counts = rows.reduce((acc, row) => {
@@ -1004,13 +2048,13 @@
       }, {});
       const keys = ["waiting_for_speech", "speaking", "maybe_ending", "ended"];
       const max = Math.max(1, ...Object.values(counts));
-      $("stateSummary").textContent = `offline replay · ${keys.map((k) => `${k}: ${counts[k] || 0}`).join(" · ")}`;
+      $("stateSummary").textContent = `${t("offlineReplay")} · ${keys.map((k) => `${tStatus(k)}: ${counts[k] || 0}`).join(" · ")}`;
       $("stateBars").innerHTML = keys.map((k) => {
         const h = Math.max(2, ((counts[k] || 0) / max) * 68);
         return `<div class="bar" title="${k}: ${counts[k] || 0}" style="height:${h}px"></div>`;
       }).join("");
       $("realtimeRows").innerHTML = rows.filter((_, i) => i % 4 === 0 || i === rows.length - 1).map((row) =>
-        `<tr><td>${Number(row.time_sec).toFixed(2)}</td><td>${row.endpoint_state}</td><td>${row.mora_index}:${row.mora}</td><td>${row.volume_state}</td><td>${row.pitch_state}</td></tr>`
+        `<tr><td>${Number(row.time_sec).toFixed(2)}</td><td>${tStatus(row.endpoint_state)}</td><td>${row.mora_index}:${row.mora}</td><td>${tVolume(row.volume_state)}</td><td>${tPitch(row.pitch_state)}</td></tr>`
       ).join("");
     }
 
@@ -1047,10 +2091,10 @@
         ctx.fillStyle = "#667085";
         ctx.font = "12px system-ui, -apple-system, sans-serif";
         const text = currentMode() === "asr_pseudo_reference"
-          ? "ASR pseudo-reference mode will draw the generated reference contour after scoring."
+          ? t("generatedContourAfterScoring")
           : currentMode() === "transcript_assisted_light"
-          ? "Transcript-assisted light mode has transcript mora count but no generated reference contour."
-          : "Acoustic-only mode has no target mora/reference contour.";
+          ? t("lightNoGeneratedContour")
+          : t("acousticNoMoraOrContour");
         ctx.fillText(text, 16, 34);
         return;
       }
@@ -1058,10 +2102,10 @@
         ctx.fillStyle = "#667085";
         ctx.font = "12px system-ui, -apple-system, sans-serif";
         const text = currentMode() === "transcript_assisted_light"
-          ? "Transcript-assisted light mode estimates mora rate but does not generate a reference contour."
-          : "Acoustic-only mode has no target mora/reference contour. See Reliability for F0 range and voiced ratio.";
+          ? t("lightNoReferenceContour")
+          : t("acousticSeeReliability");
         ctx.fillText(text, 16, 34);
-        $("pitchSummary").textContent = "No target contour in this mode";
+        $("pitchSummary").textContent = t("noTargetContourInMode");
         return;
       }
       const ref = normalizeLogF0(refHz);
@@ -1085,7 +2129,7 @@
       }
 
       if (!all.length || !moras.length) {
-        ctx.fillText("Score or load a sample to compare relative F0 movement.", pad.left, pad.top + 24);
+        ctx.fillText(t("compareContourAfterScoring"), pad.left, pad.top + 24);
         return;
       }
 
@@ -1095,9 +2139,9 @@
       const yFor = (z) => pad.top + h - ((z - minZ) / (maxZ - minZ)) * h;
 
       ctx.fillStyle = "#667085";
-      ctx.fillText("high", 4, pad.top + 4);
-      ctx.fillText("low", 4, pad.top + h);
-      ctx.fillText("rel.", 4, pad.top + h / 2);
+      ctx.fillText(t("high"), 8, pad.top + 4);
+      ctx.fillText(t("low"), 8, pad.top + h);
+      ctx.fillText(t("relative"), 4, pad.top + h / 2);
 
       moras.forEach((mora, i) => {
         const x = xFor(i);
@@ -1110,11 +2154,11 @@
         ctx.textAlign = "center";
         ctx.fillText(mora, x, pad.top + h + 22);
         ctx.fillStyle = "#667085";
-        ctx.fillText(`T:${targetPitch[i] || "?"}`, x, pad.top + h + 38);
+        ctx.fillText(`${t("targetAbbr")}:${targetPitch[i] || "?"}`, x, pad.top + h + 38);
         if (result) {
           const obs = observed[i] || "?";
           ctx.fillStyle = obs === "?" ? "#98a2b3" : obs === targetPitch[i] ? "#047857" : "#b42318";
-          ctx.fillText(`O:${obs}`, x, pad.top + h + 54);
+          ctx.fillText(`${t("observedAbbr")}:${obs}`, x, pad.top + h + 54);
         }
       });
       ctx.textAlign = "left";
@@ -1154,14 +2198,15 @@
       const validPairs = ref.map((v, i) => [v, user[i]])
         .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b));
       const reliability = result?.details?.reliability;
+      const level = reliability?.level === "high" ? t("high") : reliability?.level === "medium" ? t("medium") : t("low");
       $("pitchSummary").textContent = result
-        ? `${validPairs.length}/${moras.length} mora compared · ${reliability?.level || "unknown"} reliability`
-        : "Model reference only";
+        ? t("comparedMoras", { valid: validPairs.length, total: moras.length, level })
+        : t("referenceOnly");
     }
 
     function renderPayload(payload) {
       state.lastPayload = payload;
-      $("wavPath").textContent = payload.wav_path || "uploaded wav";
+      $("wavPath").textContent = payload.wav_path ? t("evaluated") : t("uploadedRecording");
       renderLatency(payload);
       renderDynamicReference(payload);
       renderScores(payload.result);
@@ -1178,16 +2223,16 @@
       const serverMs = Number(payload.unified?.latency_ms || ((payload.result?.timing?.total || 0) * 1000));
       const wallMs = Number(payload.client_latency_ms || 0);
       const parts = [];
-      if (wallMs > 0) parts.push(`wait ${(wallMs / 1000).toFixed(3)}s`);
-      if (serverMs > 0) parts.push(`server ${(serverMs / 1000).toFixed(3)}s`);
-      $("evalLatency").textContent = parts.length ? parts.join(" · ") : "wait --";
+      if (wallMs > 0) parts.push(`${t("waitShort")} ${(wallMs / 1000).toFixed(3)}s`);
+      if (serverMs > 0) parts.push(`${t("serverTime")} ${(serverMs / 1000).toFixed(3)}s`);
+      $("evalLatency").textContent = parts.length ? parts.join(" · ") : `${t("waitShort")} --`;
     }
 
     async function evaluateBlob(blob, name = "recording.wav") {
       setBusy(true);
       const started = performance.now();
       state.lastWaitStartedAt = started;
-      $("evalLatency").textContent = "wait ...";
+      $("evalLatency").textContent = `${t("waitShort")} ...`;
       const form = new FormData();
       form.append("audio", blob, name);
       form.append("mode", currentMode());
@@ -1269,18 +2314,16 @@
 
       state.source.connect(state.processor);
       state.processor.connect(state.audioContext.destination);
-      $("recordState").textContent = "Get ready";
-      $("recordState").className = "pill warn";
-      $("liveHint").textContent = "Get ready";
+      setRecordStatus("getReady", "pill warn");
+      setLiveHint("getReady");
       $("recordBtn").disabled = true;
       $("stopBtn").disabled = false;
       $("playLastBtn").disabled = true;
       clearTimeout(state.readyTimer);
       state.readyTimer = setTimeout(() => {
         if (!state.recording) return;
-        $("recordState").textContent = "Speak now";
-        $("recordState").className = "pill bad";
-        $("liveHint").textContent = "Speak now";
+        setRecordStatus("speakNow", "pill bad");
+        setLiveHint("speakNow");
       }, 700);
       state.meterTimer = setInterval(() => {
         $("liveTime").textContent = `${((performance.now() - state.startedAt) / 1000).toFixed(2)}s`;
@@ -1289,9 +2332,8 @@
 
     async function stopRecording() {
       $("stopBtn").disabled = true;
-      $("recordState").textContent = "Encoding";
-      $("recordState").className = "pill warn";
-      $("liveHint").textContent = "Encoding";
+      setRecordStatus("processing", "pill warn");
+      setLiveHint("processing");
       state.recording = false;
       clearTimeout(state.readyTimer);
       clearInterval(state.meterTimer);
@@ -1304,14 +2346,12 @@
       state.lastRecordingUrl = URL.createObjectURL(blob);
       $("lastRecordingAudio").src = state.lastRecordingUrl;
       $("playLastBtn").disabled = false;
-      $("recordState").textContent = "Scoring";
-      $("recordState").className = "pill warn";
-      $("liveHint").textContent = "Scoring";
-      $("evalLatency").textContent = "wait ...";
+      setRecordStatus("evaluating", "pill warn");
+      setLiveHint("evaluating");
+      $("evalLatency").textContent = `${t("waitShort")} ...`;
       await evaluateBlob(blob);
-      $("recordState").textContent = "Ready";
-      $("recordState").className = "pill";
-      $("liveHint").textContent = "Ready";
+      setRecordStatus("ready", "pill");
+      setLiveHint("ready");
       $("recordBtn").disabled = false;
       $("playLastBtn").disabled = !state.lastRecordingUrl;
     }
@@ -1320,10 +2360,18 @@
       const config = await fetch("/api/config").then((r) => r.json());
       if (config.eval_mode) $("evalMode").value = config.eval_mode;
       renderConfig(config);
+      applyLocale();
+      $("languageSwitch").onclick = (event) => {
+        const button = event.target.closest("button[data-locale]");
+        if (!button) return;
+        state.locale = button.dataset.locale;
+        localStorage.setItem("jpSpeechEvalLocale", state.locale);
+        applyLocale();
+      };
       $("sampleBtn").onclick = async () => {
-        setBusy(true, "Sample");
+        setBusy(true, "sampleBusy");
         const started = performance.now();
-        $("evalLatency").textContent = "wait ...";
+        $("evalLatency").textContent = `${t("waitShort")} ...`;
         const payload = await fetch(`/api/evaluate-sample?mode=${encodeURIComponent(currentMode())}`).then((r) => r.json());
         payload.client_latency_ms = Math.round((performance.now() - started) * 1000) / 1000;
         setBusy(false);
@@ -1345,7 +2393,7 @@
       };
       $("copyJsonBtn").onclick = () => navigator.clipboard.writeText($("rawJson").textContent);
       $("exportFeaturesBtn").onclick = async () => {
-        setBusy(true, "Export");
+        setBusy(true, "exporting");
         const payload = await fetch("/api/export-features").then((r) => r.json());
         setBusy(false);
         if (!payload.ok) throw new Error(payload.error || "Export failed");
@@ -1353,7 +2401,7 @@
         $("copyJsonBtn").disabled = false;
       };
       $("compareModesBtn").onclick = async () => {
-        setBusy(true, "Compare");
+        setBusy(true, "comparing");
         const payload = await fetch("/api/compare-sample").then((r) => r.json());
         setBusy(false);
         if (!payload.ok) throw new Error(payload.error || "Compare failed");

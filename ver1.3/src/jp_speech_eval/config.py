@@ -42,6 +42,13 @@ DEFAULT_SCORING_CONFIG: Dict[str, Any] = {
         "high_pause_ratio": 0.20,
         "pause_ratio_weight": 120.0,
     },
+    "aggregate": {
+        "pronunciation_weight": 0.35,
+        "prosody_weight": 0.40,
+        "fluency_weight": 0.25,
+        "tone_weight": 0.0,
+        "note": "tone is expression/style evidence and is excluded from pronunciation-oriented total_score by default",
+    },
     "realtime": {
         "chunk_ms": 20,
         "analysis_window_ms": 60,
@@ -55,7 +62,9 @@ DEFAULT_SCORING_CONFIG: Dict[str, Any] = {
         "end_silence_sec": 0.65,
     },
     "content_match": {
+        "enabled": True,
         "use_asr": True,
+        "asr_policy": "if_acoustic_uncertain",
         "asr_provider": "auto",
         "asr_model": "small",
     },

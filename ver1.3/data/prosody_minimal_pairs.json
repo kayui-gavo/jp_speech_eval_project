@@ -1,0 +1,84 @@
+{
+  "metadata": {
+    "name": "jp_pitch_accent_minimal_pairs_mvp",
+    "dialect": "Tokyo Japanese",
+    "purpose": "Prosodic ABX model/layer diagnostics",
+    "audio_policy": "native audio preferred; TTS bootstrap is only a pipeline sanity check",
+    "notes": "Accent labels should be verified before using this file for scientific claims."
+  },
+  "pairs": [
+    {
+      "pair_id": "ame_ame",
+      "contrast_type": "pitch_accent",
+      "word_a": "雨",
+      "accent_a": "あめ[1]",
+      "word_b": "飴",
+      "accent_b": "あめ[0]",
+      "carrier_a": "この雨が好きです。",
+      "carrier_b": "この飴が好きです。",
+      "target_region": "word",
+      "notes": "Starter pair; verify accent labels against curated resources before formal use.",
+      "trials": []
+    },
+    {
+      "pair_id": "hashi_hashi_chopsticks_bridge",
+      "contrast_type": "pitch_accent",
+      "word_a": "箸",
+      "accent_a": "はし[1]",
+      "word_b": "橋",
+      "accent_b": "はし[2]",
+      "carrier_a": "この箸を使います。",
+      "carrier_b": "この橋を渡ります。",
+      "target_region": "word",
+      "trials": []
+    },
+    {
+      "pair_id": "hashi_hashi_bridge_edge",
+      "contrast_type": "pitch_accent",
+      "word_a": "橋",
+      "accent_a": "はし[2]",
+      "word_b": "端",
+      "accent_b": "はし[0]",
+      "carrier_a": "この橋を渡ります。",
+      "carrier_b": "この端に置きます。",
+      "target_region": "word",
+      "trials": []
+    },
+    {
+      "pair_id": "niji_niji",
+      "contrast_type": "pitch_accent",
+      "word_a": "二字",
+      "accent_a": "にじ[1]",
+      "word_b": "虹",
+      "accent_b": "にじ[0]",
+      "carrier_a": "二字のポスターがある。",
+      "carrier_b": "虹のポスターがある。",
+      "target_region": "word",
+      "trials": []
+    },
+    {
+      "pair_id": "kaki_kaki",
+      "contrast_type": "pitch_accent",
+      "word_a": "牡蠣",
+      "accent_a": "かき[1]",
+      "word_b": "柿",
+      "accent_b": "かき[0]",
+      "carrier_a": "この牡蠣が好きです。",
+      "carrier_b": "この柿が好きです。",
+      "target_region": "word",
+      "trials": []
+    },
+    {
+      "pair_id": "ima_ima",
+      "contrast_type": "pitch_accent",
+      "word_a": "今",
+      "accent_a": "いま[1]",
+      "word_b": "居間",
+      "accent_b": "いま[2]",
+      "carrier_a": "今ここにいます。",
+      "carrier_b": "居間にいます。",
+      "target_region": "word",
+      "trials": []
+    }
+  ]
+}

@@ -185,6 +185,11 @@ def unify_evaluation_result(
         "cache_prefix": raw.get("cache_prefix"),
         "alignment_mode": raw.get("alignment_mode"),
         "reference_source": details.get("reference_source"),
+        "reference_id": details.get("reference_id"),
+        "reference_provider": details.get("reference_provider"),
+        "reference_model": details.get("reference_model"),
+        "reference_voice": details.get("reference_voice"),
+        "reference_config_hash": details.get("reference_config_hash"),
     }
     if extra_input:
         input_info.update(extra_input)

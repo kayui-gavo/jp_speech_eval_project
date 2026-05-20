@@ -76,11 +76,6 @@ def _reference_payload(cache_prefix: Path) -> Dict[str, Any]:
     }
 
 
-def _generated_cache_prefix(text: str) -> Path:
-    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
-    return ROOT / "outputs" / "debug_ui" / "generated_refs" / f"asr_{digest}"
-
-
 def _realtime_rows(wav_path: Path, cache_prefix: Path, config_path: str | None, chunk_ms: float) -> List[Dict[str, Any]]:
     config = load_scoring_config(config_path)
     cache = load_sentence_cache(cache_prefix)
@@ -116,23 +111,29 @@ def _field_value(form: cgi.FieldStorage, name: str, default: str) -> str:
     return str(value or default)
 
 
-ALL_MODES = [
+CORE_MODES = [
     "reference",
     "asr_pseudo_reference",
+    "transcript_assisted_light",
+    "acoustic",
+]
+
+EXPERIMENTAL_MODES = [
     "kanade_voice_reference",
     "kanade_asr_voice_reference",
-    "acoustic",
-    "transcript_assisted_light",
 ]
+
+ALL_MODES = CORE_MODES + EXPERIMENTAL_MODES
 
 
 def _mode_labels() -> Dict[str, str]:
     return {
-        "reference": "Reference fixed sentence",
-        "kanade_asr_voice_reference": "Kanade ASR voice reference experimental",
-        "asr_pseudo_reference": "ASR pseudo-reference",
-        "transcript_assisted_light": "Transcript-assisted light",
-        "acoustic": "Acoustic only experimental",
+        "reference": "Reference fixed-sentence scoring",
+        "asr_pseudo_reference": "Free speech: ASR-generated pseudo-reference",
+        "transcript_assisted_light": "Free speech: transcript-assisted light diagnosis",
+        "acoustic": "Recording/acoustic quality diagnosis",
+        "kanade_voice_reference": "Experimental: voice-conditioned fixed-sentence reference",
+        "kanade_asr_voice_reference": "Experimental: ASR pseudo-reference with voice playback",
     }
 
 
@@ -261,7 +262,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 )
                 asr_text = result.get("details", {}).get("asr", {}).get("text", "")
                 if result.get("details", {}).get("mode") == "asr_pseudo_reference" and asr_text:
-                    generated_prefix = _generated_cache_prefix(asr_text)
+                    generated_prefix = Path(result.get("cache_prefix", ""))
                     reference = _reference_payload(generated_prefix)
                     self.server.latest_reference_wav = generated_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
                     reference_audio_url = f"/api/latest-reference.wav?mode=asr_pseudo_reference&text={hashlib.sha1(asr_text.encode('utf-8')).hexdigest()[:12]}"
@@ -438,22 +439,28 @@ def main() -> None:
     parser.add_argument(
         "--available-modes",
         default=None,
-        help="Comma-separated modes exposed in the UI. Defaults to all local modes.",
+        help="Comma-separated modes exposed in the UI. Overrides the stable default set.",
+    )
+    parser.add_argument(
+        "--show-experimental-modes",
+        action="store_true",
+        help="Expose experimental Kanade voice-reference modes in the local UI.",
     )
     parser.add_argument(
         "--public-demo",
         action="store_true",
-        help="Public-safe defaults: fixed reference/acoustic modes only, no retained uploads, no JSONL logs.",
+        help="Public-safe defaults: stable modes only, no retained uploads, no JSONL logs.",
     )
     args = parser.parse_args()
 
-    default_public_modes = ["reference", "acoustic"]
     if args.available_modes:
         available_modes = [mode.strip() for mode in args.available_modes.split(",") if mode.strip()]
     elif args.public_demo:
-        available_modes = default_public_modes
+        available_modes = list(CORE_MODES)
     else:
-        available_modes = list(ALL_MODES)
+        available_modes = list(CORE_MODES)
+        if args.show_experimental_modes:
+            available_modes.extend(EXPERIMENTAL_MODES)
     invalid_modes = sorted(set(available_modes) - set(ALL_MODES))
     if invalid_modes:
         raise ValueError(f"Unknown modes in --available-modes: {', '.join(invalid_modes)}")

@@ -9,5 +9,9 @@ sounddevice>=0.4
 pandas>=2.0
 faster-whisper>=1.2
 
+# SSL features (HuBERT, wav2vec2) - NEW for Prosodic ABX framework
+torch>=2.0
+transformers>=4.30
+
 # Alternative ASR backend supported by src/jp_speech_eval/asr.py:
 # openai-whisper

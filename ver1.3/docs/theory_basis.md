@@ -51,9 +51,19 @@ These are not arbitrary: they correspond to standard speech-signal correlates of
 
 Pronunciation and prosody are the core pronunciation-related dimensions in this prototype. Fluency is delivery/style, not pronunciation correctness. Tone/emotion is expression/style, not pronunciation correctness.
 
+For that reason, the default `total_score` excludes tone/emotion. The tone score
+is still useful as a separate descriptive signal, but mixing it into a
+pronunciation-oriented total would reward expressive style as if it were
+phonological accuracy.
+
 ## 3. MFCC-DTW is alignment support, not final pronunciation correctness
 
 MFCC-DTW is used to approximately align a user utterance with a precomputed TTS reference. It is useful for obtaining approximate mora boundaries. It should not be treated as the final pronunciation score, because MFCC contains speaker/timbre differences and may not isolate phonemic contrasts.
+
+Likewise, duration mismatch is mostly a fluency signal rather than a content
+signal. The fixed-sentence content gate therefore treats only extreme duration
+ratios as sanity failures and otherwise relies on acoustic similarity first,
+calling ASR only when the acoustic gate is uncertain by default.
 
 Future pronunciation scoring should add at least one of:
 

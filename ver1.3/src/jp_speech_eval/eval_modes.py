@@ -12,13 +12,34 @@ from .audio_features import load_audio
 from .config import load_scoring_config
 from .evaluator import evaluate_utterance
 from .kanade_reference import generate_voice_conditioned_reference
+from .reference_store import build_reference_config, build_reference_hash
 from .sentence_cache import build_sentence_cache, load_sentence_cache
+from .tts_adapter import canonical_provider_name
 from .transcript_assisted import evaluate_transcript_assisted_light
 from .vad import trim_to_speech
 
 
-def generated_cache_prefix(text: str, root: str | Path = "outputs/generated_refs") -> Path:
-    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+def generated_cache_prefix(
+    text: str,
+    root: str | Path = "outputs/generated_refs",
+    *,
+    tts_backend: str = "pyopenjtalk",
+    tts_speaker: int | None = None,
+    sample_rate: int = 16000,
+) -> Path:
+    """Return a config-aware prefix so different pseudo-references do not collide."""
+    config = build_reference_config(
+        text=text,
+        provider=canonical_provider_name(tts_backend),
+        model=None,
+        voice=None if tts_speaker is None else str(tts_speaker),
+        speed=None,
+        style=None,
+        prompt=None,
+        language="ja-JP",
+        sample_rate=sample_rate,
+    )
+    digest = build_reference_hash(config)[:12]
     return Path(root) / f"asr_{digest}"
 
 
@@ -58,7 +79,13 @@ def _build_dynamic_tts_cache(
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
 ) -> Path:
-    generated_prefix = generated_cache_prefix(text, root=generated_cache_dir)
+    generated_prefix = generated_cache_prefix(
+        text,
+        root=generated_cache_dir,
+        tts_backend=tts_backend,
+        tts_speaker=tts_speaker,
+        sample_rate=sr,
+    )
     build_sentence_cache(
         text,
         generated_prefix,

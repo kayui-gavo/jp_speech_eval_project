@@ -153,6 +153,7 @@ def estimate_content_match(
     y_speech: np.ndarray,
     sr: int,
     use_asr: bool = True,
+    asr_policy: str = "if_acoustic_uncertain",
     asr_model: str = "small",
     asr_provider: str = "auto",
 ) -> ContentMatch:
@@ -196,17 +197,27 @@ def estimate_content_match(
         )
 
     acoustic_score = _clip01(1.0 - (dtw_cost - 3.4) / 1.6)
-    duration_score = _clip01(1.0 - abs(np.log(max(duration_ratio, 1e-6))) / np.log(1.9))
-    score = 0.70 * acoustic_score + 0.30 * duration_score
+    # Duration is mainly a fluency cue, not content correctness. Keep it as an
+    # extreme sanity bound below, but do not blend moderate speaking-rate
+    # differences into the content score itself.
+    score = acoustic_score
 
     if duration_ratio < 0.45 or duration_ratio > 2.60 or dtw_cost > 5.20 or score < 0.25:
         status = "fail"
-    elif duration_ratio < 0.70 or duration_ratio > 1.65 or dtw_cost > 4.70 or score < 0.55:
+    elif dtw_cost > 4.70 or score < 0.55:
         status = "uncertain"
     else:
         status = "pass"
 
-    if use_asr:
+    asr_policy = str(asr_policy or "if_acoustic_uncertain").strip().lower()
+    if asr_policy not in {"always", "if_acoustic_uncertain", "never"}:
+        raise ValueError(f"Unknown ASR content-match policy: {asr_policy}")
+
+    should_run_asr = bool(use_asr) and (
+        asr_policy == "always"
+        or (asr_policy == "if_acoustic_uncertain" and status != "pass")
+    )
+    if should_run_asr:
         return _asr_gate(
             cache=cache,
             y_speech=y_speech,
@@ -219,6 +230,12 @@ def estimate_content_match(
             provider=asr_provider,
         )
 
+    if use_asr and asr_policy == "if_acoustic_uncertain" and status == "pass":
+        note = "acoustic_pass_asr_skipped_by_policy"
+    elif not use_asr or asr_policy == "never":
+        note = "coarse_acoustic_gate_without_asr"
+    else:
+        note = "coarse_acoustic_gate_not_asr_transcript"
     return ContentMatch(
         status=status,
         score=round(float(score), 4),
@@ -231,5 +248,5 @@ def estimate_content_match(
         asr_provider="none",
         content_verified=status == "pass",
         method="mfcc_dtw_reference_gate",
-        note="coarse_acoustic_gate_not_asr_transcript",
+        note=note,
     )

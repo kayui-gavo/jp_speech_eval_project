@@ -23,6 +23,15 @@ Current scoring dimensions:
 - fluency: delivery/style, based on endpointed speech rate + in-speech pauses
 - tone / emotion proxy: expression/style, based on pitch range + energy + in-speech pause ratio
 
+`total_score` is pronunciation-oriented by default: it combines pronunciation,
+prosody, and fluency, while `tone_score` remains a separate expression/style
+dimension and is excluded unless a config explicitly gives it weight.
+
+For fixed reference reading, the content gate is acoustic-first. Duration
+differences are treated mainly as fluency evidence, not content errors, and ASR
+is only called when the acoustic content gate is uncertain unless the config
+requests `asr_policy: "always"`.
+
 Prosody target note: target H/L labels are now generated at the OpenJTalk
 accent-phrase level, using frontend chain information so particles and
 auxiliaries are not treated as fresh pitch phrases by default. This is closer
@@ -203,6 +212,16 @@ Use this only for same-text reference audio. A user-voice-conditioned reference
 is still a `pseudo-reference`, not ground truth; keep `reference_source` honest
 so later analysis can separate OpenJTalk TTS, external TTS, and voice-converted
 references.
+
+Reference-management note: `src/jp_speech_eval/tts_adapter.py` now provides a
+provider-neutral TTS facade, and `src/jp_speech_eval/reference_store.py` defines
+stable cache hashes for raw reference audio assets. The current scoring path
+still keeps its existing behavior, but sentence-cache metadata now records
+`reference_id`, provider, voice, and config hash so later experiments can compare
+providers without treating one TTS waveform as ground truth. Provider slots for
+OpenAI, Google, ElevenLabs, Azure, and additional local engines are reserved in
+`configs/tts_config.json`; missing API keys or unimplemented providers do not
+break the existing local path.
 
 Experimental Kanade mode:
 
