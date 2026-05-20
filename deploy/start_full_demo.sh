@@ -59,4 +59,5 @@ exec python scripts/debug_ui.py \
   --tts-backend aivis_http \
   --tts-url "${AIVIS_URL}" \
   --tts-speaker "${AIVIS_SPEAKER}" \
-  --public-demo
+  --public-demo \
+  --available-modes reference,asr_pseudo_reference,kanade_asr_voice_reference,transcript_assisted_light,acoustic

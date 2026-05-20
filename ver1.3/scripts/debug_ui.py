@@ -118,6 +118,14 @@ CORE_MODES = [
     "acoustic",
 ]
 
+PUBLIC_DEMO_MODES = [
+    "reference",
+    "asr_pseudo_reference",
+    "kanade_asr_voice_reference",
+    "transcript_assisted_light",
+    "acoustic",
+]
+
 EXPERIMENTAL_MODES = [
     "kanade_voice_reference",
     "kanade_asr_voice_reference",
@@ -468,7 +476,7 @@ def main() -> None:
     if args.available_modes:
         available_modes = [mode.strip() for mode in args.available_modes.split(",") if mode.strip()]
     elif args.public_demo:
-        available_modes = list(CORE_MODES)
+        available_modes = list(PUBLIC_DEMO_MODES)
     else:
         available_modes = list(CORE_MODES)
         if args.show_experimental_modes:

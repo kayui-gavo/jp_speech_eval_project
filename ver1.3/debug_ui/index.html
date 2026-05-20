@@ -961,6 +961,7 @@
         fixedReference: "固定参考",
         modeHintReference: "需要目标句",
         modeHintKanade: "自由说话，实验模式",
+        modeHintKanadeAsr: "ASR + Kanade 声线参考",
         modeHintAsr: "依赖 ASR 转写",
         modeHintLight: "轻量保底",
         modeHintAcoustic: "只看声学状态",
@@ -1019,7 +1020,7 @@
           transcript_assisted_light: "自由说话：轻量转写诊断",
           acoustic: "录音质量/声学诊断",
           kanade_voice_reference: "实验：固定句声线参考",
-          kanade_asr_voice_reference: "实验：自由说话声线参考"
+          kanade_asr_voice_reference: "自由说话：ASR + Kanade 声线参考"
         },
         statusLabels: {
           waiting_for_speech: "等待开口",
@@ -1127,6 +1128,7 @@
         fixedReference: "固定參考",
         modeHintReference: "需要目標句",
         modeHintKanade: "自由說話，實驗模式",
+        modeHintKanadeAsr: "ASR + Kanade 聲線參考",
         modeHintAsr: "依賴 ASR 轉寫",
         modeHintLight: "輕量保底",
         modeHintAcoustic: "只看聲學狀態",
@@ -1185,7 +1187,7 @@
           transcript_assisted_light: "自由說話：輕量轉寫診斷",
           acoustic: "錄音品質/聲學診斷",
           kanade_voice_reference: "實驗：固定句聲線參考",
-          kanade_asr_voice_reference: "實驗：自由說話聲線參考"
+          kanade_asr_voice_reference: "自由說話：ASR + Kanade 聲線參考"
         },
         statusLabels: {
           waiting_for_speech: "等待開口",
@@ -1293,6 +1295,7 @@
         fixedReference: "固定参照",
         modeHintReference: "目標文が必要",
         modeHintKanade: "自由発話・実験モード",
+        modeHintKanadeAsr: "ASR + Kanade 声質参照",
         modeHintAsr: "ASR 書き起こしに依存",
         modeHintLight: "軽量フォールバック",
         modeHintAcoustic: "音響状態のみ",
@@ -1351,7 +1354,7 @@
           transcript_assisted_light: "自由発話：軽量書き起こし診断",
           acoustic: "録音品質/音響診断",
           kanade_voice_reference: "実験：固定文の声質参照",
-          kanade_asr_voice_reference: "実験：自由発話の声質参照"
+          kanade_asr_voice_reference: "自由発話：ASR + Kanade 声質参照"
         },
         statusLabels: {
           waiting_for_speech: "発話待ち",
@@ -1459,6 +1462,7 @@
         fixedReference: "Fixed reference",
         modeHintReference: "target text required",
         modeHintKanade: "free speech, experimental",
+        modeHintKanadeAsr: "ASR + Kanade voice reference",
         modeHintAsr: "depends on ASR transcript",
         modeHintLight: "light fallback",
         modeHintAcoustic: "acoustic state only",
@@ -1517,7 +1521,7 @@
           transcript_assisted_light: "Free speech: light transcript diagnosis",
           acoustic: "Recording/acoustic diagnosis",
           kanade_voice_reference: "Experimental: fixed-sentence voice reference",
-          kanade_asr_voice_reference: "Experimental: free-speech voice reference"
+          kanade_asr_voice_reference: "Free speech: ASR + Kanade voice reference"
         },
         statusLabels: {
           waiting_for_speech: "waiting",
@@ -1562,7 +1566,7 @@
       transcript_assisted_light: { group: "free", hint: "modeHintLight", tone: "warn", tags: ["自由说话", "轻量", "不生成参考音"] },
       acoustic: { group: "diagnostic", hint: "modeHintAcoustic", tone: "", tags: ["录音质量", "声学代理分", "不判断内容"] },
       kanade_voice_reference: { group: "experimental", hint: "modeHintKanade", tone: "bad", tags: ["实验", "声线参考", "不作正式评分依据"] },
-      kanade_asr_voice_reference: { group: "experimental", hint: "modeHintKanade", tone: "bad", tags: ["实验", "ASR + 声线播放", "可能回退"] }
+      kanade_asr_voice_reference: { group: "free", hint: "modeHintKanadeAsr", tone: "warn", tags: ["自由说话", "ASR + Kanade", "声线播放"] }
     };
 
     const modeText = {
@@ -1575,7 +1579,7 @@
           transcript_assisted_light: { title: "自由说话：轻量转写诊断", body: "只使用转写估计大致拍数和节奏，不生成参考音，也不做假名级纠错。", score: "适合快速看语速、停顿、录音质量和大致流畅度。" },
           acoustic: { title: "录音质量/声学诊断", body: "完全不看文本和内容，只看音量、有效语音、停顿、语速、F0 活动和录音质量。", score: "它不是发音正确率，只是判断这段音频能不能被可靠分析。" },
           kanade_voice_reference: { title: "实验：固定句声线参考", body: "尝试用你的声线生成固定目标句参考音，用来听和调试。", score: "声线参考不等于标准教师音，也不应作为正式评分真值。" },
-          kanade_asr_voice_reference: { title: "实验：自由说话声线参考", body: "先 ASR 转写，再尝试生成声线参考音；评分仍以普通 pseudo-reference/声学特征为主。", score: "如果 ASR 或声线生成失败，会明确回退为纯声学诊断。" }
+          kanade_asr_voice_reference: { title: "自由说话：ASR + Kanade 声线参考", body: "先 ASR 转写你实际说的日语，再生成普通 TTS 参考，并尝试用 Kanade 把参考音转换成接近你的声线。", score: "评分仍经过 ASR 合理性检查；如果转写不可信或声线生成失败，会明确降级为诊断结果。" }
         }
       },
       "zh-TW": {
@@ -1587,7 +1591,7 @@
           transcript_assisted_light: { title: "自由說話：輕量轉寫診斷", body: "只使用轉寫估計大致拍數與節奏，不生成參考音，也不做假名級糾錯。", score: "適合快速看語速、停頓、錄音品質與大致流暢度。" },
           acoustic: { title: "錄音品質/聲學診斷", body: "完全不看文字和內容，只看音量、有效語音、停頓、語速、F0 活動與錄音品質。", score: "它不是發音正確率，只是判斷這段音訊能不能被可靠分析。" },
           kanade_voice_reference: { title: "實驗：固定句聲線參考", body: "嘗試用你的聲線生成固定目標句參考音，用來聽和調試。", score: "聲線參考不等於標準教師音，也不應作為正式評分真值。" },
-          kanade_asr_voice_reference: { title: "實驗：自由說話聲線參考", body: "先 ASR 轉寫，再嘗試生成聲線參考音；評分仍以普通 pseudo-reference/聲學特徵為主。", score: "如果 ASR 或聲線生成失敗，會明確回退為純聲學診斷。" }
+          kanade_asr_voice_reference: { title: "自由說話：ASR + Kanade 聲線參考", body: "先 ASR 轉寫你實際說的日語，再生成普通 TTS 參考，並嘗試用 Kanade 把參考音轉換成接近你的聲線。", score: "評分仍會經過 ASR 合理性檢查；如果轉寫不可信或聲線生成失敗，會明確降級為診斷結果。" }
         }
       },
       ja: {
@@ -1599,7 +1603,7 @@
           transcript_assisted_light: { title: "自由発話：軽量書き起こし診断", body: "書き起こしから大まかなモーラ数とリズムを推定します。参照音声生成や仮名単位の訂正は行いません。", score: "話速、ポーズ、録音品質、流暢さの確認向けです。" },
           acoustic: { title: "録音品質/音響診断", body: "テキストや内容を使わず、音量、有声区間、ポーズ、話速、F0 活動、録音品質だけを見ます。", score: "発音正誤ではなく、解析できる音声かを判断するためのモードです。" },
           kanade_voice_reference: { title: "実験：固定文の声質参照", body: "あなたの声質で固定目標文の参照音声生成を試します。主に試聴とデバッグ用です。", score: "標準教師音声ではなく、正式な真値として扱いません。" },
-          kanade_asr_voice_reference: { title: "実験：自由発話の声質参照", body: "ASR 後に声質参照音声生成を試します。評価は通常の pseudo-reference/音響特徴が中心です。", score: "ASR や声質生成が失敗した場合は音響のみ診断へ戻ります。" }
+          kanade_asr_voice_reference: { title: "自由発話：ASR + Kanade 声質参照", body: "発話を ASR で文字化し、通常の TTS 参照を作ったうえで、Kanade によりあなたの声質に近い参照音声へ変換します。", score: "評価は ASR 妥当性チェックを通します。書き起こしが不安定な場合や声質変換に失敗した場合は診断結果として扱います。" }
         }
       },
       en: {
@@ -1611,7 +1615,294 @@
           transcript_assisted_light: { title: "Free speech: light transcript diagnosis", body: "Uses transcript only to estimate rough mora count and rhythm. It does not generate reference audio or kana-level corrections.", score: "Good for quick speech-rate, pause, recording-quality, and fluency checks." },
           acoustic: { title: "Recording/acoustic diagnosis", body: "Ignores text and content. It checks volume, voiced speech, pauses, speed, F0 movement, and recording quality.", score: "This is not pronunciation correctness; it tells whether the audio is analyzable." },
           kanade_voice_reference: { title: "Experimental: fixed-sentence voice reference", body: "Tries to synthesize the fixed target sentence in your voice for listening and debugging.", score: "This is not a native teacher reference and should not be treated as scoring truth." },
-          kanade_asr_voice_reference: { title: "Experimental: free-speech voice reference", body: "Runs ASR and tries voice-conditioned playback. Scoring still relies on ordinary pseudo-reference/acoustic features.", score: "If ASR or voice generation fails, the UI shows an acoustic-only fallback." }
+          kanade_asr_voice_reference: { title: "Free speech: ASR + Kanade voice reference", body: "Runs ASR on what you said, creates a normal TTS reference, then tries to convert that reference toward your voice with Kanade.", score: "Scoring is still gated by transcript sanity; if ASR is unreliable or voice conversion fails, the result is downgraded to diagnosis." }
+        }
+      }
+    };
+
+    const feedbackText = {
+      exact: {
+        "我没能确认你读的是目标句。请看着句子再读一次。": {
+          "zh-CN": "这次没有确认到目标句。请看着句子再读一次。",
+          "zh-TW": "這次沒有確認到目標句。請看著句子再讀一次。",
+          ja: "今回は目標文として確認できませんでした。文を見ながらもう一度読んでください。",
+          en: "I could not confirm the target sentence. Please read the prompt once more."
+        },
+        "我不太确定这次是否读对了目标句，建议再试一次。": {
+          "zh-CN": "这次目标句匹配不够确定，建议再试一次。",
+          "zh-TW": "這次目標句匹配不夠確定，建議再試一次。",
+          ja: "目標文との一致が少し不安定です。もう一度試すのがおすすめです。",
+          en: "The target match is uncertain. Try recording it again."
+        },
+        "你说得太快了。先放慢一点，把每个音说清楚。": {
+          "zh-CN": "语速偏快。先放慢一点，把每个音说清楚。",
+          "zh-TW": "語速偏快。先放慢一點，把每個音說清楚。",
+          ja: "話す速度が速めです。少しゆっくり、各音をはっきり発音しましょう。",
+          en: "You spoke a bit fast. Slow down and make each sound clearer."
+        },
+        "这次录音里有些地方不够清楚，重录一次会更准。": {
+          "zh-CN": "录音里有些地方不够清楚，重录一次会更准。",
+          "zh-TW": "錄音裡有些地方不夠清楚，重錄一次會更準。",
+          ja: "録音に不明瞭な部分があります。録り直すと評価が安定します。",
+          en: "Some parts of the recording are unclear. Re-recording should make the result more reliable."
+        },
+        "这次结果只能作参考，建议再录一次确认。": {
+          "zh-CN": "这次结果只能作参考，建议再录一次确认。",
+          "zh-TW": "這次結果只能作參考，建議再錄一次確認。",
+          ja: "今回の結果は参考程度です。もう一度録音して確認してください。",
+          en: "Treat this result as a reference only. Try another recording to confirm."
+        },
+        "这次录音里的音高信息不够清楚，重录一次会更准。": {
+          "zh-CN": "这次音高信息不够清楚，重录一次会更准。",
+          "zh-TW": "這次音高資訊不夠清楚，重錄一次會更準。",
+          ja: "ピッチ情報が不安定です。録り直すとより正確に見られます。",
+          en: "Pitch information is not clear enough. Re-recording should improve the diagnosis."
+        },
+        "整体听起来比较自然。": {
+          "zh-CN": "整体听起来比较自然。",
+          "zh-TW": "整體聽起來比較自然。",
+          ja: "全体として自然に聞こえます。",
+          en: "Overall, it sounds fairly natural."
+        },
+        "语速稍慢，但仍然可以理解。": {
+          "zh-CN": "语速稍慢，但仍然可以理解。",
+          "zh-TW": "語速稍慢，但仍然可以理解。",
+          ja: "少しゆっくりですが、十分に伝わります。",
+          en: "The speech is a little slow, but still understandable."
+        },
+        "语速稍快，可能影响清晰度。": {
+          "zh-CN": "语速稍快，可能影响清晰度。",
+          "zh-TW": "語速稍快，可能影響清晰度。",
+          ja: "少し速く、明瞭さに影響する可能性があります。",
+          en: "The speech is a little fast and may affect clarity."
+        },
+        "语速明显偏快，容易让人听不清。": {
+          "zh-CN": "语速明显偏快，容易让人听不清。",
+          "zh-TW": "語速明顯偏快，容易讓人聽不清。",
+          ja: "かなり速く、聞き取りにくくなる可能性があります。",
+          en: "The speech is clearly too fast and may be hard to catch."
+        },
+        "语速和自然说话差得有些多。": {
+          "zh-CN": "语速和自然日语差距较大。",
+          "zh-TW": "語速和自然日語差距較大。",
+          ja: "自然な日本語の速度から少し離れています。",
+          en: "The speech rate is far from a natural range."
+        },
+        "节奏不太稳定，可能有拖音或卡顿。": {
+          "zh-CN": "节奏不太稳定，可能有拖音或卡顿。",
+          "zh-TW": "節奏不太穩定，可能有拖音或卡頓。",
+          ja: "リズムがやや不安定です。伸ばし過ぎや詰まりがあるかもしれません。",
+          en: "Rhythm is unstable; there may be dragging or hesitation."
+        },
+        "整体音高和示范音比较接近。": {
+          "zh-CN": "整体音高走势和参考音比较接近。",
+          "zh-TW": "整體音高走勢和參考音比較接近。",
+          ja: "全体のピッチ推移は参照音声に近いです。",
+          en: "Overall pitch movement is close to the reference."
+        },
+        "整体音高有接近示范音的地方，但还有一些起伏差异。": {
+          "zh-CN": "部分音高走势接近参考音，但仍有起伏差异。",
+          "zh-TW": "部分音高走勢接近參考音，但仍有起伏差異。",
+          ja: "参照音声に近い部分もありますが、ピッチの起伏には差があります。",
+          en: "Some pitch movement matches the reference, but there are contour differences."
+        },
+        "整体音高和示范音差得比较明显。": {
+          "zh-CN": "整体音高走势和参考音差异比较明显。",
+          "zh-TW": "整體音高走勢和參考音差異比較明顯。",
+          ja: "全体のピッチ推移は参照音声とかなり違います。",
+          en: "Overall pitch movement differs clearly from the reference."
+        },
+        "音高起伏的走向和示范音不太一致。": {
+          "zh-CN": "音高起伏的方向和参考音不太一致。",
+          "zh-TW": "音高起伏的方向和參考音不太一致。",
+          ja: "ピッチの上がり下がりの向きが参照音声とあまり一致していません。",
+          en: "The direction of pitch movement does not match the reference well."
+        },
+        "有些音高变化出现得稍早或稍晚。": {
+          "zh-CN": "有些音高变化出现得稍早或稍晚。",
+          "zh-TW": "有些音高變化出現得稍早或稍晚。",
+          ja: "一部のピッチ変化のタイミングが少し早い、または遅いです。",
+          en: "Some pitch changes happen slightly early or late."
+        },
+        "有些音高变化幅度偏大，听起来可能有点用力。": {
+          "zh-CN": "有些音高变化幅度偏大，听起来可能有点用力。",
+          "zh-TW": "有些音高變化幅度偏大，聽起來可能有點用力。",
+          ja: "一部のピッチ変化が大きく、少し力んで聞こえる可能性があります。",
+          en: "Some pitch movements are large and may sound a bit forced."
+        },
+        "前半句的音高起伏比较自然。": {
+          "zh-CN": "前半句的音高起伏比较自然。",
+          "zh-TW": "前半句的音高起伏比較自然。",
+          ja: "文の前半のピッチ推移は比較的自然です。",
+          en: "Pitch movement in the first half sounds fairly natural."
+        },
+        "句末语调和示范音比较接近。": {
+          "zh-CN": "句末语调和参考音比较接近。",
+          "zh-TW": "句末語調和參考音比較接近。",
+          ja: "文末イントネーションは参照音声に近いです。",
+          en: "Sentence-final intonation is close to the reference."
+        },
+        "句末语调和示范音不太一致。": {
+          "zh-CN": "句末语调和参考音不太一致。",
+          "zh-TW": "句末語調和參考音不太一致。",
+          ja: "文末イントネーションが参照音声とあまり一致していません。",
+          en: "Sentence-final intonation does not match the reference well."
+        },
+        "这次音高细节还不能稳定判断。": {
+          "zh-CN": "这次音高细节还不能稳定判断。",
+          "zh-TW": "這次音高細節還不能穩定判斷。",
+          ja: "今回はピッチの細部を安定して判断できません。",
+          en: "Pitch details cannot be judged reliably this time."
+        },
+        "音高变化较小，听起来可能偏平。": {
+          "zh-CN": "音高变化较小，听起来可能偏平。",
+          "zh-TW": "音高變化較小，聽起來可能偏平。",
+          ja: "ピッチ変化が小さく、平板に聞こえる可能性があります。",
+          en: "Pitch movement is small and may sound flat."
+        },
+        "音高变化较小，表达可能偏平。": {
+          "zh-CN": "音高变化较小，表达可能偏平。",
+          "zh-TW": "音高變化較小，表達可能偏平。",
+          ja: "ピッチ変化が小さく、表現が平板に聞こえる可能性があります。",
+          en: "Pitch movement is small; expression may sound flat."
+        },
+        "音高起伏较大，语气可能偏紧张或夸张。": {
+          "zh-CN": "音高起伏较大，语气可能偏紧张或夸张。",
+          "zh-TW": "音高起伏較大，語氣可能偏緊張或誇張。",
+          ja: "ピッチの起伏が大きく、緊張または誇張して聞こえる可能性があります。",
+          en: "Pitch movement is large and may sound tense or exaggerated."
+        },
+        "音高起伏较大，表达可能偏紧张或夸张。": {
+          "zh-CN": "音高起伏较大，表达可能偏紧张或夸张。",
+          "zh-TW": "音高起伏較大，表達可能偏緊張或誇張。",
+          ja: "ピッチの起伏が大きく、表現が緊張または誇張して聞こえる可能性があります。",
+          en: "Pitch movement is large; expression may sound tense or exaggerated."
+        },
+        "音量偏小，可能影响对方听清。": {
+          "zh-CN": "音量偏小，可能影响对方听清。",
+          "zh-TW": "音量偏小，可能影響對方聽清。",
+          ja: "音量が小さく、聞き取りやすさに影響する可能性があります。",
+          en: "Volume is low and may affect intelligibility."
+        },
+        "能量变化较大，可能有紧张或不稳定感。": {
+          "zh-CN": "音量变化较大，可能有紧张或不稳定感。",
+          "zh-TW": "音量變化較大，可能有緊張或不穩定感。",
+          ja: "音量変化が大きく、緊張または不安定に聞こえる可能性があります。",
+          en: "Energy varies a lot and may sound tense or unstable."
+        },
+        "停顿比例较高，语气可能显得犹豫。": {
+          "zh-CN": "停顿比例较高，语气可能显得犹豫。",
+          "zh-TW": "停頓比例較高，語氣可能顯得猶豫。",
+          ja: "ポーズが多く、ためらっているように聞こえる可能性があります。",
+          en: "There are many pauses, which may sound hesitant."
+        },
+        "录音音量偏小，后续发音判断只能作为风险提示。": {
+          "zh-CN": "录音音量偏小，发音判断只能作为风险提示。",
+          "zh-TW": "錄音音量偏小，發音判斷只能作為風險提示。",
+          ja: "録音音量が小さいため、発音判断はリスク提示として見てください。",
+          en: "Recording volume is low, so pronunciation feedback is only a risk hint."
+        },
+        "录音可能有削波或爆音，建议降低输入音量。": {
+          "zh-CN": "录音可能有爆音或削波，建议降低输入音量。",
+          "zh-TW": "錄音可能有爆音或削波，建議降低輸入音量。",
+          ja: "録音にクリッピングの可能性があります。入力音量を下げてください。",
+          en: "The recording may be clipping. Lower the input gain."
+        },
+        "有效语音太短，无法稳定判断口语表现。": {
+          "zh-CN": "有效语音太短，无法稳定判断口语表现。",
+          "zh-TW": "有效語音太短，無法穩定判斷口語表現。",
+          ja: "有効な発話が短すぎるため、安定して判断できません。",
+          en: "The usable speech is too short for stable diagnosis."
+        },
+        "停顿比例较高，可能存在犹豫或断续。": {
+          "zh-CN": "停顿比例较高，可能存在犹豫或断续。",
+          "zh-TW": "停頓比例較高，可能存在猶豫或斷續。",
+          ja: "ポーズが多く、ためらいや途切れがある可能性があります。",
+          en: "There are many pauses, suggesting hesitation or discontinuity."
+        },
+        "F0 提取不足，无法稳定判断音高起伏。": {
+          "zh-CN": "F0 提取不足，无法稳定判断音高起伏。",
+          "zh-TW": "F0 提取不足，無法穩定判斷音高起伏。",
+          ja: "F0 抽出が不足しており、ピッチ変化を安定して判断できません。",
+          en: "F0 extraction is insufficient, so pitch movement is unreliable."
+        },
+        "F0 提取不足，音高起伏判断不稳定。": {
+          "zh-CN": "F0 提取不足，音高起伏判断不稳定。",
+          "zh-TW": "F0 提取不足，音高起伏判斷不穩定。",
+          ja: "F0 抽出が不足しており、ピッチ診断が不安定です。",
+          en: "F0 extraction is insufficient, making pitch diagnosis unstable."
+        },
+        "有声帧比例偏低，可能是录音弱、清辅音多，或声音不够清晰。": {
+          "zh-CN": "有声帧比例偏低，可能是录音弱或声音不够清晰。",
+          "zh-TW": "有聲幀比例偏低，可能是錄音弱或聲音不夠清晰。",
+          ja: "有声フレームが少なく、録音が弱い、または声が不明瞭な可能性があります。",
+          en: "Voiced-frame coverage is low; the recording may be weak or unclear."
+        },
+        "音量稳定性较低，可能影响听感清楚度。": {
+          "zh-CN": "音量稳定性较低，可能影响清楚度。",
+          "zh-TW": "音量穩定性較低，可能影響清楚度。",
+          ja: "音量が不安定で、聞き取りやすさに影響する可能性があります。",
+          en: "Volume stability is low and may affect clarity."
+        },
+        "声学表现整体稳定；注意这只是无文本 acoustic proxy，不能证明具体发音完全正确。": {
+          "zh-CN": "声学表现整体稳定；注意这只是无文本声学代理分，不能证明具体发音完全正确。",
+          "zh-TW": "聲學表現整體穩定；注意這只是無文字聲學代理分，不能證明具體發音完全正確。",
+          ja: "音響特徴は全体として安定しています。ただしテキストなしの代理診断であり、具体的な発音正誤を証明するものではありません。",
+          en: "Acoustic behavior is stable overall. This is a text-free proxy, not proof of exact pronunciation correctness."
+        },
+        "当前为 Acoustic-only 实验模式：不使用目标文本、不使用 ASR，因此只能输出发音风险和表达诊断，不能判断具体假名是否读对。": {
+          "zh-CN": "当前是纯声学诊断：不看目标文本和 ASR，只提示录音、语速、停顿、音高等风险，不能判断具体假名是否读对。",
+          "zh-TW": "目前是純聲學診斷：不看目標文字和 ASR，只提示錄音、語速、停頓、音高等風險，不能判斷具體假名是否讀對。",
+          ja: "現在は音響のみ診断です。目標文や ASR を使わず、録音・速度・ポーズ・ピッチなどのリスクだけを示します。仮名単位の正誤は判断しません。",
+          en: "This is acoustic-only diagnosis. It checks recording, speed, pauses, and pitch risks, but does not judge kana-level correctness."
+        },
+        "当前为 Transcript-assisted light 模式： transcript 只用于估计 mora 数，不生成 TTS reference、不做 DTW，因此不输出具体假名纠错。": {
+          "zh-CN": "当前是轻量转写诊断：转写只用于估计拍数，不生成 TTS 参考、不做 DTW，也不做假名级纠错。",
+          "zh-TW": "目前是輕量轉寫診斷：轉寫只用於估計拍數，不生成 TTS 參考、不做 DTW，也不做假名級糾錯。",
+          ja: "現在は書き起こし補助ライト診断です。書き起こしはモーラ数推定だけに使い、TTS 参照生成、DTW、仮名訂正は行いません。",
+          en: "This is transcript-assisted light diagnosis. The transcript estimates mora count only; no TTS reference, DTW, or kana-level correction is used."
+        },
+        "没有可用 transcript，无法估计 mora rate。": {
+          "zh-CN": "没有可用转写，无法估计拍速。",
+          "zh-TW": "沒有可用轉寫，無法估計拍速。",
+          ja: "利用できる書き起こしがないため、モーラ速度を推定できません。",
+          en: "No transcript is available, so mora rate cannot be estimated."
+        },
+        "语速略偏离自然范围，但这里仅按 transcript 的 mora 数粗估。": {
+          "zh-CN": "语速略偏离自然范围；这里仅按转写的拍数粗略估计。",
+          "zh-TW": "語速略偏離自然範圍；這裡僅按轉寫的拍數粗略估計。",
+          ja: "話速が自然範囲から少し外れています。ただし書き起こしのモーラ数による粗い推定です。",
+          en: "Speech rate is slightly outside the natural range; this is a rough estimate from transcript mora count."
+        },
+        "语速可能偏慢或偏快；该判断依赖 ASR/transcript 的 mora 数。": {
+          "zh-CN": "语速可能偏慢或偏快；这个判断依赖 ASR/转写的拍数。",
+          "zh-TW": "語速可能偏慢或偏快；這個判斷依賴 ASR/轉寫的拍數。",
+          ja: "話速が遅い、または速い可能性があります。この判断は ASR/書き起こしのモーラ数に依存します。",
+          en: "Speech rate may be slow or fast; this depends on ASR/transcript mora count."
+        },
+        "特殊拍比例较高且语速偏快，长音、促音、拨音可能被压缩；这只是风险提示，不是具体假名判错。": {
+          "zh-CN": "特殊拍较多且语速偏快，长音、促音、拨音可能被压缩；这只是风险提示，不是具体假名判错。",
+          "zh-TW": "特殊拍較多且語速偏快，長音、促音、撥音可能被壓縮；這只是風險提示，不是具體假名判錯。",
+          ja: "特殊拍が多く話速も速いため、長音・促音・撥音が短くなる可能性があります。これはリスク提示であり、仮名誤りの断定ではありません。",
+          en: "With many special moras and fast speech, long vowels, sokuon, or nasal moras may be compressed. This is a risk hint, not a kana error claim."
+        },
+        "平均 mora 时长偏短，快速发话时切分和特殊拍听感会更不稳定。": {
+          "zh-CN": "平均拍时长偏短，快速发话时切分和特殊拍听感会更不稳定。",
+          "zh-TW": "平均拍時長偏短，快速發話時切分和特殊拍聽感會更不穩定。",
+          ja: "平均モーラ長が短く、速い発話では区切りや特殊拍が不安定に聞こえやすくなります。",
+          en: "Average mora duration is short; segmentation and special mora perception become less stable in fast speech."
+        },
+        "我没能确认这是一句可评价的日语内容，所以没有生成参考音，也不会认真打分。": {
+          "zh-CN": "这次没有确认到可评价的日语内容，所以没有生成参考音，也不会认真打分。",
+          "zh-TW": "這次沒有確認到可評價的日語內容，所以沒有生成參考音，也不會認真打分。",
+          ja: "評価できる日本語内容として確認できなかったため、参照音声は生成せず、正式な採点もしません。",
+          en: "I could not confirm evaluable Japanese content, so no reference audio was generated and no serious score is assigned."
+        },
+        "请用完整的日语句子再说一次。": {
+          "zh-CN": "请用完整的日语句子再说一次。",
+          "zh-TW": "請用完整的日語句子再說一次。",
+          ja: "完整な日本語文でもう一度話してください。",
+          en: "Please try again with a complete Japanese sentence."
         }
       }
     };
@@ -1912,7 +2203,7 @@
       const hints = {
         reference: t("modeHintReference"),
         kanade_voice_reference: t("modeHintKanade"),
-        kanade_asr_voice_reference: t("modeHintKanade"),
+        kanade_asr_voice_reference: t("modeHintKanadeAsr"),
         asr_pseudo_reference: t("modeHintAsr"),
         transcript_assisted_light: t("modeHintLight"),
         acoustic: t("modeHintAcoustic")
@@ -2021,11 +2312,83 @@
       ].map(([label, value]) => `<div><strong>${label}</strong><br>${Number(value || 0).toFixed(3)}s</div>`).join("");
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function feedbackTemplate(key, vars = {}) {
+      const templates = {
+        longPauseCount: {
+          "zh-CN": "检测到 {count} 次较长停顿，流畅度会下降。",
+          "zh-TW": "偵測到 {count} 次較長停頓，流暢度會下降。",
+          ja: "{count} 回の長めのポーズがあり、流暢さに影響します。",
+          en: "{count} long pause(s) were detected, which lowers fluency."
+        },
+        moraTooShort: {
+          "zh-CN": "「{mora}」这个音可能太短。",
+          "zh-TW": "「{mora}」這個音可能太短。",
+          ja: "「{mora}」の長さが短い可能性があります。",
+          en: "The mora “{mora}” may be too short."
+        },
+        pitchLift: {
+          "zh-CN": "在「{from}〜{to}」附近，音高可以再抬清楚一点。",
+          "zh-TW": "在「{from}〜{to}」附近，音高可以再抬清楚一點。",
+          ja: "「{from}〜{to}」付近で、ピッチの上昇をもう少しはっきり出しましょう。",
+          en: "Around “{from}〜{to}”, make the pitch rise clearer."
+        },
+        pitchDrop: {
+          "zh-CN": "在「{from}〜{to}」附近，音高下降还不够明显。",
+          "zh-TW": "在「{from}〜{to}」附近，音高下降還不夠明顯。",
+          ja: "「{from}〜{to}」付近で、ピッチの下がり方がまだ弱いです。",
+          en: "Around “{from}〜{to}”, the pitch fall is not clear enough."
+        },
+        moraPitchDiff: {
+          "zh-CN": "第 {index} 拍「{mora}」的音高和目标差异较大，可以单独确认。",
+          "zh-TW": "第 {index} 拍「{mora}」的音高和目標差異較大，可以單獨確認。",
+          ja: "{index} モーラ目「{mora}」のピッチが目標と大きく違います。個別に確認しましょう。",
+          en: "Mora {index}, “{mora}”, differs clearly from the target pitch. Check it separately."
+        },
+        recordingCondition: {
+          "zh-CN": "录音条件提示：{detail}",
+          "zh-TW": "錄音條件提示：{detail}",
+          ja: "録音条件の注意：{detail}",
+          en: "Recording condition note: {detail}"
+        }
+      };
+      const raw = templates[key]?.[state.locale] || templates[key]?.["zh-CN"] || "";
+      return raw.replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
+    }
+
+    function localizeFeedback(item) {
+      const text = String(item ?? "");
+      const exact = feedbackText.exact[text];
+      if (exact) return exact[state.locale] || exact["zh-CN"] || text;
+      let match = text.match(/^检测到 (\d+) 次较长停顿，流畅度会下降。$/);
+      if (match) return feedbackTemplate("longPauseCount", { count: match[1] });
+      match = text.match(/^「(.+)」这个音可能太短。$/);
+      if (match) return feedbackTemplate("moraTooShort", { mora: match[1] });
+      match = text.match(/^在「(.+)〜(.+)」附近，音高可以再抬清楚一点。$/);
+      if (match) return feedbackTemplate("pitchLift", { from: match[1], to: match[2] });
+      match = text.match(/^在「(.+)〜(.+)」附近，音高下降还不够明显。$/);
+      if (match) return feedbackTemplate("pitchDrop", { from: match[1], to: match[2] });
+      match = text.match(/^第 (\d+) 拍「(.+)」的音高和目标差异较大，可以单独确认。$/);
+      if (match) return feedbackTemplate("moraPitchDiff", { index: match[1], mora: match[2] });
+      match = text.match(/^录音条件提示：(.+)$/);
+      if (match) return feedbackTemplate("recordingCondition", { detail: match[1] });
+      return text;
+    }
+
     function renderFeedback(result) {
       const list = result.feedback || [];
       $("feedbackCount").textContent = String(list.length);
       $("feedbackEmpty").style.display = list.length ? "none" : "block";
-      $("feedbackList").innerHTML = list.map((item) => `<li>${item}</li>`).join("");
+      $("feedbackList").innerHTML = list.map((item) => `<li>${escapeHtml(localizeFeedback(item))}</li>`).join("");
     }
 
     function renderRealtime(rows, mode) {
