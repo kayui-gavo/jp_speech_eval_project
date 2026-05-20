@@ -133,6 +133,24 @@ class TTSAdapter:
                 "implemented": True,
                 "reason": "local_or_http_provider_ready",
             }
+        if canonical == "google":
+            configured = bool(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
+            try:
+                import google.cloud.texttospeech  # noqa: F401
+
+                installed = True
+            except ImportError:
+                installed = False
+            return {
+                "provider": canonical,
+                "available": bool(configured and installed),
+                "implemented": True,
+                "configured": configured,
+                "installed": installed,
+                "required_env": "GOOGLE_APPLICATION_CREDENTIALS",
+                "reason": "ready" if configured and installed else "missing_credentials_or_package",
+                "default_voice": os.environ.get("GOOGLE_TTS_VOICE") or "ja-JP-Chirp3-HD-Achernar",
+            }
         env_var = RESERVED_PROVIDERS.get(canonical)
         configured = bool(env_var and os.environ.get(env_var))
         return {
@@ -225,6 +243,23 @@ class TTSAdapter:
     def _synthesize_uncached(self, request: TTSRequest) -> TTSSynthesis:
         provider = request.canonical_provider
         status = self.validate_provider_config(provider)
+        if provider == "google":
+            if not status["available"]:
+                raise TTSProviderUnavailableError(
+                    "google TTS is implemented but not available. Configure "
+                    "GOOGLE_APPLICATION_CREDENTIALS and install google-cloud-texttospeech."
+                )
+            return synthesize_reference(
+                request.text,
+                sr=request.sample_rate,
+                backend="google",
+                model=request.model,
+                voice=request.voice,
+                speed=request.speed,
+                style=request.style,
+                prompt=request.prompt,
+                language=request.language,
+            )
         if not status["implemented"]:
             raise TTSProviderUnavailableError(
                 f"{provider} is reserved but not implemented in this build."
@@ -242,6 +277,12 @@ class TTSAdapter:
             backend=backend,
             base_url=request.extra.get("base_url"),
             speaker=speaker,
+            model=request.model,
+            voice=request.voice,
+            speed=request.speed,
+            style=request.style,
+            prompt=request.prompt,
+            language=request.language,
         )
 
     @staticmethod

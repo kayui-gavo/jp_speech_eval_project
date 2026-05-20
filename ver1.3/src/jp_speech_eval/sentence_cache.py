@@ -75,6 +75,12 @@ def tts_reference(
     backend: str = "pyopenjtalk",
     backend_url: str | None = None,
     speaker: int | None = None,
+    model: str | None = None,
+    voice: str | None = None,
+    speed: float | None = None,
+    style: str | None = None,
+    prompt: str | None = None,
+    language: str = "ja-JP",
 ) -> np.ndarray:
     """Generate trimmed normalized reference speech through the selected TTS backend."""
     return synthesize_reference(
@@ -83,6 +89,12 @@ def tts_reference(
         backend=backend,
         base_url=backend_url,
         speaker=speaker,
+        model=model,
+        voice=voice,
+        speed=speed,
+        style=style,
+        prompt=prompt,
+        language=language,
     ).y
 
 
@@ -161,10 +173,28 @@ def chunked_tts_reference(
     backend: str = "pyopenjtalk",
     backend_url: str | None = None,
     speaker: int | None = None,
+    model: str | None = None,
+    voice: str | None = None,
+    speed: float | None = None,
+    style: str | None = None,
+    prompt: str | None = None,
+    language: str = "ja-JP",
 ) -> Tuple[np.ndarray, List[Tuple[float, float]], str, str, str]:
     chunks = _tts_chunks(text)
     if len(chunks) <= 1:
-        synth = synthesize_reference(text, sr=sr, backend=backend, base_url=backend_url, speaker=speaker)
+        synth = synthesize_reference(
+            text,
+            sr=sr,
+            backend=backend,
+            base_url=backend_url,
+            speaker=speaker,
+            model=model,
+            voice=voice,
+            speed=speed,
+            style=style,
+            prompt=prompt,
+            language=language,
+        )
         mora_count = len(build_text_info(text).moras)
         return synth.y, _equal_boundaries(len(synth.y) / sr, mora_count), text, "equal_mora", synth.source
 
@@ -174,7 +204,19 @@ def chunked_tts_reference(
     gap = np.zeros(int(round(sr * 0.12)), dtype=np.float64)
     source = None
     for idx, chunk in enumerate(chunks):
-        synth = synthesize_reference(chunk, sr=sr, backend=backend, base_url=backend_url, speaker=speaker)
+        synth = synthesize_reference(
+            chunk,
+            sr=sr,
+            backend=backend,
+            base_url=backend_url,
+            speaker=speaker,
+            model=model,
+            voice=voice,
+            speed=speed,
+            style=style,
+            prompt=prompt,
+            language=language,
+        )
         y = synth.y
         source = synth.source
         chunk_moras = build_text_info(chunk).moras
@@ -266,6 +308,12 @@ def build_sentence_cache(
             backend=tts_backend,
             backend_url=tts_backend_url,
             speaker=tts_speaker,
+            model=tts_model,
+            voice=tts_voice,
+            speed=tts_speed,
+            style=tts_style,
+            prompt=tts_prompt,
+            language=tts_language,
         )
         reference_source_name = reference_source or generated_source
     ref_duration = len(ref_y) / sr

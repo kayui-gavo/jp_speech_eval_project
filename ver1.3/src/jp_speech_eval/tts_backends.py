@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from dataclasses import dataclass
 from typing import Any, Dict
 from urllib import parse, request
@@ -85,6 +86,68 @@ def _voicevox_compatible_tts(
     )
 
 
+def _google_tts(
+    text: str,
+    sr: int,
+    *,
+    voice: str | None = None,
+    model: str | None = None,
+    speed: float | None = None,
+    language: str = "ja-JP",
+) -> TTSSynthesis:
+    """Synthesize with Google Cloud Text-to-Speech.
+
+    Intended for offline reference generation/caching. The generated waveform is
+    still a pseudo-reference for scoring, not a native-speaker ground truth.
+    """
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        raise RuntimeError(
+            "google TTS requires GOOGLE_APPLICATION_CREDENTIALS pointing to a "
+            "Google Cloud service-account JSON file."
+        )
+    try:
+        from google.cloud import texttospeech
+    except ImportError as exc:
+        raise RuntimeError(
+            "google TTS requires google-cloud-texttospeech. "
+            "Install requirements or run: pip install google-cloud-texttospeech"
+        ) from exc
+
+    voice_name = voice or os.environ.get("GOOGLE_TTS_VOICE") or "ja-JP-Chirp3-HD-Achernar"
+    client = texttospeech.TextToSpeechClient()
+    synthesis_input = texttospeech.SynthesisInput(text=text)
+    voice_params = texttospeech.VoiceSelectionParams(
+        language_code=language,
+        name=voice_name,
+    )
+    audio_kwargs: Dict[str, Any] = {
+        "audio_encoding": texttospeech.AudioEncoding.LINEAR16,
+        "sample_rate_hertz": int(sr),
+    }
+    if speed is not None:
+        audio_kwargs["speaking_rate"] = float(speed)
+    audio_config = texttospeech.AudioConfig(**audio_kwargs)
+    response = client.synthesize_speech(
+        input=synthesis_input,
+        voice=voice_params,
+        audio_config=audio_config,
+    )
+    wav, wav_sr = sf.read(io.BytesIO(response.audio_content), dtype="float64")
+    return TTSSynthesis(
+        y=_normalize_audio(np.asarray(wav), int(wav_sr), sr),
+        source="google_cloud_tts_pseudo_reference",
+        metadata={
+            "backend": "google",
+            "provider": "google",
+            "model": model or "cloud_text_to_speech",
+            "voice": voice_name,
+            "language": language,
+            "sample_rate": int(sr),
+            "speaking_rate": speed,
+        },
+    )
+
+
 def synthesize_reference(
     text: str,
     *,
@@ -92,9 +155,16 @@ def synthesize_reference(
     backend: str = "pyopenjtalk",
     base_url: str | None = None,
     speaker: int | None = None,
+    model: str | None = None,
+    voice: str | None = None,
+    speed: float | None = None,
+    style: str | None = None,
+    prompt: str | None = None,
+    language: str = "ja-JP",
 ) -> TTSSynthesis:
     backend = backend.strip().lower()
-    if backend == "pyopenjtalk":
+    _ = style, prompt
+    if backend in {"pyopenjtalk", "local_pyopenjtalk"}:
         return _pyopenjtalk_tts(text, sr)
     if backend in {"voicevox", "voicevox_http"}:
         return _voicevox_compatible_tts(
@@ -113,5 +183,14 @@ def synthesize_reference(
             base_url=base_url or "http://127.0.0.1:10101",
             speaker=int(speaker),
             backend_name="aivis_http",
+        )
+    if backend in {"google", "google_cloud", "google_tts"}:
+        return _google_tts(
+            text,
+            sr,
+            voice=voice,
+            model=model,
+            speed=speed,
+            language=language,
         )
     raise ValueError(f"Unknown TTS backend: {backend}")

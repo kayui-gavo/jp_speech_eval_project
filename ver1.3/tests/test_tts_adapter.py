@@ -88,6 +88,16 @@ class TTSAdapterTests(unittest.TestCase):
             self.assertFalse(status["available"])
             self.assertFalse(status["implemented"])
 
+    def test_google_provider_reports_optional_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter = TTSAdapter(tmp)
+            status = adapter.validate_provider_config("google")
+            self.assertEqual(status["provider"], "google")
+            self.assertTrue(status["implemented"])
+            self.assertIn("available", status)
+            self.assertEqual(status["required_env"], "GOOGLE_APPLICATION_CREDENTIALS")
+            self.assertIn("default_voice", status)
+
     def test_request_hash_uses_canonical_provider(self) -> None:
         req_a = TTSRequest(text="橋です", provider="aivis_http", voice="1")
         req_b = TTSRequest(text="橋です", provider="local_aivis", voice="1")

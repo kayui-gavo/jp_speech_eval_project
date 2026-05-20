@@ -168,6 +168,27 @@ python scripts/prepare_cache.py \
   --save-ref-wav
 ```
 
+For the best current product-facing teacher-reference quality, use Google Cloud
+Text-to-Speech Chirp 3 HD as an offline cache generator. Cloud TTS stays out of
+the realtime scoring path, and the existing local path still works when
+credentials are not configured:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/google-service-account.json
+python scripts/prepare_cache.py \
+  --text "ラーメンをください" \
+  --out cache/ramen_google_chirp3 \
+  --tts-backend google \
+  --tts-voice ja-JP-Chirp3-HD-Achernar \
+  --tts-model chirp3-hd \
+  --reference-id google_chirp3_teacher \
+  --save-ref-wav
+```
+
+Google TTS output is still stored as a `pseudo-reference`; it improves
+teacher-audio naturalness for product testing, but it is not a single ground
+truth for pitch accent or pronunciation correctness.
+
 Use the same backend for dynamic ASR-generated references in the debug UI:
 
 ```bash

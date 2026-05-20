@@ -13,5 +13,8 @@ faster-whisper>=1.2
 torch>=2.0
 transformers>=4.30
 
+# Optional but recommended for higher-quality cached teacher references.
+google-cloud-texttospeech>=2.16
+
 # Alternative ASR backend supported by src/jp_speech_eval/asr.py:
 # openai-whisper

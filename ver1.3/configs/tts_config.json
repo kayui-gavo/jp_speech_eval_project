@@ -30,8 +30,14 @@
       "api_key_env": "OPENAI_API_KEY"
     },
     "google": {
-      "enabled": false,
-      "credentials_env": "GOOGLE_APPLICATION_CREDENTIALS"
+      "enabled": true,
+      "credentials_env": "GOOGLE_APPLICATION_CREDENTIALS",
+      "default_voice": "ja-JP-Chirp3-HD-Achernar",
+      "recommended_for": [
+        "cached_teacher_reference",
+        "minimal_pair_reference_bootstrap"
+      ],
+      "runtime_policy": "offline_cache_only"
     },
     "elevenlabs": {
       "enabled": false,
