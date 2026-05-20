@@ -56,6 +56,7 @@
     "use_asr": true,
     "asr_policy": "if_acoustic_uncertain",
     "asr_provider": "auto",
-    "asr_model": "small"
+    "asr_model": "small",
+    "dynamic_reference_sanity_gate": true
   }
 }

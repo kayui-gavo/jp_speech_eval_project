@@ -199,6 +199,12 @@ python scripts/debug_ui.py \
   --tts-speaker 888753760
 ```
 
+Dynamic ASR-generated reference modes include a lightweight transcript sanity
+gate. If the ASR output is too short, repetitive, mostly non-Japanese, or
+otherwise noise-like, the system refuses to synthesize a pseudo-reference and
+returns a low-confidence diagnostic result instead of scoring a hallucinated
+sentence.
+
 Generate side-by-side audition samples before choosing a backend:
 
 ```bash

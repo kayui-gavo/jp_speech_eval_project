@@ -14,6 +14,7 @@ from .evaluator import evaluate_utterance
 from .kanade_reference import generate_voice_conditioned_reference
 from .reference_store import build_reference_config, build_reference_hash
 from .sentence_cache import build_sentence_cache, load_sentence_cache
+from .transcript_sanity import check_asr_transcript_sanity
 from .tts_adapter import canonical_provider_name
 from .transcript_assisted import evaluate_transcript_assisted_light
 from .vad import trim_to_speech
@@ -75,6 +76,38 @@ def _transcribe_for_dynamic_reference(
         provider=str(content_cfg.get("asr_provider", "auto")),
     )
     return base_cache, transcript
+
+
+def _reject_dynamic_reference_result(
+    wav_path: str | Path,
+    *,
+    sample_rate: int,
+    mode: str,
+    transcript: Any,
+    sanity: Any,
+) -> Dict[str, Any]:
+    result = evaluate_reference_free_acoustic(wav_path, sample_rate=sample_rate)
+    result["details"]["mode"] = mode
+    result["details"]["asr"] = transcript.to_dict()
+    result["details"]["transcript_sanity"] = sanity.to_dict()
+    result["details"]["reference_warning"] = "pseudo_reference_rejected_before_tts"
+    result["pronunciation_score"] = min(int(result.get("pronunciation_score", 0)), 35)
+    result["prosody_score"] = min(int(result.get("prosody_score", 0)), 35)
+    result["fluency_score"] = min(int(result.get("fluency_score", 0)), 45)
+    result["tone_score"] = min(int(result.get("tone_score", 0)), 45)
+    result["total_score"] = min(int(result.get("total_score", 0)), 35)
+    result["feedback"] = [
+        "我没能确认这是一句可评价的日语内容，所以没有生成参考音，也不会认真打分。",
+        "请用完整的日语句子再说一次。"
+    ]
+    reliability = result.setdefault("details", {}).setdefault("reliability", {})
+    reliability["overall"] = min(float(reliability.get("overall", 0.0) or 0.0), 0.25)
+    reliability["level"] = "low"
+    reliability["score_is_diagnostic"] = True
+    warnings = list(reliability.get("warnings") or [])
+    warnings.append(f"ASR transcript rejected before TTS: {sanity.reason}")
+    reliability["warnings"] = warnings
+    return result
 
 
 def _build_dynamic_tts_cache(
@@ -149,6 +182,15 @@ def evaluate_asr_pseudo_reference(
         result["details"]["mode"] = "asr_pseudo_reference_fallback_acoustic"
         result["details"]["asr"] = transcript.to_dict()
         return result
+    sanity = check_asr_transcript_sanity(transcript.text)
+    if not sanity.ok:
+        return _reject_dynamic_reference_result(
+            wav_path,
+            sample_rate=t_cache.meta.sr,
+            mode="asr_pseudo_reference_rejected",
+            transcript=transcript,
+            sanity=sanity,
+        )
 
     generated_prefix = _build_dynamic_tts_cache(
         transcript.text,
@@ -175,6 +217,7 @@ def evaluate_asr_pseudo_reference(
     result = eval_result.to_dict()
     result["details"]["mode"] = "asr_pseudo_reference"
     result["details"]["asr"] = transcript.to_dict()
+    result["details"]["transcript_sanity"] = sanity.to_dict()
     result["details"]["reference_warning"] = "tts_generated_pseudo_reference_not_native_reference"
     return result
 
@@ -265,6 +308,15 @@ def evaluate_kanade_asr_voice_reference(
         result["details"]["mode"] = "kanade_asr_voice_reference_fallback_acoustic"
         result["details"]["asr"] = transcript.to_dict()
         return result
+    sanity = check_asr_transcript_sanity(transcript.text)
+    if not sanity.ok:
+        return _reject_dynamic_reference_result(
+            wav_path,
+            sample_rate=base_cache.meta.sr,
+            mode="kanade_asr_voice_reference_rejected",
+            transcript=transcript,
+            sanity=sanity,
+        )
 
     scoring_prefix = _build_dynamic_tts_cache(
         transcript.text,
@@ -317,6 +369,7 @@ def evaluate_kanade_asr_voice_reference(
 
     result["details"]["mode"] = "kanade_asr_voice_reference"
     result["details"]["asr"] = transcript.to_dict()
+    result["details"]["transcript_sanity"] = sanity.to_dict()
     result["details"]["reference_warning"] = "asr_tts_pseudo_reference_used_for_scoring;kanade_reference_is_playback_only"
     result["details"]["playback_reference_source"] = "kanade_voice_conditioned_playback_pseudo_reference"
     result["details"]["voice_reference_cache_prefix"] = str(voice_prefix)
