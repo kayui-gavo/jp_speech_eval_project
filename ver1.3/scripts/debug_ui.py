@@ -259,6 +259,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                     tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
                     tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
                     tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
+                    tts_model=self.server.tts_model,  # type: ignore[attr-defined]
+                    tts_voice=self.server.tts_voice,  # type: ignore[attr-defined]
+                    tts_speed=self.server.tts_speed,  # type: ignore[attr-defined]
                 )
                 asr_text = result.get("details", {}).get("asr", {}).get("text", "")
                 if result.get("details", {}).get("mode") == "asr_pseudo_reference" and asr_text:
@@ -291,6 +294,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                     tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
                     tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
                     tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
+                    tts_model=self.server.tts_model,  # type: ignore[attr-defined]
+                    tts_voice=self.server.tts_voice,  # type: ignore[attr-defined]
+                    tts_speed=self.server.tts_speed,  # type: ignore[attr-defined]
                 )
                 asr_text = result.get("details", {}).get("asr", {}).get("text", "")
                 scoring_prefix = Path(result.get("cache_prefix", ""))
@@ -366,6 +372,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                     tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
                     tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
                     tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
+                    tts_model=self.server.tts_model,  # type: ignore[attr-defined]
+                    tts_voice=self.server.tts_voice,  # type: ignore[attr-defined]
+                    tts_speed=self.server.tts_speed,  # type: ignore[attr-defined]
                 )
                 unified = unify_evaluation_result(
                     result,
@@ -430,9 +439,12 @@ def main() -> None:
         choices=ALL_MODES,
     )
     parser.add_argument("--config", default=None)
-    parser.add_argument("--tts-backend", default="pyopenjtalk", help="pyopenjtalk, voicevox_http, or aivis_http for generated references")
+    parser.add_argument("--tts-backend", default="pyopenjtalk", help="pyopenjtalk, voicevox_http, aivis_http, or google for generated references")
     parser.add_argument("--tts-url", default=None)
     parser.add_argument("--tts-speaker", type=int, default=None)
+    parser.add_argument("--tts-model", default=None, help="Optional provider model id, e.g. chirp3-hd.")
+    parser.add_argument("--tts-voice", default=None, help="Optional provider voice id, e.g. ja-JP-Chirp3-HD-Achernar.")
+    parser.add_argument("--tts-speed", type=float, default=None, help="Optional provider speaking speed when supported.")
     parser.add_argument("--chunk-ms", type=float, default=20.0)
     parser.add_argument("--log-jsonl", default="outputs/debug_ui/eval_log.jsonl")
     parser.add_argument("--feature-csv", default="outputs/debug_ui/features.csv")
@@ -476,6 +488,9 @@ def main() -> None:
     server.tts_backend = args.tts_backend
     server.tts_url = args.tts_url
     server.tts_speaker = args.tts_speaker
+    server.tts_model = args.tts_model
+    server.tts_voice = args.tts_voice
+    server.tts_speed = args.tts_speed
     server.chunk_ms = float(args.chunk_ms)
     server.log_jsonl = (ROOT / args.log_jsonl).resolve() if not Path(args.log_jsonl).is_absolute() else Path(args.log_jsonl)
     server.feature_csv = (ROOT / args.feature_csv).resolve() if not Path(args.feature_csv).is_absolute() else Path(args.feature_csv)

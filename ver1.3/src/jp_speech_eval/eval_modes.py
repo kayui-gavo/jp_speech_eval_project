@@ -25,18 +25,25 @@ def generated_cache_prefix(
     *,
     tts_backend: str = "pyopenjtalk",
     tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
     sample_rate: int = 16000,
 ) -> Path:
     """Return a config-aware prefix so different pseudo-references do not collide."""
+    voice = tts_voice if tts_voice is not None else (None if tts_speaker is None else str(tts_speaker))
     config = build_reference_config(
         text=text,
         provider=canonical_provider_name(tts_backend),
-        model=None,
-        voice=None if tts_speaker is None else str(tts_speaker),
-        speed=None,
-        style=None,
-        prompt=None,
-        language="ja-JP",
+        model=tts_model,
+        voice=voice,
+        speed=tts_speed,
+        style=tts_style,
+        prompt=tts_prompt,
+        language=tts_language,
         sample_rate=sample_rate,
     )
     digest = build_reference_hash(config)[:12]
@@ -78,12 +85,24 @@ def _build_dynamic_tts_cache(
     tts_backend: str = "pyopenjtalk",
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
 ) -> Path:
     generated_prefix = generated_cache_prefix(
         text,
         root=generated_cache_dir,
         tts_backend=tts_backend,
         tts_speaker=tts_speaker,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_speed=tts_speed,
+        tts_style=tts_style,
+        tts_prompt=tts_prompt,
+        tts_language=tts_language,
         sample_rate=sr,
     )
     build_sentence_cache(
@@ -94,6 +113,12 @@ def _build_dynamic_tts_cache(
         tts_backend=tts_backend,
         tts_backend_url=tts_backend_url,
         tts_speaker=tts_speaker,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_speed=tts_speed,
+        tts_style=tts_style,
+        tts_prompt=tts_prompt,
+        tts_language=tts_language,
     )
     return generated_prefix
 
@@ -107,6 +132,12 @@ def evaluate_asr_pseudo_reference(
     tts_backend: str = "pyopenjtalk",
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
 ) -> Dict[str, Any]:
     t_cache, transcript = _transcribe_for_dynamic_reference(
         wav_path,
@@ -126,6 +157,12 @@ def evaluate_asr_pseudo_reference(
         tts_backend=tts_backend,
         tts_backend_url=tts_backend_url,
         tts_speaker=tts_speaker,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_speed=tts_speed,
+        tts_style=tts_style,
+        tts_prompt=tts_prompt,
+        tts_language=tts_language,
     )
     eval_result = evaluate_utterance(
         wav_path=wav_path,
@@ -153,6 +190,12 @@ def evaluate_kanade_voice_reference(
     tts_backend: str = "pyopenjtalk",
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
 ) -> Dict[str, Any]:
     base_cache = load_sentence_cache(base_cache_path)
     speaker_path = Path(speaker_wav_path or wav_path)
@@ -205,6 +248,12 @@ def evaluate_kanade_asr_voice_reference(
     tts_backend: str = "pyopenjtalk",
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
 ) -> Dict[str, Any]:
     base_cache, transcript = _transcribe_for_dynamic_reference(
         wav_path,
@@ -224,6 +273,12 @@ def evaluate_kanade_asr_voice_reference(
         tts_backend=tts_backend,
         tts_backend_url=tts_backend_url,
         tts_speaker=tts_speaker,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_speed=tts_speed,
+        tts_style=tts_style,
+        tts_prompt=tts_prompt,
+        tts_language=tts_language,
     )
     scoring_cache = load_sentence_cache(scoring_prefix)
     eval_result = evaluate_utterance(
@@ -282,6 +337,12 @@ def evaluate_mode(
     tts_backend: str = "pyopenjtalk",
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
 ) -> Dict[str, Any]:
     mode = mode.strip()
     if mode in {"reference", "reference_based", "reference_fixed_sentence"}:
@@ -310,6 +371,12 @@ def evaluate_mode(
             tts_backend=tts_backend,
             tts_backend_url=tts_backend_url,
             tts_speaker=tts_speaker,
+            tts_model=tts_model,
+            tts_voice=tts_voice,
+            tts_speed=tts_speed,
+            tts_style=tts_style,
+            tts_prompt=tts_prompt,
+            tts_language=tts_language,
         )
     if mode in {"kanade_voice_reference", "voice_conditioned_reference"}:
         if cache_path is None:
@@ -332,6 +399,12 @@ def evaluate_mode(
             tts_backend=tts_backend,
             tts_backend_url=tts_backend_url,
             tts_speaker=tts_speaker,
+            tts_model=tts_model,
+            tts_voice=tts_voice,
+            tts_speed=tts_speed,
+            tts_style=tts_style,
+            tts_prompt=tts_prompt,
+            tts_language=tts_language,
         )
     if mode in {"transcript_assisted", "transcript_assisted_light"}:
         return evaluate_transcript_assisted_light(

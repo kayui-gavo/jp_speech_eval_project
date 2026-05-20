@@ -253,8 +253,8 @@ uv venv --python 3.12 ../.venv-kanade
 uv pip install --python ../.venv-kanade/bin/python \
   git+https://github.com/frothywater/kanade-tokenizer
 
-# Start the debug UI, then choose "Kanade ASR voice reference experimental"
-python scripts/debug_ui.py --mode kanade_asr_voice_reference
+# Start the debug UI, then choose an experimental Kanade mode.
+python scripts/debug_ui.py --show-experimental-modes
 ```
 
 This experimental mode uses the current uploaded/recorded wav as temporary
@@ -265,9 +265,37 @@ currently playback-only because its Japanese articulation still needs validation
 it is not used as the scoring reference. The Kanade worker lives in
 `../.venv-kanade` because the upstream package currently requires Python 3.12
 while the main project keeps its existing Python 3.11 environment.
-When a stronger TTS backend is available, pass the same `--tts-*` options above
-to seed both scoring and Kanade playback from that backend instead of the default
-OpenJTalk voice.
+The intended product use is to seed Kanade from a stronger teacher TTS and then
+convert that reference into the user's timbre. For example, with Google Chirp 3
+HD configured:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/google-service-account.json
+python scripts/debug_ui.py \
+  --show-experimental-modes \
+  --mode kanade_asr_voice_reference \
+  --tts-backend google \
+  --tts-voice ja-JP-Chirp3-HD-Achernar \
+  --tts-model chirp3-hd
+```
+
+In fixed-sentence Kanade mode, prepare the base cache with Google first and then
+run the UI on that cache:
+
+```bash
+python scripts/prepare_cache.py \
+  --text "ラーメンをください" \
+  --out cache/ramen_google_chirp3 \
+  --tts-backend google \
+  --tts-voice ja-JP-Chirp3-HD-Achernar \
+  --tts-model chirp3-hd \
+  --save-ref-wav
+
+python scripts/debug_ui.py \
+  --cache cache/ramen_google_chirp3 \
+  --show-experimental-modes \
+  --mode kanade_voice_reference
+```
 
 The slow work is done here, not during realtime use.
 
