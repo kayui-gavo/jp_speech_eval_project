@@ -172,6 +172,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "available_modes": self.server.available_modes,  # type: ignore[attr-defined]
                 "mode_labels": _mode_labels(),
                 "server_label": self.server.server_label,  # type: ignore[attr-defined]
+                "tts_backend": self.server.tts_backend,  # type: ignore[attr-defined]
+                "tts_model": self.server.tts_model,  # type: ignore[attr-defined]
+                "tts_voice": self.server.tts_voice,  # type: ignore[attr-defined]
             }
             _json_response(self, payload)
             return

@@ -64,6 +64,15 @@ The same `Dockerfile` can be deployed on a container host such as Hugging Face
 Docker Spaces or Render. This is intentionally a heavy deployment: first startup
 downloads AivisSpeech model assets and runtime latency depends on the host CPU.
 
+For public hosting, the container uses the same TTS backend for the normal
+ASR-generated reference mode and the ASR + Kanade voice-reference mode. By
+default it falls back to the bundled AivisSpeech engine. To use Google Cloud TTS
+for both modes, add a Hugging Face Space secret named
+`GOOGLE_APPLICATION_CREDENTIALS_JSON` containing the service-account JSON. The
+startup script writes that secret to a temporary credentials file and switches
+the dynamic reference backend to Google Chirp 3 HD
+(`ja-JP-Chirp3-HD-Achernar`) automatically.
+
 ## Important Caveat
 
 This repository is a prototype. Its reference audio is still a
