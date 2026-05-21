@@ -69,6 +69,15 @@ Recording-quality note: v1.4 separates environment/device evidence from pronunci
 
 Mora-evidence note: v1.5 separates "this mora is wrong" from "this mora has enough acoustic evidence to judge." Low boundary confidence, low energy coverage, or low F0 coverage should suppress strong mora-level correction and lower `details.reliability.mora_evidence`.
 
+Feedback-policy note: learner-facing feedback is now filtered by
+`feedback_policy.evidence_aware_v1`. The scorer may compute many proxy metrics,
+but the UI should show only a few high-priority messages. Low reliability
+suppresses strong pronunciation/prosody claims, actionable local prosody issues
+take priority over generic contour summaries, and expression/tone hints should
+not crowd out pronunciation-oriented feedback. Full raw diagnostics remain in
+`details.technical_feedback.raw_feedback`, while suppressed messages are logged
+under `details.technical_feedback.feedback_policy.suppressed`.
+
 ---
 
 ## 1. Environment

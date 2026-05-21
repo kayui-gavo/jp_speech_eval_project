@@ -18,6 +18,7 @@ from .audio_features import (
 )
 from .config import load_scoring_config
 from .content_match import estimate_content_match
+from .feedback_policy import FeedbackDecision, choose_feedback
 from .mora_evidence import build_mora_evidence
 from .recording_quality import assess_recording_quality
 from .scoring import (
@@ -155,10 +156,13 @@ def _build_learner_feedback(
     mora_evidence_summary: Dict,
     content_match,
     mora_count: int,
-) -> List[str]:
+) -> FeedbackDecision:
     """Create short user-facing feedback; keep diagnostics in details instead."""
     if content_match and content_match.status == "fail":
-        return ["我没能确认你读的是目标句。请看着句子再读一次。"]
+        return FeedbackDecision(
+            feedback=["我没能确认你读的是目标句。请看着句子再读一次。"],
+            policy="content_gate_fail",
+        )
 
     feedback: List[str] = []
     if content_match and content_match.status == "uncertain":
@@ -177,7 +181,6 @@ def _build_learner_feedback(
     if low_f0_coverage:
         feedback.append("这次录音里的音高信息不够清楚，重录一次会更准。")
 
-    # Put actionable issues before praise; keep the panel short enough to scan.
     groups = [fluency_feedback]
     if judgement_count >= judgement_needed and avg_mora_duration >= 0.09:
         groups.append(pronunciation_feedback)
@@ -188,9 +191,12 @@ def _build_learner_feedback(
         feedback.extend(group)
 
     clean = _dedupe(feedback)
-    if not clean:
-        return ["整体听起来比较自然。"]
-    return clean[:5]
+    return choose_feedback(
+        raw_feedback=clean,
+        reliability=reliability,
+        mora_evidence_summary=mora_evidence_summary,
+        max_items=4,
+    )
 
 
 def _build_reliability(
@@ -508,7 +514,7 @@ def evaluate_utterance(
         )
 
     technical_feedback = pron_fb + prosody_fb + fluency_fb + tone_fb
-    feedback = _build_learner_feedback(
+    feedback_decision = _build_learner_feedback(
         pronunciation_feedback=pron_fb,
         prosody_feedback=prosody_fb,
         fluency_feedback=fluency_fb,
@@ -518,6 +524,7 @@ def evaluate_utterance(
         content_match=content_match,
         mora_count=len(text_info.moras),
     )
+    feedback = feedback_decision.feedback
 
     prosody_metrics = {
         "contour_corr": prosody_details.get("contour_corr"),
@@ -560,6 +567,7 @@ def evaluate_utterance(
             "technical_feedback": {
                 "score_adjustments": score_adjustments,
                 "raw_feedback": technical_feedback,
+                "feedback_policy": feedback_decision.to_dict(),
             },
             "recording_quality": recording_quality,
             "mora_evidence": mora_evidence,
