@@ -164,6 +164,54 @@ Japanese pronunciation target.
 
 ---
 
+## 1.6. Pronunciation calibration bench
+
+To move beyond hand-tuned engineering thresholds, audit native and learner
+datasets with a manifest:
+
+```csv
+audio_path,text,dataset,split,speaker_id,cache_path
+data/jvs/example.wav,ラーメンをください,jvs,native,jvs001,
+data/janon/example.wav,ラーメンをください,janon,l2,janon001,
+```
+
+Run:
+
+```bash
+python scripts/audit_dataset_phonology.py \
+  --manifest data/dataset_audit_manifest.csv \
+  --out-dir outputs/calibration_bench
+```
+
+This writes:
+
+- `phonology_audit_per_utterance.csv`
+- `phonology_audit_summary.csv`
+- `phonology_audit_config.json`
+- `errors.jsonl`
+
+Use native rows such as JVS to detect false penalties and learner rows such as
+JANON to inspect common L2 deviations. These statistics calibrate thresholds;
+they are not final assessment labels without human/listener validation.
+
+For the Sun Haitong-style prosodic representation diagnostic:
+
+```bash
+python scripts/run_prosodic_abx_bench.py \
+  --dataset data/prosody_minimal_pairs.json \
+  --audio-root data/prosody_audio \
+  --models mfcc \
+  --layers all \
+  --mode in_context
+```
+
+ABX output is a representation diagnostic: it asks whether features can
+distinguish pitch-accent contrasts before those features are trusted in user
+scoring. TTS bootstrap trials are only smoke tests; use native verified audio
+for real model/layer claims.
+
+---
+
 ## 2. Test text frontend
 
 ```bash
