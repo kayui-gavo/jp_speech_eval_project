@@ -23,6 +23,8 @@ end-to-end scoring. Current capabilities include:
 - reliability-aware gating for unstable evidence
 - optional ASR-assisted content checks
 - pluggable pseudo-reference TTS backends, including AivisSpeech-compatible HTTP engines
+- a small C-end MVP layer for voice calibration, personalized progress feedback,
+  and three-step practice without changing the v1.3 fixed-reference scorer
 
 ## Quick Start
 

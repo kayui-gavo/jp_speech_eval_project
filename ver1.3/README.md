@@ -78,6 +78,14 @@ not crowd out pronunciation-oriented feedback. Full raw diagnostics remain in
 `details.technical_feedback.raw_feedback`, while suppressed messages are logged
 under `details.technical_feedback.feedback_policy.suppressed`.
 
+C-end MVP app-layer note: the new `jp_speech_eval.app_core` package adds a thin
+consumer-product layer on top of the existing evaluator. It stores a lightweight
+voice calibration profile, compares a new attempt with the user's previous
+attempts, and supports a three-step practice flow: shadowing, faded reference,
+and free production. It does not change the fixed-reference acoustic scorer and
+does not introduce extra user-facing metrics; raw debug evidence remains
+available for development.
+
 ---
 
 ## 1. Environment
@@ -107,6 +115,46 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
+
+---
+
+## 1.5. C-end MVP practice layer
+
+Create a calibration manifest with the user's recordings:
+
+```csv
+text,audio_path,cache_path
+はじめまして、よろしくお願いします。,data/user_calib_01.wav,
+ラーメンをください,data/user_calib_02.wav,cache/ramen_kudasai
+今日は少し寒いですね。,data/user_calib_03.wav,
+```
+
+Build a lightweight user profile:
+
+```bash
+python scripts/demo_calibration.py \
+  --user-id demo_user \
+  --manifest data/demo_calibration_manifest.csv \
+  --out outputs/user_profiles/demo_user.json
+```
+
+Run one step of the three-step practice MVP:
+
+```bash
+python scripts/demo_three_step_practice.py \
+  --user-id demo_user \
+  --item-id ramen_kudasai \
+  --step 1 \
+  --wav data/ramen.wav \
+  --target-text "ラーメンをください" \
+  --cache cache/ramen_kudasai \
+  --profile outputs/user_profiles/demo_user.json
+```
+
+The output keeps standard scores separate from personalized progress feedback.
+The profile only adjusts product feedback such as "slower than usual" or
+"better than last time"; it never turns the user's baseline into the correct
+Japanese pronunciation target.
 
 ---
 

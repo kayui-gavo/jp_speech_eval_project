@@ -1,0 +1,32 @@
+[
+  {
+    "id": "greeting_yoroshiku",
+    "text": "はじめまして、よろしくお願いします。",
+    "meaning_zh": "初次见面，请多关照。",
+    "purpose": "基础礼貌表达、句末下降、整体清晰度"
+  },
+  {
+    "id": "ramen_request",
+    "text": "ラーメンをください。",
+    "meaning_zh": "请给我拉面。",
+    "purpose": "长音、拨音、请求句节奏"
+  },
+  {
+    "id": "weather_smalltalk",
+    "text": "今日は少し寒いですね。",
+    "meaning_zh": "今天有点冷呢。",
+    "purpose": "自然寒暄、停顿、句末语气"
+  },
+  {
+    "id": "repeat_request",
+    "text": "すみません、もう一度お願いします。",
+    "meaning_zh": "不好意思，请再说一遍。",
+    "purpose": "长音、礼貌请求、短暂停顿"
+  },
+  {
+    "id": "thanks",
+    "text": "ありがとうございます。",
+    "meaning_zh": "谢谢。",
+    "purpose": "常用礼貌表达、长音和语速"
+  }
+]
