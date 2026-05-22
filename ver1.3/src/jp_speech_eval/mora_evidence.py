@@ -5,12 +5,7 @@ from typing import Dict, List, Tuple
 import librosa
 import numpy as np
 
-
-SPECIAL_TYPES = {
-    "ー": "long_vowel",
-    "ッ": "sokuon",
-    "ン": "nasal",
-}
+from .phonology import classify_mora_sequence
 
 
 def _clamp01(value: float) -> float:
@@ -55,8 +50,10 @@ def build_mora_evidence(
     rms_times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop) if rms.size else np.asarray([])
     energy_threshold = max(float(np.percentile(rms, 25)), float(np.max(rms)) * 0.10, 1e-6) if rms.size else 1e-6
 
+    phonology = classify_mora_sequence(moras)
     rows: List[Dict[str, object]] = []
     for i, mora in enumerate(moras):
+        ph = phonology[i] if i < len(phonology) else None
         start, end = boundaries[i] if i < len(boundaries) else (0.0, 0.0)
         duration = max(0.0, float(end - start))
 
@@ -94,7 +91,10 @@ def build_mora_evidence(
         rows.append({
             "index": i + 1,
             "mora": mora,
-            "special_type": SPECIAL_TYPES.get(mora, "normal"),
+            "special_type": ph.mora_type if ph else "normal",
+            "special_strength": ph.strength if ph else "none",
+            "duration_role": ph.duration_role if ph else "plain_mora",
+            "vowel": ph.vowel if ph else None,
             "start_sec": round(float(start), 4),
             "end_sec": round(float(end), 4),
             "duration_sec": round(float(duration), 4),
@@ -111,13 +111,20 @@ def build_mora_evidence(
     reliable = [r for r in rows if bool(r["judgement_available"])]
     prosody = [r for r in rows if bool(r["prosody_available"])]
     special = [r for r in rows if r["special_type"] != "normal"]
+    strong_special = [r for r in special if r.get("special_strength") == "strong"]
+    weak_special = [r for r in special if r.get("special_strength") == "weak"]
     low = [r for r in rows if not bool(r["judgement_available"])]
     summary = {
         "mora_count": len(rows),
         "judgement_available_count": len(reliable),
         "prosody_available_count": len(prosody),
         "special_mora_count": len(special),
+        "strong_special_mora_count": len(strong_special),
+        "weak_special_mora_count": len(weak_special),
         "special_mora_judgement_available_count": sum(1 for r in special if bool(r["judgement_available"])),
+        "strong_special_mora_judgement_available_count": sum(1 for r in strong_special if bool(r["judgement_available"])),
+        "weak_special_mora_judgement_available_count": sum(1 for r in weak_special if bool(r["judgement_available"])),
+        "phonology_note": "weak vowel_lengthening_candidate labels are diagnostics, not hard phoneme correctness",
         "mean_boundary_confidence": round(float(np.mean([float(r["boundary_confidence"]) for r in rows])) if rows else 0.0, 4),
         "mean_energy_coverage": round(float(np.mean([float(r["energy_coverage"]) for r in rows])) if rows else 0.0, 4),
         "mean_f0_coverage": round(float(np.mean([float(r["f0_coverage"]) for r in rows])) if rows else 0.0, 4),

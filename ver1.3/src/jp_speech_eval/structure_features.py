@@ -4,26 +4,29 @@ from typing import Dict, List
 
 import numpy as np
 
-
-SPECIAL_LONG = "ー"
-SPECIAL_SOKUON = "ッ"
-SPECIAL_NASAL = "ン"
+from .phonology import classify_mora_sequence
 
 
 def mora_structure_features(moras: List[str], speech_duration_sec: float) -> Dict[str, float | int | None]:
     mora_count = len(moras)
-    long_count = sum(1 for m in moras if m == SPECIAL_LONG)
-    sokuon_count = sum(1 for m in moras if m == SPECIAL_SOKUON)
-    nasal_count = sum(1 for m in moras if m == SPECIAL_NASAL)
-    special_count = long_count + sokuon_count + nasal_count
+    phonology = classify_mora_sequence(moras)
+    long_count = sum(1 for ph in phonology if ph.mora_type == "explicit_long_vowel")
+    weak_long_count = sum(1 for ph in phonology if ph.mora_type == "vowel_lengthening_candidate")
+    sokuon_count = sum(1 for ph in phonology if ph.mora_type == "sokuon")
+    nasal_count = sum(1 for ph in phonology if ph.mora_type == "nasal")
+    strong_special_count = long_count + sokuon_count + nasal_count
+    special_count = strong_special_count + weak_long_count
     duration = max(float(speech_duration_sec), 1e-6)
     return {
         "mora_count": mora_count,
         "long_vowel_count": long_count,
+        "weak_long_vowel_candidate_count": weak_long_count,
         "sokuon_count": sokuon_count,
         "nasal_count": nasal_count,
         "special_mora_count": special_count,
+        "strong_special_mora_count": strong_special_count,
         "special_mora_density": special_count / max(mora_count, 1),
+        "strong_special_mora_density": strong_special_count / max(mora_count, 1),
         "mora_rate": mora_count / duration if mora_count else None,
         "avg_mora_duration_sec": duration / mora_count if mora_count else None,
     }
@@ -77,7 +80,7 @@ def light_pronunciation_risk_features(
     mora_features = mora_structure_features(moras, speech_duration_sec)
     mora_rate = mora_features["mora_rate"]
     avg_mora = mora_features["avg_mora_duration_sec"]
-    special_density = float(mora_features["special_mora_density"] or 0.0)
+    special_density = float(mora_features["strong_special_mora_density"] or 0.0)
     too_fast_for_special_mora = bool(
         mora_rate is not None
         and mora_rate > 7.5

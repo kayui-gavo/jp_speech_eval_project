@@ -6,6 +6,7 @@ import numpy as np
 
 from .audio_features import basic_energy_stats, log_f0_normalize
 from .config import DEFAULT_SCORING_CONFIG
+from .phonology import classify_mora_sequence
 
 
 def _cfg(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -94,11 +95,33 @@ def score_pronunciation_rhythm(
     rhythm_score = 100.0 - cv * float(c["rhythm_cv_weight"])
 
     special_penalty = 0.0
+    special_diagnostics: List[Dict[str, Any]] = []
     special_short_ratio = float(c["special_mora_short_ratio"])
-    for m, d in zip(moras, durations):
-        if m in ["ー", "ン", "ッ"] and d < special_short_ratio * avg:
+    weak_short_ratio = float(c.get("weak_long_vowel_short_ratio", max(special_short_ratio, 0.55)))
+    weak_penalty = float(c.get("weak_long_vowel_penalty", float(c["special_mora_penalty"]) * 0.5))
+    for ph, d in zip(classify_mora_sequence(moras), durations):
+        if ph.strength == "strong" and d < special_short_ratio * avg:
             special_penalty += float(c["special_mora_penalty"])
-            feedback.append(f"「{m}」这个音可能太短。")
+            feedback.append(f"「{ph.mora}」这个音可能太短。")
+            special_diagnostics.append({
+                "index": ph.index,
+                "mora": ph.mora,
+                "type": ph.mora_type,
+                "strength": ph.strength,
+                "duration_ratio": float(d / max(avg, 1e-8)),
+                "penalty": float(c["special_mora_penalty"]),
+            })
+        elif ph.mora_type == "vowel_lengthening_candidate" and d < weak_short_ratio * avg:
+            special_penalty += weak_penalty
+            feedback.append(f"「{ph.mora}」附近的长音感可能偏短。")
+            special_diagnostics.append({
+                "index": ph.index,
+                "mora": ph.mora,
+                "type": ph.mora_type,
+                "strength": ph.strength,
+                "duration_ratio": float(d / max(avg, 1e-8)),
+                "penalty": weak_penalty,
+            })
 
     if cv > float(c["rhythm_cv_warning"]):
         feedback.append("节奏不太稳定，可能有拖音或卡顿。")
@@ -108,6 +131,8 @@ def score_pronunciation_rhythm(
         "mora_duration_mean_sec": avg,
         "mora_duration_cv": cv,
         "special_mora_penalty": special_penalty,
+        "special_mora_diagnostics": special_diagnostics,
+        "phonology_note": "explicit long mark/sokuon/nasal are strong timing evidence; vowel-sequence lengthening is weak diagnostic evidence",
         "score_interpretation": "mora_timing_proxy_not_full_segmental_pronunciation",
     }
     return clamp_score(rhythm_score - special_penalty), feedback, details

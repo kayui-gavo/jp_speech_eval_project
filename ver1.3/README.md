@@ -55,6 +55,12 @@ too few morae have acoustic evidence, F0 coverage is low, or overall reliability
 is below stable-evaluation range, pronunciation/prosody/total scores are capped.
 This prevents artificial high scores caused by unstable alignment or missing F0.
 
+Phonology note: duration-sensitive mora analysis now distinguishes strong
+special morae (`ー`, `ッ`, `ン`) from weak vowel-lengthening candidates such as
+`おう`, `えい`, and repeated vowels. The weak candidates are logged and can add a
+small timing hint, but they are not treated as hard phoneme correctness without
+lexical or alignment confirmation.
+
 Prosody dynamics note: experimental trajectory-tracking diagnostics are logged
 for ablation only. They compare normalized F0 movement against the reference
 using first differences, second differences, timing lag, and
