@@ -187,12 +187,22 @@ python scripts/import_verified_target.py \
   --source ojad_verified \
   --phrase-lengths "<comma-separated mora counts per accent phrase>" \
   --accent-positions "<comma-separated accent positions>" \
-  --note "Checked against OJAD Suzuki-kun on YYYY-MM-DD"
+  --note "Checked against OJAD Suzuki-kun on YYYY-MM-DD" \
+  --show-openjtalk-default \
+  --dry-run
 ```
 
 Exact-text matches in `configs/verified_accent_targets.json` are used before
 OpenJTalk fallback. Keep the source label honest: use `ojad_verified` only after
 human review, because OJAD sentence analysis is still automatic.
+
+After the dry run looks correct, run the same command without `--dry-run` to
+write the target. The importer now validates mora count, H/L label count,
+accent-phrase lengths, and accent positions. It also stores a
+`target_pronunciation_spec_v1` record with strong special morae (`ー`, `ッ`,
+`ン`) and weak vowel-lengthening candidates such as `おう` / `えい`. This makes
+OJAD a provenance-backed manual verification workflow rather than a hidden
+runtime dependency or a pretend ground truth.
 
 ---
 
