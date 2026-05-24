@@ -200,6 +200,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             return
         if self.path.startswith("/api/asr-confirm-sample"):
             prompt = build_asr_confirmation_prompt(self.server.sample_wav)  # type: ignore[attr-defined]
+            self.server.asr_confirmation_sessions[prompt.session_id] = str(self.server.sample_wav)  # type: ignore[attr-defined]
             _json_response(self, {"ok": True, **prompt.to_dict()})
             return
         if self.path.startswith("/api/evaluate-confirmed-sample"):
@@ -224,6 +225,31 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self) -> None:
+        if self.path == "/api/evaluate-confirmed-asr":
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                data = json.loads(self.rfile.read(length) or b"{}")
+                session_id = str(data.get("session_id") or "").strip()
+                text = str(data.get("user_confirmed_text") or data.get("text") or "").strip()
+                if not session_id:
+                    _error_response(self, "session_id is required")
+                    return
+                if not text:
+                    _error_response(self, "user_confirmed_text is required")
+                    return
+                wav_raw = self.server.asr_confirmation_sessions.get(session_id)  # type: ignore[attr-defined]
+                if not wav_raw:
+                    _error_response(self, "ASR confirmation session expired. Please record or upload again.", status=404)
+                    return
+                wav_path = Path(wav_raw)
+                if not wav_path.exists():
+                    _error_response(self, "Confirmed audio file is no longer available. Please record or upload again.", status=404)
+                    return
+                self._evaluate_confirmed_asr(wav_path, text)
+            except Exception as exc:
+                _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
+            return
+
         if self.path != "/api/evaluate":
             _error_response(self, "Unknown endpoint", status=404)
             return
@@ -253,7 +279,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         try:
             self._evaluate_wav(wav_path, mode=mode)
         finally:
-            if not self.server.retain_uploads:  # type: ignore[attr-defined]
+            keep_for_confirmation = mode == "asr_pseudo_reference"
+            if not self.server.retain_uploads and not keep_for_confirmation:  # type: ignore[attr-defined]
                 wav_path.unlink(missing_ok=True)
 
     def _evaluate_wav(self, wav_path: Path, mode: str | None = None) -> None:
@@ -278,6 +305,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 reference_audio_url = None
             elif mode == "asr_pseudo_reference":
                 prompt = build_asr_confirmation_prompt(wav_path)
+                self.server.asr_confirmation_sessions[prompt.session_id] = str(wav_path)  # type: ignore[attr-defined]
                 _json_response(self, {"ok": True, **prompt.to_dict(), "requires_user_confirmation": True})
                 return
             elif mode == "kanade_voice_reference":
@@ -390,6 +418,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             _json_response(self, {
                 "ok": True,
                 "mode": "asr_confirmed_weak_reference",
+                "wav_path": str(wav_path.relative_to(ROOT)) if wav_path.is_relative_to(ROOT) else str(wav_path),
                 "reference": reference,
                 "reference_audio_url": f"/api/latest-reference.wav?mode=asr_confirmed_weak_reference&text={hashlib.sha1(user_confirmed_text.encode('utf-8')).hexdigest()[:12]}",
                 "result": result,
@@ -539,6 +568,7 @@ def main() -> None:
     server.log_jsonl = (ROOT / args.log_jsonl).resolve() if not Path(args.log_jsonl).is_absolute() else Path(args.log_jsonl)
     server.feature_csv = (ROOT / args.feature_csv).resolve() if not Path(args.feature_csv).is_absolute() else Path(args.feature_csv)
     server.available_modes = available_modes
+    server.asr_confirmation_sessions = {}
     server.retain_uploads = not args.public_demo
     server.enable_logs = not args.public_demo
     server.server_label = "Public demo" if args.public_demo else "Local debug"

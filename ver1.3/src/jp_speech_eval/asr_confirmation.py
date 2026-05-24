@@ -54,7 +54,8 @@ def build_asr_confirmation_prompt(
         provider=asr_provider,
     )
     text = transcript.text if transcript.available and transcript.text else ""
-    candidates = [AsrCandidate(id=1, text=text, confidence=transcript.confidence)] if text else []
+    confidence = getattr(transcript, "confidence", None)
+    candidates = [AsrCandidate(id=1, text=text, confidence=confidence)] if text else []
     digest = hashlib.sha1(f"{Path(wav_path).resolve()}|{text}".encode("utf-8")).hexdigest()[:16]
     return AsrConfirmationPrompt(
         mode="asr_confirm",

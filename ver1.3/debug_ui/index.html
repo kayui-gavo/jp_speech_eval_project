@@ -666,6 +666,59 @@
       background: var(--soft);
     }
 
+    .muted { color: var(--muted); }
+
+    .asr-confirm-panel {
+      display: grid;
+      gap: 10px;
+      margin: 14px 0;
+      padding: 14px;
+      border: 1px solid #f1c27d;
+      border-radius: 8px;
+      background: #fff7ed;
+    }
+
+    .asr-confirm-panel[hidden] { display: none; }
+
+    .asr-confirm-title {
+      font-weight: 800;
+      color: #9a3412;
+    }
+
+    .asr-candidates {
+      display: grid;
+      gap: 8px;
+    }
+
+    .asr-candidate {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 8px 10px;
+      border: 1px solid #fed7aa;
+      border-radius: 7px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .asr-candidate span {
+      line-height: 1.5;
+    }
+
+    .asr-confirm-panel textarea {
+      width: 100%;
+      min-height: 72px;
+      resize: vertical;
+      border: 1px solid #d0d5dd;
+      border-radius: 7px;
+      padding: 9px 10px;
+      font: inherit;
+      line-height: 1.5;
+      background: #fff;
+      color: var(--ink);
+      box-sizing: border-box;
+    }
+
     @media (max-width: 920px) {
       main { grid-template-columns: 1fr; }
       .score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -743,6 +796,19 @@
             <span class="pill" id="modeHint">需要目标句</span>
           </div>
           <div class="mode-description" id="modeDescription"></div>
+          <div class="asr-confirm-panel" id="asrConfirmPanel" hidden>
+            <div class="asr-confirm-title" id="asrConfirmTitle">猜你想说的是哪一句？</div>
+            <div class="muted" id="asrConfirmMessage">如果不对，请直接修改文本。</div>
+            <div class="asr-candidates" id="asrCandidates"></div>
+            <label>
+              <span class="audio-label" id="asrEditableLabel">确认文本</span>
+              <textarea id="asrEditableText" lang="ja" spellcheck="false"></textarea>
+            </label>
+            <div class="controls-mini">
+              <button class="primary" id="confirmAsrBtn">确认并评价</button>
+              <button id="cancelAsrBtn">取消</button>
+            </div>
+          </div>
           <div class="controls">
             <button class="primary" id="recordBtn" data-i18n="startRecording">● 开始录音</button>
             <button id="stopBtn" disabled data-i18n="stopAndScore">■ 停止并评价</button>
@@ -878,7 +944,8 @@
       locale: localStorage.getItem("jpSpeechEvalLocale") || "zh-CN",
       recordStatusKey: "ready",
       liveHintKey: "waiting",
-      busyKey: null
+      busyKey: null,
+      pendingAsrConfirmation: null
     };
 
     const scoreKeys = [
@@ -1007,6 +1074,18 @@
         getReady: "准备",
         speakNow: "请开始",
         processing: "处理中",
+        asrConfirmTitle: "猜你想说的是哪一句？",
+        asrConfirmMessage: "ASR 只负责给候选文本；请确认或修改后，系统才会生成弱参考并评价。",
+        asrEditableLabel: "确认文本",
+        asrConfirmButton: "确认并评价",
+        asrCancel: "取消",
+        asrNoCandidate: "没有稳定候选，请手动输入你刚才说的日语。",
+        asrConfirmNeedsText: "请先确认或输入一句日语。",
+        practiceResult: "练习检查",
+        practiceOk: "可以继续",
+        practiceNeedsAttention: "需要注意",
+        practiceRetry: "建议重录",
+        practiceUnscorable: "暂时无法判断",
         scoreLabels: {
           total_score: "总分",
           pronunciation_score: "发音",
@@ -1016,7 +1095,7 @@
         },
         modeLabels: {
           reference: "固定句参考评价",
-          asr_pseudo_reference: "自由说话：ASR 生成参考",
+          asr_pseudo_reference: "自由说话：ASR 确认参考",
           transcript_assisted_light: "自由说话：轻量转写诊断",
           acoustic: "录音质量/声学诊断",
           kanade_voice_reference: "实验：固定句声线参考",
@@ -1174,6 +1253,18 @@
         getReady: "準備",
         speakNow: "請開始",
         processing: "處理中",
+        asrConfirmTitle: "猜你想說的是哪一句？",
+        asrConfirmMessage: "ASR 只負責提供候選文字；請確認或修改後，系統才會生成弱參考並評價。",
+        asrEditableLabel: "確認文字",
+        asrConfirmButton: "確認並評價",
+        asrCancel: "取消",
+        asrNoCandidate: "沒有穩定候選，請手動輸入你剛才說的日語。",
+        asrConfirmNeedsText: "請先確認或輸入一句日語。",
+        practiceResult: "練習檢查",
+        practiceOk: "可以繼續",
+        practiceNeedsAttention: "需要注意",
+        practiceRetry: "建議重錄",
+        practiceUnscorable: "暫時無法判斷",
         scoreLabels: {
           total_score: "總分",
           pronunciation_score: "發音",
@@ -1183,7 +1274,7 @@
         },
         modeLabels: {
           reference: "固定句參考評價",
-          asr_pseudo_reference: "自由說話：ASR 生成參考",
+          asr_pseudo_reference: "自由說話：ASR 確認參考",
           transcript_assisted_light: "自由說話：輕量轉寫診斷",
           acoustic: "錄音品質/聲學診斷",
           kanade_voice_reference: "實驗：固定句聲線參考",
@@ -1341,6 +1432,18 @@
         getReady: "準備",
         speakNow: "話してください",
         processing: "処理中",
+        asrConfirmTitle: "どの文を言いましたか？",
+        asrConfirmMessage: "ASR は候補文を出すだけです。確認または修正してから、弱い参照音声を生成して評価します。",
+        asrEditableLabel: "確認した文",
+        asrConfirmButton: "確認して評価",
+        asrCancel: "キャンセル",
+        asrNoCandidate: "安定した候補がありません。今言った日本語を入力してください。",
+        asrConfirmNeedsText: "先に日本語文を確認または入力してください。",
+        practiceResult: "練習チェック",
+        practiceOk: "続けてOK",
+        practiceNeedsAttention: "要注意",
+        practiceRetry: "録り直し推奨",
+        practiceUnscorable: "判定保留",
         scoreLabels: {
           total_score: "総合",
           pronunciation_score: "発音",
@@ -1350,7 +1453,7 @@
         },
         modeLabels: {
           reference: "固定文参照評価",
-          asr_pseudo_reference: "自由発話：ASR 生成参照",
+          asr_pseudo_reference: "自由発話：ASR 確認参照",
           transcript_assisted_light: "自由発話：軽量書き起こし診断",
           acoustic: "録音品質/音響診断",
           kanade_voice_reference: "実験：固定文の声質参照",
@@ -1508,6 +1611,18 @@
         getReady: "Get ready",
         speakNow: "Speak now",
         processing: "Processing",
+        asrConfirmTitle: "Which sentence did you mean?",
+        asrConfirmMessage: "ASR only proposes text. Confirm or edit it before the system creates a weak reference and scores.",
+        asrEditableLabel: "Confirmed text",
+        asrConfirmButton: "Confirm and score",
+        asrCancel: "Cancel",
+        asrNoCandidate: "No stable candidate. Type the Japanese sentence you just said.",
+        asrConfirmNeedsText: "Please confirm or enter a Japanese sentence first.",
+        practiceResult: "Practice check",
+        practiceOk: "Looks ok",
+        practiceNeedsAttention: "Needs attention",
+        practiceRetry: "Try again",
+        practiceUnscorable: "Not scorable",
         scoreLabels: {
           total_score: "Total",
           pronunciation_score: "Pronunciation",
@@ -1517,7 +1632,7 @@
         },
         modeLabels: {
           reference: "Fixed-sentence reference scoring",
-          asr_pseudo_reference: "Free speech: ASR-generated reference",
+          asr_pseudo_reference: "Free speech: confirmed ASR reference",
           transcript_assisted_light: "Free speech: light transcript diagnosis",
           acoustic: "Recording/acoustic diagnosis",
           kanade_voice_reference: "Experimental: fixed-sentence voice reference",
@@ -1575,7 +1690,7 @@
         fallbackAcoustic: "当前链路没有成功生成可用于评分的参考音，系统已回退为纯声学诊断；这个结果不能解释为 Kanade 或 ASR 参考评分。",
         descriptions: {
           reference: { title: "固定句参考评价", body: "用于目标句已知的朗读练习。系统比较你的录音和缓存参考音，重点看发音可懂度、拍/时长、音高走势和流畅度。", score: "这是目前最适合认真看的评分模式。" },
-          asr_pseudo_reference: { title: "自由说话：ASR 生成参考", body: "先把你说的话转写成文本，再生成 pseudo-reference 做弱参考评价。适合探索自由发话，但 ASR 错误会污染结果。", score: "分数只适合作为调试诊断，不能当成严格能力评价。" },
+          asr_pseudo_reference: { title: "自由说话：ASR 确认后生成参考", body: "先把你说的话转写成候选文本，你确认或修改后，系统才生成 pseudo-reference 做弱参考评价。", score: "这是练习参考反馈，不是严格发音正确率。" },
           transcript_assisted_light: { title: "自由说话：轻量转写诊断", body: "只使用转写估计大致拍数和节奏，不生成参考音，也不做假名级纠错。", score: "适合快速看语速、停顿、录音质量和大致流畅度。" },
           acoustic: { title: "录音质量/声学诊断", body: "完全不看文本和内容，只看音量、有效语音、停顿、语速、F0 活动和录音质量。", score: "它不是发音正确率，只是判断这段音频能不能被可靠分析。" },
           kanade_voice_reference: { title: "实验：固定句声线参考", body: "尝试用你的声线生成固定目标句参考音，用来听和调试。", score: "声线参考不等于标准教师音，也不应作为正式评分真值。" },
@@ -1587,7 +1702,7 @@
         fallbackAcoustic: "目前鏈路沒有成功生成可用於評分的參考音，系統已回退為純聲學診斷；這個結果不能解釋為 Kanade 或 ASR 參考評分。",
         descriptions: {
           reference: { title: "固定句參考評價", body: "用於目標句已知的朗讀練習。系統比較你的錄音與快取參考音，重點看發音可懂度、拍/時長、音高走勢與流暢度。", score: "這是目前最適合正式查看的評分模式。" },
-          asr_pseudo_reference: { title: "自由說話：ASR 生成參考", body: "先把你說的話轉寫成文字，再生成 pseudo-reference 做弱參考評價。適合探索自由發話，但 ASR 錯誤會污染結果。", score: "分數只適合作為調試診斷，不能當成嚴格能力評價。" },
+          asr_pseudo_reference: { title: "自由說話：ASR 確認後生成參考", body: "先把你說的話轉寫成候選文字，你確認或修改後，系統才生成 pseudo-reference 做弱參考評價。", score: "這是練習參考回饋，不是嚴格發音正確率。" },
           transcript_assisted_light: { title: "自由說話：輕量轉寫診斷", body: "只使用轉寫估計大致拍數與節奏，不生成參考音，也不做假名級糾錯。", score: "適合快速看語速、停頓、錄音品質與大致流暢度。" },
           acoustic: { title: "錄音品質/聲學診斷", body: "完全不看文字和內容，只看音量、有效語音、停頓、語速、F0 活動與錄音品質。", score: "它不是發音正確率，只是判斷這段音訊能不能被可靠分析。" },
           kanade_voice_reference: { title: "實驗：固定句聲線參考", body: "嘗試用你的聲線生成固定目標句參考音，用來聽和調試。", score: "聲線參考不等於標準教師音，也不應作為正式評分真值。" },
@@ -1599,7 +1714,7 @@
         fallbackAcoustic: "参照音声を生成できなかったため、音響のみ診断にフォールバックしました。この結果は Kanade や ASR 参照評価ではありません。",
         descriptions: {
           reference: { title: "固定文参照評価", body: "目標文が分かっている朗読練習向けです。録音と参照音声を比較し、発音の聞き取りやすさ、モーラの長さ、ピッチ推移、流暢さを見ます。", score: "現時点で最も正式評価に近いモードです。" },
-          asr_pseudo_reference: { title: "自由発話：ASR 生成参照", body: "発話を ASR で文字化し、pseudo-reference を生成して弱い参照評価を行います。ASR 誤りの影響があります。", score: "スコアは厳密な能力評価ではなく診断用です。" },
+          asr_pseudo_reference: { title: "自由発話：ASR 確認後の参照生成", body: "ASR が候補文を出し、あなたが確認または修正してから pseudo-reference を生成して弱い参照評価を行います。", score: "練習用の参考フィードバックであり、厳密な発音正誤ではありません。" },
           transcript_assisted_light: { title: "自由発話：軽量書き起こし診断", body: "書き起こしから大まかなモーラ数とリズムを推定します。参照音声生成や仮名単位の訂正は行いません。", score: "話速、ポーズ、録音品質、流暢さの確認向けです。" },
           acoustic: { title: "録音品質/音響診断", body: "テキストや内容を使わず、音量、有声区間、ポーズ、話速、F0 活動、録音品質だけを見ます。", score: "発音正誤ではなく、解析できる音声かを判断するためのモードです。" },
           kanade_voice_reference: { title: "実験：固定文の声質参照", body: "あなたの声質で固定目標文の参照音声生成を試します。主に試聴とデバッグ用です。", score: "標準教師音声ではなく、正式な真値として扱いません。" },
@@ -1611,7 +1726,7 @@
         fallbackAcoustic: "The reference chain did not produce a usable scoring reference, so this result fell back to acoustic-only diagnosis. Do not read it as Kanade or ASR-reference scoring.",
         descriptions: {
           reference: { title: "Fixed-sentence reference scoring", body: "Use this when the target sentence is known. The system compares your recording with a cached reference and checks intelligibility, mora timing, pitch movement, and fluency.", score: "This is the most meaningful scoring mode right now." },
-          asr_pseudo_reference: { title: "Free speech: ASR-generated reference", body: "The system transcribes what you said, generates a pseudo-reference, then runs weak reference-based scoring. ASR mistakes can pollute the result.", score: "Use the score as diagnostic evidence, not a strict proficiency grade." },
+          asr_pseudo_reference: { title: "Free speech: confirm ASR before reference", body: "ASR proposes text first. After you confirm or edit it, the system creates a pseudo-reference and runs weak reference-based feedback.", score: "This is practice feedback, not strict pronunciation correctness." },
           transcript_assisted_light: { title: "Free speech: light transcript diagnosis", body: "Uses transcript only to estimate rough mora count and rhythm. It does not generate reference audio or kana-level corrections.", score: "Good for quick speech-rate, pause, recording-quality, and fluency checks." },
           acoustic: { title: "Recording/acoustic diagnosis", body: "Ignores text and content. It checks volume, voiced speech, pauses, speed, F0 movement, and recording quality.", score: "This is not pronunciation correctness; it tells whether the audio is analyzable." },
           kanade_voice_reference: { title: "Experimental: fixed-sentence voice reference", body: "Tries to synthesize the fixed target sentence in your voice for listening and debugging.", score: "This is not a native teacher reference and should not be treated as scoring truth." },
@@ -2044,6 +2159,7 @@
       $("sampleBtn").disabled = isBusy;
       $("fileInput").disabled = isBusy;
       $("playLastBtn").disabled = isBusy || !state.lastRecordingUrl;
+      $("confirmAsrBtn").disabled = isBusy;
     }
 
     function renderConfig(config) {
@@ -2081,6 +2197,9 @@
     }
 
     function renderModePlaceholder() {
+      if (state.pendingAsrConfirmation && currentMode() !== "asr_pseudo_reference") {
+        hideAsrConfirmation();
+      }
       const mode = currentMode();
       if (mode === "reference") {
         renderConfig(state.config);
@@ -2214,13 +2333,32 @@
       renderModeDescription(mode);
     }
 
-    function renderScores(result) {
-      $("scoreGrid").innerHTML = scoreKeys.map((key) => {
+    function practiceResultLabel(value) {
+      const key = {
+        ok: "practiceOk",
+        needs_attention: "practiceNeedsAttention",
+        retry: "practiceRetry",
+        unscorable: "practiceUnscorable"
+      }[value] || "practiceNeedsAttention";
+      return t(key);
+    }
+
+    function renderScores(result, userFacing = null) {
+      const hideTotal = userFacing?.display_total_score === false;
+      const cards = [];
+      if (userFacing) {
+        const status = userFacing.practice_check_result || "needs_attention";
+        const reliability = userFacing.reliability || "unknown";
+        cards.push(`<div class="score total"><span>${t("practiceResult")}</span><strong>${practiceResultLabel(status)}</strong><span>${reliability}</span></div>`);
+      }
+      const keys = hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys;
+      cards.push(...keys.map((key) => {
         const label = tGroup("scoreLabels", key);
         const value = result[key] ?? 0;
         const className = key === "total_score" ? "score total" : "score";
         return `<div class="${className}"><span>${label}</span><strong>${value}</strong><span>/ 100</span></div>`;
-      }).join("");
+      }));
+      $("scoreGrid").innerHTML = cards.join("");
     }
 
     function renderReliability(result) {
@@ -2384,8 +2522,8 @@
       return text;
     }
 
-    function renderFeedback(result) {
-      const list = result.feedback || [];
+    function renderFeedback(result, userFacing = null) {
+      const list = userFacing?.user_messages || result.feedback || [];
       $("feedbackCount").textContent = String(list.length);
       $("feedbackEmpty").style.display = list.length ? "none" : "block";
       $("feedbackList").innerHTML = list.map((item) => `<li>${escapeHtml(localizeFeedback(item))}</li>`).join("");
@@ -2567,15 +2705,80 @@
         : t("referenceOnly");
     }
 
+    function isAsrConfirmationPayload(payload) {
+      return payload?.mode === "asr_confirm" || payload?.requires_user_confirmation;
+    }
+
+    function hideAsrConfirmation() {
+      state.pendingAsrConfirmation = null;
+      $("asrConfirmPanel").hidden = true;
+      $("asrCandidates").innerHTML = "";
+      $("asrEditableText").value = "";
+    }
+
+    function renderAsrConfirmation(payload) {
+      state.pendingAsrConfirmation = payload;
+      $("asrConfirmPanel").hidden = false;
+      $("asrConfirmTitle").textContent = t("asrConfirmTitle");
+      $("asrConfirmMessage").textContent = t("asrConfirmMessage");
+      $("asrEditableLabel").textContent = t("asrEditableLabel");
+      $("confirmAsrBtn").textContent = t("asrConfirmButton");
+      $("cancelAsrBtn").textContent = t("asrCancel");
+      const candidates = payload.asr_candidates || [];
+      $("asrCandidates").innerHTML = candidates.length
+        ? candidates.map((candidate, index) => {
+          const confidence = Number.isFinite(candidate.confidence)
+            ? ` · ${(candidate.confidence * 100).toFixed(0)}%`
+            : "";
+          return `<label class="asr-candidate">
+            <input type="radio" name="asrCandidate" value="${index}" ${index === 0 ? "checked" : ""}>
+            <span>${escapeHtml(candidate.text || "")}${confidence}</span>
+          </label>`;
+        }).join("")
+        : `<div class="empty">${t("asrNoCandidate")}</div>`;
+      $("asrEditableText").value = payload.editable_text || candidates[0]?.text || "";
+      $("asrCandidates").querySelectorAll("input[name='asrCandidate']").forEach((input) => {
+        input.addEventListener("change", () => {
+          const candidate = candidates[Number(input.value)];
+          if (candidate?.text) $("asrEditableText").value = candidate.text;
+        });
+      });
+      $("cachePath").textContent = t("waitingForAsr");
+      $("referenceLabel").textContent = t("referenceAfterScoring");
+      renderPrompt({
+        target_text: t("speakFreely"),
+        kana: payload.editable_text || t("transcriptAfterScoring"),
+        moras: [],
+        target_pitch: []
+      });
+      $("wavPath").textContent = t("waitingForTranscript");
+      $("scoreGrid").innerHTML = "";
+      $("feedbackCount").textContent = "1";
+      $("feedbackEmpty").style.display = "none";
+      $("feedbackList").innerHTML = `<li>${escapeHtml(t("asrConfirmMessage"))}</li>`;
+      $("reliabilityLevel").textContent = t("noData");
+      $("reliabilityLevel").className = "pill";
+      $("reliabilityGrid").innerHTML = "";
+      $("reliabilityWarnings").innerHTML = "";
+      $("rawJson").textContent = JSON.stringify(payload, null, 2);
+      $("copyJsonBtn").disabled = false;
+    }
+
     function renderPayload(payload) {
       state.lastPayload = payload;
+      if (isAsrConfirmationPayload(payload)) {
+        renderAsrConfirmation(payload);
+        renderLatency(payload);
+        return;
+      }
+      hideAsrConfirmation();
       $("wavPath").textContent = payload.wav_path ? t("evaluated") : t("uploadedRecording");
       renderLatency(payload);
       renderDynamicReference(payload);
-      renderScores(payload.result);
+      renderScores(payload.result, payload.user_facing);
       renderReliability(payload.result);
       renderEndpointing(payload.result.endpointing || {});
-      renderFeedback(payload.result);
+      renderFeedback(payload.result, payload.user_facing);
       renderRealtime(payload.realtime || [], payload.result?.details?.mode || payload.mode || currentMode());
       drawPitchComparison(payload.result);
       $("rawJson").textContent = JSON.stringify(payload, null, 2);
@@ -2604,6 +2807,32 @@
       payload.client_latency_ms = Math.round((performance.now() - started) * 1000) / 1000;
       setBusy(false);
       if (!payload.ok) throw new Error(payload.error || "Evaluation failed");
+      renderPayload(payload);
+    }
+
+    async function confirmAsrText() {
+      const pending = state.pendingAsrConfirmation;
+      const text = $("asrEditableText").value.trim();
+      if (!pending || !pending.session_id) return;
+      if (!text) {
+        alert(t("asrConfirmNeedsText"));
+        return;
+      }
+      setBusy(true);
+      const started = performance.now();
+      $("evalLatency").textContent = `${t("waitShort")} ...`;
+      const res = await fetch("/api/evaluate-confirmed-asr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: pending.session_id,
+          user_confirmed_text: text
+        })
+      });
+      const payload = await res.json();
+      payload.client_latency_ms = Math.round((performance.now() - started) * 1000) / 1000;
+      setBusy(false);
+      if (!payload.ok) throw new Error(payload.error || "Confirmed ASR evaluation failed");
       renderPayload(payload);
     }
 
@@ -2747,6 +2976,8 @@
         updateModeHint();
         renderModePlaceholder();
       };
+      $("confirmAsrBtn").onclick = () => confirmAsrText().catch((err) => alert(err.message));
+      $("cancelAsrBtn").onclick = () => hideAsrConfirmation();
       $("playLastBtn").onclick = () => {
         if (state.lastRecordingUrl) $("lastRecordingAudio").play();
       };
