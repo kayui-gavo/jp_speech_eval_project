@@ -21,6 +21,8 @@ rsync -a \
   --exclude '.git/' \
   --exclude '.venv/' \
   --exclude '.venv-kanade/' \
+  --exclude '.pytest_cache/' \
+  --exclude '*.egg-info/' \
   --exclude '.DS_Store' \
   --exclude 'JANON/' \
   --exclude 'ver1.0/' \
