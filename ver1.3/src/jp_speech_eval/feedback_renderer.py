@@ -13,6 +13,7 @@ class UserFacingResult:
     mode: str
     reliability: str
     practice_check_result: str
+    display_score: Optional[int]
     user_messages: List[str]
     focus_feedback: Optional[Dict[str, Any]]
     display_total_score: bool
@@ -53,6 +54,44 @@ def _debug_payload(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) 
     }
 
 
+def _as_score(value: Any, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(100.0, number))
+
+
+def _display_score(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) -> Optional[int]:
+    if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
+        return None
+    raw_total = _as_score(result.get("total_score"))
+    pronunciation = _as_score(result.get("pronunciation_score"))
+    fluency = _as_score(result.get("fluency_score"))
+    prosody = _as_score(result.get("prosody_score"))
+    if policy.demo_only:
+        return None
+    if policy.weak_reference or not gate.allow_pitch_feedback:
+        display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
+        if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
+            display = max(display, 85.0)
+        return int(round(max(raw_total, display)))
+    return int(round(raw_total))
+
+
+def _is_retry_message(message: str) -> bool:
+    retry_terms = (
+        "重录",
+        "再录",
+        "録り直",
+        "もう一度録音",
+        "record again",
+        "try again",
+    )
+    lower = message.lower()
+    return any(term.lower() in lower for term in retry_terms)
+
+
 def render_user_facing_result(result: Mapping[str, Any], *, mode: str | None = None) -> Dict[str, Any]:
     policy = policy_from_result(result, mode=mode)
     gate = evaluate_reliability_gate(result, policy)
@@ -73,13 +112,16 @@ def render_user_facing_result(result: Mapping[str, Any], *, mode: str | None = N
             focus = {"category": "special_mora", **item.to_dict()}
             messages.append(item.message)
 
-    if not messages:
-        raw_feedback = [str(item) for item in (result.get("feedback") or [])]
-        for item in raw_feedback:
-            if not gate.allow_pitch_feedback and ("音高" in item or "語調" in item or "语调" in item):
-                continue
-            messages.append(item)
+    raw_feedback = [str(item) for item in (result.get("feedback") or [])]
+    for item in raw_feedback:
+        if len(messages) >= 2:
             break
+        if gate.practice_check_result != "retry" and _is_retry_message(item):
+            continue
+        if not gate.allow_pitch_feedback and ("音高" in item or "語調" in item or "语调" in item):
+            continue
+        if item not in messages:
+            messages.append(item)
     if not messages:
         messages.append("今回の練習は大きな問題なく確認できました。")
 
@@ -92,6 +134,7 @@ def render_user_facing_result(result: Mapping[str, Any], *, mode: str | None = N
         mode=policy.mode,
         reliability=gate.reliability,
         practice_check_result=practice,
+        display_score=_display_score(result, policy, gate),
         user_messages=messages[:2],
         focus_feedback=focus,
         display_total_score=False,

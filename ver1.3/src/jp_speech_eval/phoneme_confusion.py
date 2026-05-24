@@ -14,7 +14,6 @@ import warnings
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from scipy.spatial.distance import bhattacharyya
 from scipy.stats import entropy
 
 
@@ -42,13 +41,8 @@ def bhattacharyya_coefficient(
     p = p / (np.sum(p) + 1e-10)
     q = q / (np.sum(q) + 1e-10)
     
-    # BC distance
-    bc_dist = bhattacharyya(p, q)
-    
-    # Convert distance to similarity (0-1)
-    bc = np.exp(-bc_dist)
-    
-    return float(bc)
+    bc = np.sum(np.sqrt(np.clip(p, 0.0, None) * np.clip(q, 0.0, None)))
+    return float(np.clip(bc, 0.0, 1.0))
 
 
 def kl_divergence(

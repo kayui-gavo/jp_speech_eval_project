@@ -27,6 +27,7 @@ from jp_speech_eval.config import load_scoring_config
 from jp_speech_eval.eval_modes import (
     evaluate_asr_confirmed_weak_reference,
     evaluate_asr_pseudo_reference,
+    evaluate_kanade_asr_confirmed_voice_reference,
     evaluate_kanade_asr_voice_reference,
     evaluate_kanade_voice_reference,
     evaluate_mode,
@@ -200,8 +201,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             return
         if self.path.startswith("/api/asr-confirm-sample"):
             prompt = build_asr_confirmation_prompt(self.server.sample_wav)  # type: ignore[attr-defined]
-            self.server.asr_confirmation_sessions[prompt.session_id] = str(self.server.sample_wav)  # type: ignore[attr-defined]
-            _json_response(self, {"ok": True, **prompt.to_dict()})
+            self._asr_confirmation_response(prompt, self.server.sample_wav, "asr_pseudo_reference")  # type: ignore[attr-defined]
             return
         if self.path.startswith("/api/evaluate-confirmed-sample"):
             from urllib.parse import parse_qs, urlparse
@@ -237,15 +237,16 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 if not text:
                     _error_response(self, "user_confirmed_text is required")
                     return
-                wav_raw = self.server.asr_confirmation_sessions.get(session_id)  # type: ignore[attr-defined]
-                if not wav_raw:
+                session = self.server.asr_confirmation_sessions.get(session_id)  # type: ignore[attr-defined]
+                if not session:
                     _error_response(self, "ASR confirmation session expired. Please record or upload again.", status=404)
                     return
-                wav_path = Path(wav_raw)
+                wav_path = Path(session["wav_path"] if isinstance(session, dict) else session)
                 if not wav_path.exists():
                     _error_response(self, "Confirmed audio file is no longer available. Please record or upload again.", status=404)
                     return
-                self._evaluate_confirmed_asr(wav_path, text)
+                confirmed_mode = str(data.get("confirmed_mode") or (session.get("mode") if isinstance(session, dict) else "") or "asr_pseudo_reference")
+                self._evaluate_confirmed_asr(wav_path, text, confirmed_mode=confirmed_mode)
             except Exception as exc:
                 _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
             return
@@ -279,7 +280,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         try:
             self._evaluate_wav(wav_path, mode=mode)
         finally:
-            keep_for_confirmation = mode == "asr_pseudo_reference"
+            keep_for_confirmation = mode in {"asr_pseudo_reference", "kanade_asr_voice_reference"}
             if not self.server.retain_uploads and not keep_for_confirmation:  # type: ignore[attr-defined]
                 wav_path.unlink(missing_ok=True)
 
@@ -303,10 +304,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 realtime = []
                 reference = None
                 reference_audio_url = None
-            elif mode == "asr_pseudo_reference":
+            elif mode in {"asr_pseudo_reference", "kanade_asr_voice_reference"}:
                 prompt = build_asr_confirmation_prompt(wav_path)
-                self.server.asr_confirmation_sessions[prompt.session_id] = str(wav_path)  # type: ignore[attr-defined]
-                _json_response(self, {"ok": True, **prompt.to_dict(), "requires_user_confirmation": True})
+                self._asr_confirmation_response(prompt, wav_path, mode, requires_user_confirmation=True)
                 return
             elif mode == "kanade_voice_reference":
                 result = evaluate_kanade_voice_reference(
@@ -392,10 +392,35 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
 
-    def _evaluate_confirmed_asr(self, wav_path: Path, user_confirmed_text: str) -> None:
+    def _asr_confirmation_response(
+        self,
+        prompt: Any,
+        wav_path: Path,
+        mode: str,
+        *,
+        requires_user_confirmation: bool = True,
+    ) -> None:
+        mode_suffix = hashlib.sha1(mode.encode("utf-8")).hexdigest()[:6]
+        session_id = f"{prompt.session_id}-{mode_suffix}"
+        self.server.asr_confirmation_sessions[session_id] = {  # type: ignore[attr-defined]
+            "wav_path": str(wav_path),
+            "mode": mode,
+        }
+        payload = prompt.to_dict()
+        payload["session_id"] = session_id
+        payload["requires_user_confirmation"] = requires_user_confirmation
+        payload["confirmed_mode"] = mode
+        _json_response(self, {"ok": True, **payload})
+
+    def _evaluate_confirmed_asr(
+        self,
+        wav_path: Path,
+        user_confirmed_text: str,
+        *,
+        confirmed_mode: str = "asr_pseudo_reference",
+    ) -> None:
         try:
-            result = evaluate_asr_confirmed_weak_reference(
-                wav_path,
+            kwargs = dict(
                 user_confirmed_text=user_confirmed_text,
                 base_cache_path=self.server.cache_prefix,  # type: ignore[attr-defined]
                 scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
@@ -407,23 +432,33 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 tts_voice=self.server.tts_voice,  # type: ignore[attr-defined]
                 tts_speed=self.server.tts_speed,  # type: ignore[attr-defined]
             )
+            if confirmed_mode == "kanade_asr_voice_reference":
+                result = evaluate_kanade_asr_confirmed_voice_reference(wav_path, **kwargs)
+            else:
+                result = evaluate_asr_confirmed_weak_reference(wav_path, **kwargs)
             generated_prefix = Path(result.get("cache_prefix", ""))
             reference = _reference_payload(generated_prefix)
-            self.server.latest_reference_wav = generated_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
-            unified = unify_evaluation_result(result, mode="asr_confirmed_weak_reference", audio_path=wav_path)
+            mode = str(result.get("details", {}).get("mode") or "asr_confirmed_weak_reference")
+            voice_prefix_raw = str(result.get("details", {}).get("voice_reference_cache_prefix") or "")
+            self.server.latest_reference_wav = (  # type: ignore[attr-defined]
+                Path(voice_prefix_raw).with_suffix(".ref.wav")
+                if voice_prefix_raw
+                else generated_prefix.with_suffix(".ref.wav")
+            )
+            unified = unify_evaluation_result(result, mode=mode, audio_path=wav_path)
             if self.server.enable_logs:  # type: ignore[attr-defined]
                 append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
             _json_response(self, {
                 "ok": True,
-                "mode": "asr_confirmed_weak_reference",
+                "mode": mode,
                 "wav_path": str(wav_path.relative_to(ROOT)) if wav_path.is_relative_to(ROOT) else str(wav_path),
                 "reference": reference,
                 "reference_audio_url": f"/api/latest-reference.wav?mode=asr_confirmed_weak_reference&text={hashlib.sha1(user_confirmed_text.encode('utf-8')).hexdigest()[:12]}",
                 "result": result,
                 "unified": unified_payload,
-                "user_facing": render_user_facing_result(result, mode="asr_confirmed_weak_reference"),
+                "user_facing": render_user_facing_result(result, mode=mode),
             })
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
@@ -512,7 +547,8 @@ def main() -> None:
         choices=ALL_MODES,
     )
     parser.add_argument("--config", default=None)
-    parser.add_argument("--tts-backend", default="pyopenjtalk", help="pyopenjtalk, voicevox_http, aivis_http, or google for generated references")
+    default_tts_backend = os.environ.get("TTS_BACKEND") or ("google" if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") else "pyopenjtalk")
+    parser.add_argument("--tts-backend", default=default_tts_backend, help="pyopenjtalk, voicevox_http, aivis_http, or google for generated references")
     parser.add_argument("--tts-url", default=None)
     parser.add_argument("--tts-speaker", type=int, default=None)
     parser.add_argument("--tts-model", default=None, help="Optional provider model id, e.g. chirp3-hd.")

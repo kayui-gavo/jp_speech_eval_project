@@ -229,6 +229,99 @@ def evaluate_asr_confirmed_weak_reference(
     return result
 
 
+def evaluate_kanade_asr_confirmed_voice_reference(
+    wav_path: str | Path,
+    *,
+    user_confirmed_text: str,
+    base_cache_path: str | Path = "cache/ramen_kudasai",
+    speaker_wav_path: str | Path | None = None,
+    scoring_config_path: str | Path | None = None,
+    generated_cache_dir: str | Path = "outputs/generated_refs",
+    model_id: str = "frothywater/kanade-25hz-clean",
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
+) -> Dict[str, Any]:
+    """Confirmed-ASR weak scoring plus Kanade playback reference.
+
+    The confirmed text is used for scoring-reference generation. Kanade output
+    is generated only for listening, and is explicitly excluded from
+    pronunciation correctness.
+    """
+    base_cache = load_sentence_cache(base_cache_path)
+    weak_target = build_confirmed_weak_target(user_confirmed_text)
+    scoring_prefix = _build_dynamic_tts_cache(
+        weak_target["text"],
+        sr=base_cache.meta.sr,
+        generated_cache_dir=generated_cache_dir,
+        tts_backend=tts_backend,
+        tts_backend_url=tts_backend_url,
+        tts_speaker=tts_speaker,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_speed=tts_speed,
+        tts_style=tts_style,
+        tts_prompt=tts_prompt,
+        tts_language=tts_language,
+    )
+    scoring_cache = load_sentence_cache(scoring_prefix)
+    eval_result = evaluate_utterance(
+        wav_path=wav_path,
+        alignment_mode="cached_dtw",
+        cache_path=scoring_prefix,
+        scoring_config_path=scoring_config_path,
+        profile=False,
+        use_content_match=False,
+    )
+    result = eval_result.to_dict()
+
+    speaker_path = Path(speaker_wav_path or wav_path)
+    voice_prefix = voice_conditioned_cache_prefix(
+        weak_target["text"],
+        speaker_path,
+        root=Path(generated_cache_dir) / "voice_playback",
+    )
+    voice_prefix.parent.mkdir(parents=True, exist_ok=True)
+    voice_ref_y = generate_voice_conditioned_reference(
+        scoring_cache.ref_y,
+        target_sr=scoring_cache.meta.sr,
+        speaker_wav_path=speaker_path,
+        model_id=model_id,
+    )
+    generated_wav = voice_prefix.with_suffix(".voice.ref.wav")
+    sf.write(str(generated_wav), voice_ref_y, scoring_cache.meta.sr)
+    build_sentence_cache(
+        weak_target["text"],
+        voice_prefix,
+        sr=scoring_cache.meta.sr,
+        save_reference_wav=True,
+        reference_wav_path=generated_wav,
+        reference_source="kanade_voice_conditioned_playback_pseudo_reference",
+    )
+
+    result["details"]["mode"] = "kanade_asr_confirmed_voice_reference"
+    result["details"]["user_confirmed_text"] = weak_target["text"]
+    result["details"]["weak_reference"] = True
+    result["details"]["weak_target"] = weak_target
+    result["details"]["reference_warning"] = "confirmed_tts_pseudo_reference_used_for_scoring;kanade_reference_is_playback_only"
+    result["details"]["playback_reference_source"] = "kanade_voice_conditioned_playback_pseudo_reference"
+    result["details"]["voice_reference_cache_prefix"] = str(voice_prefix)
+    result["details"]["speaker_reference_audio"] = str(speaker_path)
+    result["details"]["kanade_model_id"] = model_id
+    result["details"]["verified_level"] = "auto_pyopenjtalk"
+    result["details"]["scoring_policy"] = weak_target["scoring_policy"]
+    result["details"]["reference_source"] = "tts_pseudo_reference"
+    result["details"]["demo_only"] = True
+    result["details"]["exclude_from_pronunciation_score"] = True
+    return result
+
+
 def _evaluate_asr_pseudo_reference_legacy(
     wav_path: str | Path,
     *,

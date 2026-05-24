@@ -438,9 +438,9 @@ def evaluate_utterance(
 
     score_adjustments: List[str] = []
     if alignment_mode.endswith("fallback_equal"):
-        pronunciation_score = min(pronunciation_score, 65)
+        pronunciation_score = min(pronunciation_score, 80)
         score_adjustments.append(
-            "mora 边界回退到等分切分，发音代理分已封顶。"
+            "mora 边界回退到等分切分，细节发音判断已降级。"
         )
     judgement_count = int(mora_evidence_summary.get("judgement_available_count", 0) or 0)
     judgement_needed = max(3, int(len(text_info.moras) * 0.55))
@@ -475,9 +475,9 @@ def evaluate_utterance(
         / aggregate_denominator
     )
     if float(reliability.get("overall", 0.0) or 0.0) < 0.75:
-        total_score = min(total_score, 70)
+        total_score = min(total_score, 82)
         score_adjustments.append(
-            "整体可靠性不足，本次总分作为诊断结果封顶。"
+            "整体可靠性不足，本次综合分仅作练习参考。"
         )
     if content_match and content_match.status == "fail":
         pronunciation_score = 0

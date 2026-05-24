@@ -78,7 +78,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
             allow_pronunciation_detail=False,
         )
 
-    if level == "low" or overall < 0.45 or alignment_score < 0.45 or alignment_mode.endswith("fallback_equal"):
+    if level == "low" or overall < 0.40 or alignment_score < 0.35:
         practice = "retry"
         allow_detail = False
         allow_special = False
@@ -86,10 +86,17 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         blocked.extend(["special_mora", "pitch", "pronunciation"])
         messages.append("今回は細かい発音判定が難しいため、もう一度録音してください。")
         reasons.append("alignment_confidence_low")
-    elif overall < 0.75:
+    elif overall < 0.75 or alignment_mode.endswith("fallback_equal"):
         practice = "needs_attention"
-        messages.append("今回は一部の判定だけ参考にしてください。")
-        reasons.append("medium_reliability")
+        if alignment_mode.endswith("fallback_equal"):
+            allow_detail = False
+            allow_special = False
+            blocked.extend(["special_mora", "pronunciation"])
+            messages.append("細かい拍ごとの判定は控えめに見てください。全体の聞こえ方を中心に確認します。")
+            reasons.append("fallback_alignment")
+        else:
+            messages.append("今回は一部の判定だけ参考にしてください。")
+            reasons.append("medium_reliability")
 
     if mora_count <= 3:
         allow_pitch = False
