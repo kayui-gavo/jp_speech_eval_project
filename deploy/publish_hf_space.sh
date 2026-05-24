@@ -25,6 +25,7 @@ rsync -a \
   --exclude 'JANON/' \
   --exclude 'ver1.0/' \
   --exclude 'ver1.3/outputs/' \
+  --exclude '20260424_EE-F_2_TianhaoYUAN.pdf' \
   --exclude 'lambda_tradeoff.*' \
   --exclude 'plot_lambda_tradeoff.py' \
   "${root_dir}/" "${bundle_dir}/"
