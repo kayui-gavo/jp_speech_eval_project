@@ -9,6 +9,8 @@ from .text_frontend import split_mora, text_to_kana
 
 
 TARGET_SPEC_VERSION = "target_pronunciation_spec_v1"
+VERIFIED_LEVELS = {"auto_pyopenjtalk", "ojad_checked", "human_checked"}
+PITCH_FEEDBACK_LEVELS = {"ojad_checked", "human_checked"}
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,27 @@ def special_mora_metadata(moras: List[str]) -> Dict[str, Any]:
     }
 
 
+def verified_level_from_source(source: str) -> str:
+    label = str(source or "").lower()
+    if label in {"human_checked", "human", "manual", "manual_checked"}:
+        return "human_checked"
+    if label in {"ojad_checked", "ojad_verified", "ojad+manual", "ojad_manual"}:
+        return "ojad_checked"
+    return "auto_pyopenjtalk"
+
+
+def default_scoring_policy(verified_level: str, *, weak_reference: bool = False) -> Dict[str, Any]:
+    allow_pitch = (verified_level in PITCH_FEEDBACK_LEVELS) and not weak_reference
+    return {
+        "allow_content_match_score": not weak_reference,
+        "allow_pronunciation_feedback": "limited" if weak_reference else "standard",
+        "allow_pitch_feedback": bool(allow_pitch),
+        "allow_special_mora_feedback": True,
+        "allow_total_score_display": False,
+        "weak_reference": bool(weak_reference),
+    }
+
+
 def validate_target_spec(entry: Dict[str, Any]) -> TargetSpecValidation:
     errors: List[str] = []
     warnings: List[str] = []
@@ -127,6 +150,9 @@ def validate_target_spec(entry: Dict[str, Any]) -> TargetSpecValidation:
 
     if str(entry.get("pitch_target_source", "")).startswith("ojad") and not entry.get("verification"):
         warnings.append("OJAD source has no verification metadata")
+    verified_level = str(entry.get("verified_level") or verified_level_from_source(entry.get("pitch_target_source", "")))
+    if verified_level not in VERIFIED_LEVELS:
+        errors.append(f"verified_level must be one of {sorted(VERIFIED_LEVELS)}")
 
     return TargetSpecValidation(ok=not errors, errors=errors, warnings=warnings)
 
@@ -153,6 +179,7 @@ def build_verified_target_entry(
         "moras": moras,
         "target_pitch": target_pitch,
         "pitch_target_source": source,
+        "verified_level": verified_level_from_source(source),
         "accent_phrases": accent_phrases,
         "special_mora": special_mora_metadata(moras),
         "verification": {
@@ -163,6 +190,7 @@ def build_verified_target_entry(
             "verified_at": utc_now_iso(),
         },
     }
+    entry["scoring_policy"] = default_scoring_policy(entry["verified_level"])
     validation = validate_target_spec(entry)
     if validation.warnings:
         entry["warnings"] = validation.warnings

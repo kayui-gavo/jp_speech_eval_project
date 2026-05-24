@@ -92,6 +92,12 @@ and free production. It does not change the fixed-reference acoustic scorer and
 does not introduce extra user-facing metrics; raw debug evidence remains
 available for development.
 
+Product guardrail note: fixed-reference reading is the only serious scoring
+path. ASR-generated references now require user confirmation before a weak
+pseudo-reference can be generated, Kanade references are marked as demo-only
+playback, and user-facing responses hide total scores by default. Raw
+`total_score`, `prosody_score`, and expression proxies remain in debug output.
+
 ---
 
 ## 1. Environment
@@ -209,6 +215,45 @@ ABX output is a representation diagnostic: it asks whether features can
 distinguish pitch-accent contrasts before those features are trusted in user
 scoring. TTS bootstrap trials are only smoke tests; use native verified audio
 for real model/layer claims.
+
+---
+
+## 1.7. ASR confirmation and user-facing output
+
+ASR-generated reference mode is intentionally weak. The raw ASR transcript must
+be confirmed by the user before the system creates a pseudo-reference:
+
+```text
+user audio -> ASR candidates -> user_confirmed_text -> weak TargetSpec
+           -> TTS pseudo-reference -> limited practice feedback
+```
+
+Local debug API helpers:
+
+```bash
+# Candidate prompt for the bundled sample
+curl -s "http://127.0.0.1:8765/api/asr-confirm-sample"
+
+# Evaluate only after confirmation/editing
+curl -s "http://127.0.0.1:8765/api/evaluate-confirmed-sample?user_confirmed_text=ラーメンをください"
+```
+
+The response contains a `user_facing` object:
+
+```json
+{
+  "practice_check_result": "ok|needs_attention|retry|unscorable",
+  "display_total_score": false,
+  "user_messages": ["..."],
+  "debug": {
+    "debug_total_score": 78,
+    "weak_reference": true
+  }
+}
+```
+
+Kanade / voice-conditioned references are retained for playback demos only and
+are marked `demo_only=true` and `exclude_from_pronunciation_score=true`.
 
 ---
 

@@ -22,8 +22,10 @@ if str(SRC) not in sys.path:
 from jp_speech_eval.audio_features import load_audio
 from jp_speech_eval.audio_features import median_f0_by_mora
 from jp_speech_eval.acoustic_evaluator import evaluate_reference_free_acoustic
+from jp_speech_eval.asr_confirmation import build_asr_confirmation_prompt
 from jp_speech_eval.config import load_scoring_config
 from jp_speech_eval.eval_modes import (
+    evaluate_asr_confirmed_weak_reference,
     evaluate_asr_pseudo_reference,
     evaluate_kanade_asr_voice_reference,
     evaluate_kanade_voice_reference,
@@ -37,6 +39,7 @@ from jp_speech_eval.streaming_features import StreamingFeatureExtractor
 from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_light
 from jp_speech_eval.unified_result import unify_evaluation_result
 from jp_speech_eval.vad import detect_speech_region
+from jp_speech_eval.feedback_renderer import render_user_facing_result
 
 
 def _json_response(handler: SimpleHTTPRequestHandler, payload: Dict[str, Any], status: int = 200) -> None:
@@ -138,6 +141,7 @@ def _mode_labels() -> Dict[str, str]:
     return {
         "reference": "Reference fixed-sentence scoring",
         "asr_pseudo_reference": "Free speech: ASR-generated pseudo-reference",
+        "asr_confirmed_weak_reference": "Free speech: confirmed weak-reference practice",
         "transcript_assisted_light": "Free speech: transcript-assisted light diagnosis",
         "acoustic": "Recording/acoustic quality diagnosis",
         "kanade_voice_reference": "Experimental: voice-conditioned fixed-sentence reference",
@@ -193,6 +197,17 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             mode = query.get("mode", [self.server.eval_mode])[0]  # type: ignore[attr-defined]
             self._evaluate_wav(self.server.sample_wav, mode=mode)  # type: ignore[attr-defined]
+            return
+        if self.path.startswith("/api/asr-confirm-sample"):
+            prompt = build_asr_confirmation_prompt(self.server.sample_wav)  # type: ignore[attr-defined]
+            _json_response(self, {"ok": True, **prompt.to_dict()})
+            return
+        if self.path.startswith("/api/evaluate-confirmed-sample"):
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            text = query.get("user_confirmed_text", query.get("text", [""]))[0]
+            self._evaluate_confirmed_asr(self.server.sample_wav, text)  # type: ignore[attr-defined]
             return
         if self.path.startswith("/api/export-features"):
             count = export_feature_table([self.server.log_jsonl], self.server.feature_csv)  # type: ignore[attr-defined]
@@ -262,28 +277,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 reference = None
                 reference_audio_url = None
             elif mode == "asr_pseudo_reference":
-                result = evaluate_asr_pseudo_reference(
-                    wav_path,
-                    base_cache_path=self.server.cache_prefix,  # type: ignore[attr-defined]
-                    scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
-                    generated_cache_dir=ROOT / "outputs" / "debug_ui" / "generated_refs",
-                    tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
-                    tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
-                    tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
-                    tts_model=self.server.tts_model,  # type: ignore[attr-defined]
-                    tts_voice=self.server.tts_voice,  # type: ignore[attr-defined]
-                    tts_speed=self.server.tts_speed,  # type: ignore[attr-defined]
-                )
-                asr_text = result.get("details", {}).get("asr", {}).get("text", "")
-                if result.get("details", {}).get("mode") == "asr_pseudo_reference" and asr_text:
-                    generated_prefix = Path(result.get("cache_prefix", ""))
-                    reference = _reference_payload(generated_prefix)
-                    self.server.latest_reference_wav = generated_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
-                    reference_audio_url = f"/api/latest-reference.wav?mode=asr_pseudo_reference&text={hashlib.sha1(asr_text.encode('utf-8')).hexdigest()[:12]}"
-                else:
-                    reference = None
-                    reference_audio_url = None
-                realtime = []
+                prompt = build_asr_confirmation_prompt(wav_path)
+                _json_response(self, {"ok": True, **prompt.to_dict(), "requires_user_confirmation": True})
+                return
             elif mode == "kanade_voice_reference":
                 result = evaluate_kanade_voice_reference(
                     wav_path,
@@ -352,6 +348,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
+            user_facing = render_user_facing_result(result, mode=result.get("details", {}).get("mode") or mode)
             _json_response(self, {
                 "ok": True,
                 "mode": mode,
@@ -361,7 +358,43 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "reference_audio_url": reference_audio_url,
                 "result": result,
                 "unified": unified_payload,
+                "user_facing": user_facing,
                 "realtime": realtime,
+            })
+        except Exception as exc:
+            _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
+
+    def _evaluate_confirmed_asr(self, wav_path: Path, user_confirmed_text: str) -> None:
+        try:
+            result = evaluate_asr_confirmed_weak_reference(
+                wav_path,
+                user_confirmed_text=user_confirmed_text,
+                base_cache_path=self.server.cache_prefix,  # type: ignore[attr-defined]
+                scoring_config_path=self.server.config_path,  # type: ignore[attr-defined]
+                generated_cache_dir=ROOT / "outputs" / "debug_ui" / "generated_refs",
+                tts_backend=self.server.tts_backend,  # type: ignore[attr-defined]
+                tts_backend_url=self.server.tts_url,  # type: ignore[attr-defined]
+                tts_speaker=self.server.tts_speaker,  # type: ignore[attr-defined]
+                tts_model=self.server.tts_model,  # type: ignore[attr-defined]
+                tts_voice=self.server.tts_voice,  # type: ignore[attr-defined]
+                tts_speed=self.server.tts_speed,  # type: ignore[attr-defined]
+            )
+            generated_prefix = Path(result.get("cache_prefix", ""))
+            reference = _reference_payload(generated_prefix)
+            self.server.latest_reference_wav = generated_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
+            unified = unify_evaluation_result(result, mode="asr_confirmed_weak_reference", audio_path=wav_path)
+            if self.server.enable_logs:  # type: ignore[attr-defined]
+                append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
+            unified_payload = unified.to_dict()
+            unified_payload.pop("raw_metrics", None)
+            _json_response(self, {
+                "ok": True,
+                "mode": "asr_confirmed_weak_reference",
+                "reference": reference,
+                "reference_audio_url": f"/api/latest-reference.wav?mode=asr_confirmed_weak_reference&text={hashlib.sha1(user_confirmed_text.encode('utf-8')).hexdigest()[:12]}",
+                "result": result,
+                "unified": unified_payload,
+                "user_facing": render_user_facing_result(result, mode="asr_confirmed_weak_reference"),
             })
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)

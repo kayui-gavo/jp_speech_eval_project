@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 import soundfile as sf
 
 from .acoustic_evaluator import evaluate_reference_free_acoustic
+from .asr_confirmation import build_confirmed_weak_target
 from .asr import transcribe_japanese
 from .audio_features import load_audio
 from .config import load_scoring_config
@@ -172,6 +173,78 @@ def evaluate_asr_pseudo_reference(
     tts_prompt: str | None = None,
     tts_language: str = "ja-JP",
 ) -> Dict[str, Any]:
+    raise ValueError("ASR raw transcript must be confirmed before generating a scoring reference. Use asr_confirmed_weak_reference.")
+
+
+def evaluate_asr_confirmed_weak_reference(
+    wav_path: str | Path,
+    *,
+    user_confirmed_text: str,
+    base_cache_path: str | Path = "cache/ramen_kudasai",
+    scoring_config_path: str | Path | None = None,
+    generated_cache_dir: str | Path = "outputs/generated_refs",
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
+) -> Dict[str, Any]:
+    base_cache = load_sentence_cache(base_cache_path)
+    weak_target = build_confirmed_weak_target(user_confirmed_text)
+    generated_prefix = _build_dynamic_tts_cache(
+        weak_target["text"],
+        sr=base_cache.meta.sr,
+        generated_cache_dir=generated_cache_dir,
+        tts_backend=tts_backend,
+        tts_backend_url=tts_backend_url,
+        tts_speaker=tts_speaker,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_speed=tts_speed,
+        tts_style=tts_style,
+        tts_prompt=tts_prompt,
+        tts_language=tts_language,
+    )
+    eval_result = evaluate_utterance(
+        wav_path=wav_path,
+        alignment_mode="cached_dtw",
+        cache_path=generated_prefix,
+        scoring_config_path=scoring_config_path,
+        profile=False,
+        use_content_match=False,
+    )
+    result = eval_result.to_dict()
+    result["details"]["mode"] = "asr_confirmed_weak_reference"
+    result["details"]["user_confirmed_text"] = weak_target["text"]
+    result["details"]["weak_reference"] = True
+    result["details"]["weak_target"] = weak_target
+    result["details"]["reference_warning"] = "user_confirmed_tts_pseudo_reference_not_ground_truth"
+    result["details"]["verified_level"] = "auto_pyopenjtalk"
+    result["details"]["scoring_policy"] = weak_target["scoring_policy"]
+    result["details"]["reference_source"] = "tts_pseudo_reference"
+    return result
+
+
+def _evaluate_asr_pseudo_reference_legacy(
+    wav_path: str | Path,
+    *,
+    base_cache_path: str | Path = "cache/ramen_kudasai",
+    scoring_config_path: str | Path | None = None,
+    generated_cache_dir: str | Path = "outputs/generated_refs",
+    tts_backend: str = "pyopenjtalk",
+    tts_backend_url: str | None = None,
+    tts_speaker: int | None = None,
+    tts_model: str | None = None,
+    tts_voice: str | None = None,
+    tts_speed: float | None = None,
+    tts_style: str | None = None,
+    tts_prompt: str | None = None,
+    tts_language: str = "ja-JP",
+) -> Dict[str, Any]:
     t_cache, transcript = _transcribe_for_dynamic_reference(
         wav_path,
         base_cache_path=base_cache_path,
@@ -277,6 +350,8 @@ def evaluate_kanade_voice_reference(
     result["details"]["reference_warning"] = "kanade_voice_conditioned_pseudo_reference_not_native_reference"
     result["details"]["speaker_reference_audio"] = str(speaker_path)
     result["details"]["kanade_model_id"] = model_id
+    result["details"]["demo_only"] = True
+    result["details"]["exclude_from_pronunciation_score"] = True
     return result
 
 
@@ -375,6 +450,9 @@ def evaluate_kanade_asr_voice_reference(
     result["details"]["voice_reference_cache_prefix"] = str(voice_prefix)
     result["details"]["speaker_reference_audio"] = str(speaker_path)
     result["details"]["kanade_model_id"] = model_id
+    result["details"]["weak_reference"] = True
+    result["details"]["demo_only"] = True
+    result["details"]["exclude_from_pronunciation_score"] = True
     return result
 
 
@@ -385,6 +463,7 @@ def evaluate_mode(
     cache_path: str | Path | None = None,
     target_text: Optional[str] = None,
     transcript: Optional[str] = None,
+    user_confirmed_text: Optional[str] = None,
     scoring_config_path: str | Path | None = None,
     sample_rate: int = 16000,
     tts_backend: str = "pyopenjtalk",
@@ -419,6 +498,26 @@ def evaluate_mode(
             raise ValueError("asr_pseudo_reference mode requires a base cache for sample rate/config context")
         return evaluate_asr_pseudo_reference(
             wav_path,
+            base_cache_path=cache_path,
+            scoring_config_path=scoring_config_path,
+            tts_backend=tts_backend,
+            tts_backend_url=tts_backend_url,
+            tts_speaker=tts_speaker,
+            tts_model=tts_model,
+            tts_voice=tts_voice,
+            tts_speed=tts_speed,
+            tts_style=tts_style,
+            tts_prompt=tts_prompt,
+            tts_language=tts_language,
+        )
+    if mode in {"asr_confirmed_weak_reference", "confirmed_asr_reference"}:
+        if cache_path is None:
+            raise ValueError("asr_confirmed_weak_reference mode requires a base cache for sample rate/config context")
+        if not user_confirmed_text:
+            raise ValueError("user_confirmed_text is required for asr_confirmed_weak_reference")
+        return evaluate_asr_confirmed_weak_reference(
+            wav_path,
+            user_confirmed_text=user_confirmed_text,
             base_cache_path=cache_path,
             scoring_config_path=scoring_config_path,
             tts_backend=tts_backend,
