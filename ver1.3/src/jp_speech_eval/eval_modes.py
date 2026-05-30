@@ -651,6 +651,26 @@ def evaluate_mode(
             tts_prompt=tts_prompt,
             tts_language=tts_language,
         )
+    if mode in {"kanade_asr_confirmed_voice_reference", "confirmed_kanade_asr_reference"}:
+        if cache_path is None:
+            raise ValueError("kanade_asr_confirmed_voice_reference mode requires a base cache for sample rate/config context.")
+        if not user_confirmed_text:
+            raise ValueError("user_confirmed_text is required for kanade_asr_confirmed_voice_reference")
+        return evaluate_kanade_asr_confirmed_voice_reference(
+            wav_path,
+            user_confirmed_text=user_confirmed_text,
+            base_cache_path=cache_path,
+            scoring_config_path=scoring_config_path,
+            tts_backend=tts_backend,
+            tts_backend_url=tts_backend_url,
+            tts_speaker=tts_speaker,
+            tts_model=tts_model,
+            tts_voice=tts_voice,
+            tts_speed=tts_speed,
+            tts_style=tts_style,
+            tts_prompt=tts_prompt,
+            tts_language=tts_language,
+        )
     if mode in {"transcript_assisted", "transcript_assisted_light"}:
         return evaluate_transcript_assisted_light(
             wav_path,
