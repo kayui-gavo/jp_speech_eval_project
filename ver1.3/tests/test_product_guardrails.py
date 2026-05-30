@@ -6,7 +6,7 @@ from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
 from jp_speech_eval.eval_modes import evaluate_mode
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.scoring_policy import policy_from_result
-from jp_speech_eval.special_mora_scorer import score_special_mora_timing
+from jp_speech_eval.special_mora_scorer import load_special_mora_thresholds, score_special_mora_timing
 
 
 def _result(**overrides):
@@ -94,6 +94,59 @@ class ProductGuardrailsTest(unittest.TestCase):
         result = _result(details={"mora_evidence": [{"judgement_available": False, "boundary_confidence": 0.1, "energy_coverage": 0.1} for _ in range(9)]})
         rows = score_special_mora_timing(result)
         self.assertTrue(any(row.status == "uncertain" for row in rows))
+
+    def test_special_mora_thresholds_can_be_loaded_from_json(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "thresholds.json"
+            path.write_text(json.dumps({"thresholds": {"long_vowel": {"low_ratio": 0.6, "high_ratio": 1.8}}}), encoding="utf-8")
+            thresholds = load_special_mora_thresholds(path)
+        self.assertEqual(thresholds["long_vowel"]["low_ratio"], 0.6)
+        self.assertIn("sokuon", thresholds)
+
+    def test_equal_fallback_suppresses_special_mora_correction(self) -> None:
+        result = _result(alignment_mode="cached_dtw_fallback_equal")
+        rows = score_special_mora_timing(result)
+        self.assertTrue(all(row.status == "uncertain" for row in rows if row.type in {"long_vowel", "moraic_nasal"}))
+
+    def test_weak_reference_uses_mild_special_mora_feedback(self) -> None:
+        result = _result(
+            details={"weak_reference": True},
+            mora_table=[
+                {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
+                {"mora": "ー", "start_sec": 0.2, "end_sec": 0.22},
+                {"mora": "メ", "start_sec": 0.22, "end_sec": 0.42},
+                {"mora": "ン", "start_sec": 0.42, "end_sec": 0.62},
+                {"mora": "ヲ", "start_sec": 0.62, "end_sec": 0.82},
+                {"mora": "ク", "start_sec": 0.82, "end_sec": 1.02},
+                {"mora": "ダ", "start_sec": 1.02, "end_sec": 1.22},
+                {"mora": "サ", "start_sec": 1.22, "end_sec": 1.42},
+                {"mora": "イ", "start_sec": 1.42, "end_sec": 1.62},
+            ],
+        )
+        rows = score_special_mora_timing(result, weak_reference=True)
+        self.assertTrue(any(row.status == "too_short" and row.message.startswith("参考として見ると") for row in rows))
+
+    def test_only_one_user_facing_special_mora_feedback_is_emitted(self) -> None:
+        result = _result(
+            mora_table=[
+                {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
+                {"mora": "ー", "start_sec": 0.2, "end_sec": 0.22},
+                {"mora": "メ", "start_sec": 0.22, "end_sec": 0.42},
+                {"mora": "ン", "start_sec": 0.42, "end_sec": 0.44},
+                {"mora": "ヲ", "start_sec": 0.44, "end_sec": 0.64},
+                {"mora": "ク", "start_sec": 0.64, "end_sec": 0.84},
+                {"mora": "ダ", "start_sec": 0.84, "end_sec": 1.04},
+                {"mora": "サ", "start_sec": 1.04, "end_sec": 1.24},
+                {"mora": "イ", "start_sec": 1.24, "end_sec": 1.44},
+            ],
+        )
+        rendered = render_user_facing_result(result)
+        special_messages = [msg for msg in rendered["user_messages"] if "自然" in msg or "聞き取りやすく" in msg]
+        self.assertLessEqual(len(special_messages), 1)
 
     def test_pitch_accent_proxy_does_not_drive_display_score(self) -> None:
         result = _result(

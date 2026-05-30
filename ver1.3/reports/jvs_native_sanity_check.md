@@ -3,12 +3,12 @@
 This report is a native false-alarm audit. It does not prove scoring validity, but it checks whether native speakers are being punished by current engineering thresholds.
 
 ## Summary
-- n: 15
-- display mean: 98.6667
+- n: 17
+- display mean: 98.7647
 - pronunciation mean: 100.0
-- fluency mean: 93.4
-- rhythm timing mean: 96.9333
-- delivery fluency mean: 90.6667
+- fluency mean: 94.2941
+- rhythm timing mean: 97.4706
+- delivery fluency mean: 91.7647
 - retry rate: 0.0
 - unscorable rate: 0.0
 - alignment fallback rate: 0.0

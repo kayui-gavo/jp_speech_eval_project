@@ -48,6 +48,12 @@
       "expected_checks": ["special_mora_long_vowel", "uncertain_when_low_evidence"]
     },
     {
+      "id": "long_vowel_grandmother",
+      "category": "long_vowel",
+      "text": "おばあさんに会います",
+      "expected_checks": ["special_mora_long_vowel", "uncertain_when_low_evidence"]
+    },
+    {
       "id": "sokuon_kitte",
       "category": "sokuon",
       "text": "きってください",
@@ -57,6 +63,18 @@
       "id": "sokuon_matte",
       "category": "sokuon",
       "text": "ちょっと待ってください",
+      "expected_checks": ["special_mora_sokuon", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "sokuon_school",
+      "category": "sokuon",
+      "text": "学校に行きます",
+      "expected_checks": ["special_mora_sokuon", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "sokuon_ticket",
+      "category": "sokuon",
+      "text": "切符をください",
       "expected_checks": ["special_mora_sokuon", "uncertain_when_low_evidence"]
     },
     {
@@ -72,9 +90,39 @@
       "expected_checks": ["special_mora_nasal", "uncertain_when_low_evidence"]
     },
     {
+      "id": "nasal_walk",
+      "category": "moraic_nasal",
+      "text": "さんぽします",
+      "expected_checks": ["special_mora_nasal", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "nasal_train",
+      "category": "moraic_nasal",
+      "text": "電車に乗ります",
+      "expected_checks": ["special_mora_nasal", "uncertain_when_low_evidence"]
+    },
+    {
       "id": "yoon_travel",
       "category": "yoon",
       "text": "旅行に行きます",
+      "expected_checks": ["mora_sequence", "debug_only_yoon_until_calibrated"]
+    },
+    {
+      "id": "yoon_today_school",
+      "category": "yoon",
+      "text": "今日，学校に行きます",
+      "expected_checks": ["mora_sequence", "debug_only_yoon_until_calibrated"]
+    },
+    {
+      "id": "yoon_hospital",
+      "category": "yoon",
+      "text": "病院に行きます",
+      "expected_checks": ["mora_sequence", "debug_only_yoon_until_calibrated"]
+    },
+    {
+      "id": "yoon_study",
+      "category": "yoon",
+      "text": "勉強します",
       "expected_checks": ["mora_sequence", "debug_only_yoon_until_calibrated"]
     },
     {

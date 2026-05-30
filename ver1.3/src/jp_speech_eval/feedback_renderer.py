@@ -170,7 +170,10 @@ def render_user_facing_result(result: Mapping[str, Any], *, mode: str | None = N
         focus = {"category": "weak_reference", "message": messages[-1]}
 
     if gate.allow_special_mora_feedback and policy.allow_special_mora_feedback:
-        special = [item for item in score_special_mora_timing(result) if item.status in {"too_short", "too_long"}]
+        teaching_priority = {"sokuon": 4, "long_vowel": 3, "moraic_nasal": 2, "yoon": 1}
+        confidence_priority = {"high": 3, "medium": 2, "low": 1}
+        special = [item for item in score_special_mora_timing(result, weak_reference=policy.weak_reference) if item.status in {"too_short", "too_long"}]
+        special.sort(key=lambda item: (confidence_priority.get(item.confidence, 0), teaching_priority.get(item.type, 0)), reverse=True)
         if special:
             item = special[0]
             focus = {"category": "special_mora", **item.to_dict()}

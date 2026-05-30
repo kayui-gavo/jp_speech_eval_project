@@ -3,13 +3,13 @@
 This report checks whether the native calibration sample covers the features that the product claims to evaluate.
 
 ## Overall
-- total samples: 15
-- speakers: 3
-- utterances: 5
-- long vowel samples: 15
-- sokuon samples: 0
-- moraic nasal samples: 12
-- yoon samples: 15
+- total samples: 17
+- speakers: 1
+- utterances: 17
+- long vowel samples: 17
+- sokuon samples: 8
+- moraic nasal samples: 15
+- yoon samples: 16
 
 ## Notes
 - If a feature count is small, related user feedback should remain conservative or `uncertain`.

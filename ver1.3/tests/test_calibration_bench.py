@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import importlib.util
 from pathlib import Path
 
 from jp_speech_eval.calibration_bench import read_manifest, summarize_audit_rows, write_csv
+
+
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_calibration_snapshot.py"
+_spec = importlib.util.spec_from_file_location("run_calibration_snapshot", SCRIPT_PATH)
+assert _spec and _spec.loader
+snapshot = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(snapshot)
 
 
 class CalibrationBenchTest(unittest.TestCase):
@@ -39,6 +47,22 @@ class CalibrationBenchTest(unittest.TestCase):
             path = Path(tmp) / "empty.csv"
             write_csv(path, [])
             self.assertEqual(path.read_text(encoding="utf-8"), "")
+
+    def test_insufficient_special_mora_coverage_does_not_update_threshold(self) -> None:
+        thresholds = snapshot._build_special_thresholds(
+            [{"special_type": "sokuon", "ratio_to_avg_mora": 0.8, "uncertain": False, "alignment_fallback": False}],
+            min_coverage=5,
+        )
+        self.assertFalse(thresholds["thresholds"]["sokuon"]["sufficient_evidence"])
+        self.assertIsNone(thresholds["thresholds"]["sokuon"]["low_ratio"])
+
+    def test_janon_special_report_says_trend_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "janon.md"
+            snapshot._write_janon_special_report(path, [{"special_type": "long_vowel", "count": 1}])
+            text = path.read_text(encoding="utf-8")
+        self.assertIn("trend only", text)
+        self.assertIn("do not prove scoring correctness", text)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,10 @@ if str(SRC) not in sys.path:
 from jp_speech_eval.evaluator import evaluate_utterance
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.phonology import classify_mora_sequence
+from jp_speech_eval.text_frontend import build_text_info
+
+
+SPECIAL_TYPES = ("long_vowel", "sokuon", "moraic_nasal", "yoon")
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -61,6 +65,65 @@ def _write_csv(path: Path, rows: Sequence[Dict[str, Any]]) -> None:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _canonical_special_type(mora_type: str, mora: str) -> str | None:
+    if mora_type == "explicit_long_vowel":
+        return "long_vowel"
+    if mora_type == "sokuon":
+        return "sokuon"
+    if mora_type == "nasal":
+        return "moraic_nasal"
+    if any(ch in mora for ch in "ャュョゃゅょ"):
+        return "yoon"
+    return None
+
+
+def _special_types_from_moras(moras: Sequence[str]) -> set[str]:
+    out: set[str] = set()
+    for row in classify_mora_sequence([str(m) for m in moras]):
+        label = _canonical_special_type(row.mora_type, row.mora)
+        if label:
+            out.add(label)
+    return out
+
+
+def _item_special_types(text: str) -> set[str]:
+    try:
+        return _special_types_from_moras(build_text_info(text).moras)
+    except Exception:
+        return set()
+
+
+def _focus_special_items(
+    items: Iterable[Dict[str, str]],
+    *,
+    types: Sequence[str],
+    min_per_type: int,
+    max_per_type: int,
+    limit: int | None,
+) -> List[Dict[str, str]]:
+    selected: List[Dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    counts = {label: 0 for label in types}
+    for item in items:
+        item_types = _item_special_types(item.get("text", ""))
+        if not item_types.intersection(types):
+            continue
+        if all(counts[label] >= min_per_type for label in types) and len(selected) >= (limit or 0) > 0:
+            break
+        key = (item.get("speaker_id", ""), item.get("utterance_id", ""))
+        if key in seen:
+            continue
+        if max_per_type > 0 and all(counts[label] >= max_per_type for label in item_types.intersection(types)):
+            continue
+        selected.append(item)
+        seen.add(key)
+        for label in item_types.intersection(types):
+            counts[label] += 1
+        if limit is not None and len(selected) >= limit and all(counts[label] >= min_per_type for label in types):
+            break
+    return selected
 
 
 def _jvs_items(jvs_root: Path, *, speakers: int, utterances_per_speaker: int, limit: int | None = None) -> Iterable[Dict[str, str]]:
@@ -153,6 +216,44 @@ def _evaluate_item(item: Dict[str, str], *, sample_rate: int, config: str | None
     has_yoon = any(ch in mora_text for ch in "ゃゅょャュョ")
     rhythm_timing_score = fluency.get("rhythm_timing_score", data.get("fluency_score", 0))
     delivery_fluency_score = fluency.get("delivery_fluency_score", data.get("fluency_score", 0))
+    mora_table = data.get("mora_table") or []
+    evidence_rows = details.get("mora_evidence") if isinstance(details.get("mora_evidence"), list) else []
+    durations: List[float] = []
+    for row in mora_table:
+        start = _float(row.get("start_sec") if isinstance(row, dict) else getattr(row, "start_sec", 0.0))
+        end = _float(row.get("end_sec") if isinstance(row, dict) else getattr(row, "end_sec", 0.0))
+        durations.append(max(0.0, end - start))
+    avg_duration = sum(durations) / len(durations) if durations else 0.0
+    special_instances: List[Dict[str, Any]] = []
+    for idx, ph in enumerate(phonology):
+        special_type = _canonical_special_type(ph.mora_type, ph.mora)
+        if not special_type:
+            continue
+        duration = durations[idx] if idx < len(durations) else 0.0
+        neighbors = [durations[j] for j in (idx - 1, idx + 1) if 0 <= j < len(durations)]
+        neighbor_avg = sum(neighbors) / len(neighbors) if neighbors else avg_duration
+        ev = evidence_rows[idx] if idx < len(evidence_rows) and isinstance(evidence_rows[idx], dict) else {}
+        boundary_conf = _float(ev.get("boundary_confidence"))
+        energy_coverage = _float(ev.get("energy_coverage"))
+        evidence_confidence = round(0.7 * boundary_conf + 0.3 * energy_coverage, 4)
+        ratio_to_avg = duration / max(avg_duration, 1e-8) if avg_duration > 0 else None
+        ratio_to_neighbor = duration / max(neighbor_avg, 1e-8) if neighbor_avg > 0 else None
+        special_instances.append({
+            "special_type": special_type,
+            "mora_index": idx + 1,
+            "mora": ph.mora,
+            "duration_sec": round(duration, 4),
+            "ratio_to_avg_mora": None if ratio_to_avg is None else round(float(ratio_to_avg), 4),
+            "ratio_to_neighbor_mora": None if ratio_to_neighbor is None else round(float(ratio_to_neighbor), 4),
+            "evidence_confidence": evidence_confidence,
+            "judgement_available": bool(ev.get("judgement_available")),
+            "boundary_confidence": boundary_conf,
+            "energy_coverage": energy_coverage,
+            "fallback_used": str(data.get("alignment_mode", "")).endswith("fallback_equal"),
+            "alignment_method": data.get("alignment_mode"),
+            "length_bucket": length_bucket,
+            "speech_rate_mora_per_sec": _float(fluency.get("speech_rate_mora_per_sec")),
+        })
     return {
         **item,
         "mora_count": mora_count,
@@ -162,6 +263,7 @@ def _evaluate_item(item: Dict[str, str], *, sample_rate: int, config: str | None
         "has_sokuon": has_sokuon,
         "has_moraic_nasal": has_moraic_nasal,
         "has_yoon": has_yoon,
+        "special_mora_instances": json.dumps(special_instances, ensure_ascii=False),
         "alignment_success": not str(data.get("alignment_mode", "")).endswith("fallback_equal"),
         "alignment_method": data.get("alignment_mode"),
         "alignment_confidence": _float(reliability.get("alignment")),
@@ -341,6 +443,138 @@ def _feature_coverage(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _special_mora_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        try:
+            instances = json.loads(str(row.get("special_mora_instances") or "[]"))
+        except json.JSONDecodeError:
+            instances = []
+        for inst in instances:
+            if not isinstance(inst, dict):
+                continue
+            special_type = str(inst.get("special_type") or "")
+            ratio = _float(inst.get("ratio_to_avg_mora"))
+            evidence_conf = _float(inst.get("evidence_confidence"))
+            alignment_method = str(inst.get("alignment_method") or "")
+            alignment_unsafe = bool(inst.get("fallback_used")) or alignment_method in {"equal", "equal_fallback"} or alignment_method.endswith("fallback_equal")
+            uncertain = alignment_unsafe or evidence_conf < 0.45 or not bool(inst.get("judgement_available"))
+            out.append({
+                "dataset": row.get("dataset"),
+                "split": row.get("split"),
+                "speaker_id": row.get("speaker_id"),
+                "utterance_id": row.get("utterance_id"),
+                "text": row.get("text"),
+                "special_type": special_type,
+                "mora": inst.get("mora"),
+                "mora_index": inst.get("mora_index"),
+                "length_bucket": inst.get("length_bucket"),
+                "speech_rate_mora_per_sec": inst.get("speech_rate_mora_per_sec"),
+                "alignment_fallback": bool(inst.get("fallback_used")),
+                "alignment_method": alignment_method,
+                "alignment_unsafe_for_threshold": alignment_unsafe,
+                "evidence_confidence": evidence_conf,
+                "uncertain": uncertain,
+                "duration_sec": inst.get("duration_sec"),
+                "ratio_to_avg_mora": inst.get("ratio_to_avg_mora"),
+                "ratio_to_neighbor_mora": inst.get("ratio_to_neighbor_mora"),
+                "long_vowel_duration": inst.get("duration_sec") if special_type == "long_vowel" else "",
+                "long_vowel_ratio_to_neighbor_mora": inst.get("ratio_to_neighbor_mora") if special_type == "long_vowel" else "",
+                "long_vowel_ratio_to_avg_mora": inst.get("ratio_to_avg_mora") if special_type == "long_vowel" else "",
+                "closure_duration": inst.get("duration_sec") if special_type == "sokuon" else "",
+                "closure_ratio_to_neighbor_mora": inst.get("ratio_to_neighbor_mora") if special_type == "sokuon" else "",
+                "nasal_mora_duration": inst.get("duration_sec") if special_type == "moraic_nasal" else "",
+                "nasal_ratio_to_avg_mora": inst.get("ratio_to_avg_mora") if special_type == "moraic_nasal" else "",
+                "yoon_mora_duration": inst.get("duration_sec") if special_type == "yoon" else "",
+                "yoon_mora_count_consistency": 1 if special_type == "yoon" else "",
+                "too_short_proxy": ratio < 0.45 if ratio else "",
+                "too_long_proxy": ratio > (1.85 if special_type in {"sokuon", "yoon"} else 2.15) if ratio else "",
+            })
+    return out
+
+
+def _special_distribution(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for special_type in SPECIAL_TYPES:
+        type_rows = [r for r in rows if r.get("special_type") == special_type]
+        reliable_rows = [r for r in type_rows if not r.get("uncertain") and not r.get("alignment_unsafe_for_threshold")]
+        values = [_float(r.get("ratio_to_avg_mora")) for r in reliable_rows if r.get("ratio_to_avg_mora") not in {None, ""}]
+        mean = _mean(values)
+        std = round(float(statistics.pstdev(values)), 4) if len(values) > 1 else None
+        fallback_rate = round(sum(1 for r in type_rows if r.get("alignment_fallback")) / len(type_rows), 4) if type_rows else None
+        uncertain_rate = round(sum(1 for r in type_rows if r.get("uncertain")) / len(type_rows), 4) if type_rows else None
+        out.append({
+            "special_type": special_type,
+            "count": len(type_rows),
+            "reliable_count": len(reliable_rows),
+            "mean_ratio_to_avg_mora": mean,
+            "std_ratio_to_avg_mora": std,
+            "p01": _pct(values, 0.01),
+            "p05": _pct(values, 0.05),
+            "p10": _pct(values, 0.10),
+            "p50": _pct(values, 0.50),
+            "p90": _pct(values, 0.90),
+            "p95": _pct(values, 0.95),
+            "p99": _pct(values, 0.99),
+            "alignment_fallback_rate": fallback_rate,
+            "uncertain_rate": uncertain_rate,
+        })
+    return out
+
+
+def _build_special_thresholds(native_special_rows: Sequence[Dict[str, Any]], *, min_coverage: int) -> Dict[str, Any]:
+    thresholds: Dict[str, Any] = {
+        "schema_version": "special_mora_thresholds_v1",
+        "source": "JVS native percentile snapshot",
+        "target_native_false_alarm_rate": "<= 5%",
+        "note": "Use conservative per-type thresholds only when coverage is sufficient. Insufficient types must stay on default/evidence-gated behavior.",
+        "min_coverage_per_type": min_coverage,
+        "thresholds": {},
+    }
+    for row in _special_distribution(native_special_rows):
+        special_type = str(row["special_type"])
+        count = int(row.get("count") or 0)
+        reliable_count = int(row.get("reliable_count") or 0)
+        sufficient = reliable_count >= min_coverage
+        thresholds["thresholds"][special_type] = {
+            "coverage_count": count,
+            "reliable_count": reliable_count,
+            "sufficient_evidence": sufficient,
+            "low_ratio": row.get("p05") if sufficient else None,
+            "high_ratio": row.get("p95") if sufficient else None,
+            "conservative_low_ratio": row.get("p01") if sufficient else None,
+            "conservative_high_ratio": row.get("p99") if sufficient else None,
+            "uncertain_rate": row.get("uncertain_rate"),
+            "alignment_fallback_rate": row.get("alignment_fallback_rate"),
+        }
+    return thresholds
+
+
+def _janon_special_trends(janon_rows: Sequence[Dict[str, Any]], thresholds: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    threshold_map = thresholds.get("thresholds") or {}
+    for special_type in SPECIAL_TYPES:
+        rows = [r for r in janon_rows if r.get("special_type") == special_type]
+        th = threshold_map.get(special_type) or {}
+        low = th.get("low_ratio")
+        high = th.get("high_ratio")
+        vals = [_float(r.get("ratio_to_avg_mora")) for r in rows if r.get("ratio_to_avg_mora") not in {None, ""}]
+        outlier_rate = None
+        if vals and low is not None and high is not None:
+            lo = _float(low)
+            hi = _float(high)
+            outlier_rate = round(sum(1 for value in vals if value < lo or value > hi) / len(vals), 4)
+        out.append({
+            "special_type": special_type,
+            "count": len(rows),
+            "outlier_rate": outlier_rate,
+            "uncertain_rate": round(sum(1 for r in rows if r.get("uncertain")) / len(rows), 4) if rows else None,
+            "alignment_failure_rate": round(sum(1 for r in rows if r.get("alignment_fallback")) / len(rows), 4) if rows else None,
+            "speaker_count": len({r.get("speaker_id") for r in rows if r.get("speaker_id")}),
+        })
+    return out
+
+
 def _write_jvs_report(path: Path, rows: Sequence[Dict[str, Any]], summary: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     verdicts = [
@@ -477,54 +711,189 @@ def _write_threshold_report(path: Path, percentiles: Dict[str, Any]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_special_mora_report(
+    path: Path,
+    *,
+    native_distribution: Sequence[Dict[str, Any]],
+    coverage_rows: Sequence[Dict[str, Any]],
+    thresholds: Dict[str, Any],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    threshold_map = thresholds.get("thresholds") or {}
+    lines = [
+        "# Special mora calibration report",
+        "",
+        "This report calibrates special-mora feedback with native JVS sanity checks. It is threshold evidence, not a trained model.",
+        "",
+        "## Native coverage and distribution",
+    ]
+    for row in native_distribution:
+        special_type = row["special_type"]
+        th = threshold_map.get(special_type) or {}
+        lines.append(
+            f"- {special_type}: count={row.get('count')}, reliable_count={row.get('reliable_count')}, mean={row.get('mean_ratio_to_avg_mora')}, "
+            f"P05={row.get('p05')}, P50={row.get('p50')}, P95={row.get('p95')}, "
+            f"fallback={row.get('alignment_fallback_rate')}, uncertain={row.get('uncertain_rate')}, "
+            f"sufficient_evidence={th.get('sufficient_evidence')}"
+        )
+    lines.extend([
+        "",
+        "## Proposed thresholds",
+    ])
+    for special_type in SPECIAL_TYPES:
+        th = threshold_map.get(special_type) or {}
+        if th.get("sufficient_evidence"):
+            lines.append(f"- {special_type}: low={th.get('low_ratio')}, high={th.get('high_ratio')} (P05/P95 conservative guardrail)")
+        else:
+            lines.append(f"- {special_type}: insufficient reliable alignment evidence; keep default/evidence-gated behavior")
+    lines.extend([
+        "",
+        "## Limitations",
+        "- If JVS coverage is small for a type, runtime feedback must stay conservative or uncertain.",
+        "- Transcript-based filtering can miss lexical details, especially weak long-vowel spellings.",
+        "- Equal/fallback alignment is not safe for concrete special-mora correction.",
+        "- TTS and Kanade references are pseudo references and are not used as native ground truth.",
+    ])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_special_threshold_report(path: Path, thresholds: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Special mora threshold update",
+        "",
+        "Native P05/P95 thresholds are proposed per special-mora type only when coverage is sufficient.",
+        "",
+    ]
+    for special_type, th in (thresholds.get("thresholds") or {}).items():
+        lines.append(
+            f"- {special_type}: coverage={th.get('coverage_count')}, reliable={th.get('reliable_count')}, sufficient={th.get('sufficient_evidence')}, "
+            f"low_ratio={th.get('low_ratio')}, high_ratio={th.get('high_ratio')}"
+        )
+    lines.extend([
+        "",
+        "Runtime policy remains ok / too_short / too_long / uncertain. Insufficient types must not silently update thresholds.",
+    ])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_janon_special_report(path: Path, trends: Sequence[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# JANON special mora trend report",
+        "",
+        "JANON lacks teacher/native listener ratings, so these results indicate L2 trend only and do not prove scoring correctness.",
+        "",
+        "## Trend by type",
+    ]
+    for row in trends:
+        lines.append(
+            f"- {row.get('special_type')}: count={row.get('count')}, outlier_rate={row.get('outlier_rate')}, "
+            f"uncertain_rate={row.get('uncertain_rate')}, alignment_failure_rate={row.get('alignment_failure_rate')}, "
+            f"speaker_count={row.get('speaker_count')}"
+        )
+    lines.extend([
+        "",
+        "## Interpretation",
+        "- High outlier rate only means the current proxy differs from the JVS native percentile snapshot.",
+        "- It should be validated later against teacher or native-listener ratings.",
+    ])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def run(args: argparse.Namespace) -> Dict[str, Any]:
     out_dir = Path(args.out_dir)
     report_dir = Path(args.report_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    jvs_rows = [
-        _evaluate_item(item, sample_rate=args.sr, config=args.config)
-        for item in _jvs_items(
-            Path(args.jvs_root),
-            speakers=args.jvs_speakers,
-            utterances_per_speaker=args.jvs_utterances_per_speaker,
+    special_types = [item.strip() for item in str(args.special_mora_types).split(",") if item.strip()]
+    if not special_types:
+        special_types = list(SPECIAL_TYPES)
+    jvs_source_items = list(_jvs_items(
+        Path(args.jvs_root),
+        speakers=args.jvs_speakers,
+        utterances_per_speaker=args.jvs_utterances_per_speaker,
+        limit=args.jvs_limit if not args.focus_special_mora else None,
+    ))
+    janon_source_items = list(_janon_items(Path(args.janon_root), limit=args.janon_limit if not args.focus_special_mora else max(args.janon_limit, args.max_per_type * len(special_types) * 2)))
+    if args.focus_special_mora:
+        jvs_source_items = _focus_special_items(
+            jvs_source_items,
+            types=special_types,
+            min_per_type=args.min_per_type,
+            max_per_type=args.max_per_type,
             limit=args.jvs_limit,
         )
+        janon_source_items = _focus_special_items(
+            janon_source_items,
+            types=special_types,
+            min_per_type=0,
+            max_per_type=args.max_per_type,
+            limit=args.janon_limit,
+        )
+
+    jvs_rows = [
+        _evaluate_item(item, sample_rate=args.sr, config=args.config)
+        for item in jvs_source_items
     ]
     janon_rows = [
         _evaluate_item(item, sample_rate=args.sr, config=args.config)
-        for item in _janon_items(Path(args.janon_root), limit=args.janon_limit)
+        for item in janon_source_items
     ]
 
     jvs_dist = _feature_distribution(jvs_rows)
     jvs_percentiles = _percentile_table(jvs_rows)
     jvs_coverage = _feature_coverage(jvs_rows)
+    jvs_special_rows = _special_mora_rows(jvs_rows)
+    janon_special_rows = _special_mora_rows(janon_rows)
+    special_distribution = _special_distribution(jvs_special_rows)
+    special_thresholds = _build_special_thresholds(jvs_special_rows, min_coverage=args.min_per_type)
+    janon_special_trends = _janon_special_trends(janon_special_rows, special_thresholds)
     jvs_summary = _summary(jvs_rows)
     janon_summary = _summary(janon_rows)
 
     paths = {
         "jvs_metrics": out_dir / "jvs_native_metrics.csv",
+        "jvs_special_mora_metrics": out_dir / "jvs_special_mora_metrics.csv",
         "jvs_feature_coverage": out_dir / "jvs_feature_coverage.csv",
+        "special_mora_feature_coverage": out_dir / "special_mora_feature_coverage.csv",
         "jvs_distribution": out_dir / "jvs_score_distribution.csv",
         "jvs_percentiles": out_dir / "jvs_native_percentiles.json",
+        "special_mora_thresholds": out_dir / "special_mora_thresholds.json",
         "jvs_false_alarm": out_dir / "jvs_false_alarm_by_feature.csv",
         "janon_metrics": out_dir / "janon_l2_metrics.csv",
+        "janon_special_mora_metrics": out_dir / "janon_special_mora_metrics.csv",
         "jvs_report": report_dir / "jvs_native_sanity_check.md",
         "coverage_report": report_dir / "calibration_coverage.md",
         "threshold_report": report_dir / "rhythm_fluency_threshold_update.md",
+        "special_mora_report": report_dir / "special_mora_calibration_report.md",
+        "special_mora_threshold_report": report_dir / "special_mora_threshold_update.md",
         "janon_report": report_dir / "janon_l2_trend_report.md",
+        "janon_special_report": report_dir / "janon_special_mora_trend_report.md",
     }
     _write_csv(paths["jvs_metrics"], jvs_rows)
+    _write_csv(paths["jvs_special_mora_metrics"], jvs_special_rows)
     _write_csv(paths["jvs_feature_coverage"], jvs_coverage)
+    _write_csv(paths["special_mora_feature_coverage"], special_distribution)
     _write_csv(paths["jvs_distribution"], jvs_dist)
     paths["jvs_percentiles"].write_text(json.dumps(jvs_percentiles, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    paths["special_mora_thresholds"].write_text(json.dumps(special_thresholds, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     _write_csv(paths["jvs_false_alarm"], _false_alarm_rows(jvs_rows))
     _write_csv(paths["janon_metrics"], janon_rows)
+    _write_csv(paths["janon_special_mora_metrics"], janon_special_rows)
     _write_jvs_report(paths["jvs_report"], jvs_rows, jvs_summary)
     _write_coverage_report(paths["coverage_report"], jvs_coverage)
     _write_threshold_report(paths["threshold_report"], jvs_percentiles)
+    _write_special_mora_report(
+        paths["special_mora_report"],
+        native_distribution=special_distribution,
+        coverage_rows=jvs_coverage,
+        thresholds=special_thresholds,
+    )
+    _write_special_threshold_report(paths["special_mora_threshold_report"], special_thresholds)
     _write_janon_report(paths["janon_report"], janon_rows, janon_summary, jvs_dist)
+    _write_janon_special_report(paths["janon_special_report"], janon_special_trends)
     return {
         "jvs_summary": jvs_summary,
         "janon_summary": janon_summary,
@@ -542,6 +911,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jvs-utterances-per-speaker", type=int, default=5)
     parser.add_argument("--jvs-limit", type=int, default=None)
     parser.add_argument("--janon-limit", type=int, default=10)
+    parser.add_argument("--focus-special-mora", action="store_true")
+    parser.add_argument("--special-mora-types", default="long_vowel,sokuon,moraic_nasal,yoon")
+    parser.add_argument("--min-per-type", type=int, default=5)
+    parser.add_argument("--max-per-type", type=int, default=20)
     parser.add_argument("--stratify-by-feature", action="store_true", help="Accepted for calibration runs; feature strata are always included in coverage output.")
     parser.add_argument("--include-feature-coverage-report", action="store_true", help="Accepted for calibration runs; coverage reports are always written.")
     parser.add_argument("--sr", type=int, default=16000)
