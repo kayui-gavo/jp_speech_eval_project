@@ -37,25 +37,30 @@ def score_fluency(
     if target_min <= speech_rate <= target_max:
         rate_score = 100.0
     elif slow <= speech_rate < target_min:
-        rate_score = 75.0 + (speech_rate - slow) / max(target_min - slow, 1e-6) * 25.0
+        rate_score = 82.0 + (speech_rate - slow) / max(target_min - slow, 1e-6) * 18.0
         feedback.append("语速稍慢，但仍然可以理解。")
     elif target_max < speech_rate <= fast:
-        rate_score = 100.0 - (speech_rate - target_max) / max(fast - target_max, 1e-6) * 25.0
+        rate_score = 100.0 - (speech_rate - target_max) / max(fast - target_max, 1e-6) * 18.0
         feedback.append("语速稍快，可能影响清晰度。")
     elif fast < speech_rate <= very_fast:
-        rate_score = 55.0 - (speech_rate - fast) / max(very_fast - fast, 1e-6) * 25.0
+        rate_score = 70.0 - (speech_rate - fast) / max(very_fast - fast, 1e-6) * 28.0
         feedback.append("语速明显偏快，容易让人听不清。")
     else:
-        rate_score = 25.0
+        rate_score = 45.0
         feedback.append("语速和自然说话差得有些多。")
 
     pause_ratio = float(pause_info.get("pause_ratio", 0.0))
     pause_count = int(pause_info.get("pause_count", 0))
-    pause_score = 100.0 - pause_ratio * float(c["pause_ratio_weight"]) - pause_count * float(c["pause_count_penalty"])
-    if pause_count > 0:
+    native_pause_allowance = 0.18
+    pause_excess = max(0.0, pause_ratio - native_pause_allowance)
+    pause_count_excess = max(0, pause_count - 2)
+    pause_score = 100.0 - pause_excess * 140.0 - pause_count_excess * 4.0
+    if pause_ratio > 0.28 or pause_count > 4:
         feedback.append(f"检测到 {pause_count} 次较长停顿，流畅度会下降。")
 
-    score = 0.6 * rate_score + 0.4 * pause_score
+    rhythm_timing_score = clamp_score(0.72 * rate_score + 0.28 * pause_score)
+    delivery_fluency_score = clamp_score(pause_score)
+    score = 0.45 * rhythm_timing_score + 0.55 * delivery_fluency_score
     details = {
         "dimension_label": "delivery_style_not_pronunciation_correctness",
         "speech_duration_sec": speech_duration,
@@ -63,7 +68,20 @@ def score_fluency(
         "avg_mora_duration_sec": speech_duration / max(mora_count, 1),
         "rate_score": clamp_score(rate_score),
         "pause_score": clamp_score(pause_score),
-        "note": "engineering_thresholds_use_endpointed_speech_duration",
+        "rhythm_timing_score": rhythm_timing_score,
+        "delivery_fluency_score": delivery_fluency_score,
+        "rhythm_timing_components": {
+            "mora_rate_score": clamp_score(rate_score),
+            "pause_score": clamp_score(pause_score),
+            "note": "native_percentile_calibration_report_available_but_runtime_thresholds_are_still_lightweight",
+        },
+        "delivery_fluency_components": {
+            "long_pause_count": pause_count,
+            "pause_ratio": pause_ratio,
+            "pause_score": clamp_score(pause_score),
+            "note": "recording_quality_and_endpointing_are_reliability_inputs_not_pronunciation_penalties",
+        },
+        "note": "split_rhythm_timing_and_delivery_fluency; thresholds should be calibrated with JVS percentiles",
     }
     return clamp_score(score), feedback, details
 

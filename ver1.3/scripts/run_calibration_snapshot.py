@@ -17,6 +17,7 @@ if str(SRC) not in sys.path:
 
 from jp_speech_eval.evaluator import evaluate_utterance
 from jp_speech_eval.feedback_renderer import render_user_facing_result
+from jp_speech_eval.phonology import classify_mora_sequence
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -62,7 +63,8 @@ def _write_csv(path: Path, rows: Sequence[Dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
-def _jvs_items(jvs_root: Path, *, speakers: int, utterances_per_speaker: int) -> Iterable[Dict[str, str]]:
+def _jvs_items(jvs_root: Path, *, speakers: int, utterances_per_speaker: int, limit: int | None = None) -> Iterable[Dict[str, str]]:
+    emitted = 0
     for speaker_dir in sorted(jvs_root.glob("jvs*"))[:speakers]:
         transcript_path = speaker_dir / "parallel100" / "transcripts_utf8.txt"
         wav_dir = speaker_dir / "parallel100" / "wav24kHz16bit"
@@ -85,6 +87,9 @@ def _jvs_items(jvs_root: Path, *, speakers: int, utterances_per_speaker: int) ->
                 "text": text.strip(),
                 "stimulus_type": "sentence",
             }
+            emitted += 1
+            if limit is not None and emitted >= limit:
+                return
             count += 1
             if count >= utterances_per_speaker:
                 break
@@ -135,12 +140,28 @@ def _evaluate_item(item: Dict[str, str], *, sample_rate: int, config: str | None
     pronunciation = details.get("pronunciation", {})
     evidence = details.get("mora_evidence_summary", {})
     recording = details.get("recording_quality", {})
-    alignment = details.get("alignment", {})
     special_count = int(evidence.get("strong_special_mora_count", evidence.get("special_mora_count", 0)) or 0)
     special_judged = int(evidence.get("strong_special_mora_judgement_available_count", evidence.get("special_mora_judgement_available_count", 0)) or 0)
+    moras = data.get("moras") or []
+    mora_count = len(moras)
+    length_bucket = "short" if mora_count <= 5 else "medium" if mora_count <= 18 else "long"
+    mora_text = "".join(str(mora) for mora in moras)
+    phonology = classify_mora_sequence([str(mora) for mora in moras])
+    has_long_vowel = any(row.mora_type == "explicit_long_vowel" for row in phonology)
+    has_sokuon = any(row.mora_type == "sokuon" for row in phonology)
+    has_moraic_nasal = any(row.mora_type == "nasal" for row in phonology)
+    has_yoon = any(ch in mora_text for ch in "ゃゅょャュョ")
+    rhythm_timing_score = fluency.get("rhythm_timing_score", data.get("fluency_score", 0))
+    delivery_fluency_score = fluency.get("delivery_fluency_score", data.get("fluency_score", 0))
     return {
         **item,
-        "mora_count": len(data.get("moras") or []),
+        "mora_count": mora_count,
+        "moras": " ".join(str(mora) for mora in moras),
+        "length_bucket": length_bucket,
+        "has_long_vowel": has_long_vowel,
+        "has_sokuon": has_sokuon,
+        "has_moraic_nasal": has_moraic_nasal,
+        "has_yoon": has_yoon,
         "alignment_success": not str(data.get("alignment_mode", "")).endswith("fallback_equal"),
         "alignment_method": data.get("alignment_mode"),
         "alignment_confidence": _float(reliability.get("alignment")),
@@ -159,6 +180,8 @@ def _evaluate_item(item: Dict[str, str], *, sample_rate: int, config: str | None
         "score_pronunciation": int(data.get("pronunciation_score", 0) or 0),
         "score_prosody": int(data.get("prosody_score", 0) or 0),
         "score_fluency": int(data.get("fluency_score", 0) or 0),
+        "rhythm_timing_score": _float(rhythm_timing_score),
+        "delivery_fluency_score": _float(delivery_fluency_score),
         "practice_check_result": user_facing.get("practice_check_result"),
         "user_reliability": user_facing.get("reliability"),
         "feedback_suppressed_by_gate": " | ".join((user_facing.get("debug", {}).get("reliability_gate", {}) or {}).get("blocked_categories", [])),
@@ -173,7 +196,8 @@ def _summary(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     display_scores = [_float(r.get("score_display")) for r in rows if r.get("score_display") not in {None, ""}]
     pronunciation = [_float(r.get("score_pronunciation")) for r in rows]
     fluency = [_float(r.get("score_fluency")) for r in rows]
-    rhythm = [_float(r.get("score_fluency")) for r in rows]
+    rhythm = [_float(r.get("rhythm_timing_score")) for r in rows]
+    delivery = [_float(r.get("delivery_fluency_score")) for r in rows]
     retry = [r for r in rows if r.get("practice_check_result") == "retry"]
     unscorable = [r for r in rows if r.get("practice_check_result") in {"retry", "unscorable"}]
     special_rows = [r for r in rows if int(r.get("special_mora_count") or 0) > 0]
@@ -188,7 +212,8 @@ def _summary(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "display_p50": _pct(display_scores, 0.50),
         "pronunciation_mean": _mean(pronunciation),
         "fluency_mean": _mean(fluency),
-        "rhythm_proxy_mean": _mean(rhythm),
+        "rhythm_timing_mean": _mean(rhythm),
+        "delivery_fluency_mean": _mean(delivery),
         "retry_rate": round(len(retry) / len(rows), 4),
         "unscorable_rate": round(len(unscorable) / len(rows), 4),
         "alignment_fallback_rate": round(sum(1 for r in rows if r.get("fallback_used")) / len(rows), 4),
@@ -203,6 +228,8 @@ def _feature_distribution(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
         "score_pronunciation",
         "score_prosody",
         "score_fluency",
+        "rhythm_timing_score",
+        "delivery_fluency_score",
         "alignment_confidence",
         "f0_coverage",
         "speech_rate_mora_per_sec",
@@ -248,14 +275,82 @@ def _false_alarm_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _percentile_table(rows: Sequence[Dict[str, Any]], *, group_field: str = "length_bucket") -> Dict[str, Any]:
+    fields = [
+        "speech_rate_mora_per_sec",
+        "pause_ratio",
+        "mora_duration_cv",
+        "avg_mora_duration_sec",
+        "f0_coverage",
+        "score_fluency",
+        "rhythm_timing_score",
+        "delivery_fluency_score",
+    ]
+    group_names = ["all"] + sorted({str(r.get(group_field) or "unknown") for r in rows})
+    out: Dict[str, Any] = {
+        "note": "Small-sample native percentile snapshot. Use as threshold-audit evidence, not as a final norm.",
+        "group_field": group_field,
+        "groups": {},
+    }
+    for group in group_names:
+        group_rows = rows if group == "all" else [r for r in rows if str(r.get(group_field) or "unknown") == group]
+        stats: Dict[str, Any] = {"n": len(group_rows)}
+        for field in fields:
+            values = [_float(r.get(field)) for r in group_rows if r.get(field) not in {None, ""}]
+            stats[field] = {
+                "n": len(values),
+                "p01": _pct(values, 0.01),
+                "p05": _pct(values, 0.05),
+                "p10": _pct(values, 0.10),
+                "p50": _pct(values, 0.50),
+                "p90": _pct(values, 0.90),
+                "p95": _pct(values, 0.95),
+                "p99": _pct(values, 0.99),
+            }
+        out["groups"][group] = stats
+    return out
+
+
+def _coverage_summary(group_name: str, rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        return {"group": group_name, "total_samples": 0}
+    return {
+        "group": group_name,
+        "total_samples": len(rows),
+        "speaker_count": len({r.get("speaker_id") for r in rows if r.get("speaker_id")}),
+        "utterance_count": len({r.get("utterance_id") for r in rows if r.get("utterance_id")}),
+        "samples_with_long_vowel": sum(1 for r in rows if r.get("has_long_vowel")),
+        "samples_with_sokuon": sum(1 for r in rows if r.get("has_sokuon")),
+        "samples_with_moraic_nasal": sum(1 for r in rows if r.get("has_moraic_nasal")),
+        "samples_with_yoon": sum(1 for r in rows if r.get("has_yoon")),
+        "short_count": sum(1 for r in rows if r.get("length_bucket") == "short"),
+        "medium_count": sum(1 for r in rows if r.get("length_bucket") == "medium"),
+        "long_count": sum(1 for r in rows if r.get("length_bucket") == "long"),
+        "alignment_success_rate": round(sum(1 for r in rows if r.get("alignment_success")) / len(rows), 4),
+        "fallback_rate": round(sum(1 for r in rows if r.get("fallback_used")) / len(rows), 4),
+        "f0_coverage_mean": _mean([_float(r.get("f0_coverage")) for r in rows]),
+    }
+
+
+def _feature_coverage(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = [_coverage_summary("all", rows)]
+    for bucket in sorted({str(r.get("length_bucket") or "unknown") for r in rows}):
+        out.append(_coverage_summary(f"length_bucket:{bucket}", [r for r in rows if str(r.get("length_bucket") or "unknown") == bucket]))
+    for stimulus_type in sorted({str(r.get("stimulus_type") or "unknown") for r in rows}):
+        out.append(_coverage_summary(f"stimulus_type:{stimulus_type}", [r for r in rows if str(r.get("stimulus_type") or "unknown") == stimulus_type]))
+    return out
+
+
 def _write_jvs_report(path: Path, rows: Sequence[Dict[str, Any]], summary: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     verdicts = [
         ("mora_clarity native mean >= 90", _float(summary.get("pronunciation_mean")) >= 90.0),
-        ("rhythm/fluency native mean >= 85", _float(summary.get("fluency_mean")) >= 85.0),
+        ("rhythm timing native mean >= 85", _float(summary.get("rhythm_timing_mean")) >= 85.0),
+        ("delivery fluency native mean >= 85", _float(summary.get("delivery_fluency_mean")) >= 85.0),
         ("unscorable rate <= 5%", _float(summary.get("unscorable_rate")) <= 0.05),
         ("special mora false alarm proxy <= 5%", (summary.get("special_mora_false_alarm_rate_proxy") is None) or _float(summary.get("special_mora_false_alarm_rate_proxy")) <= 0.05),
     ]
+    ceiling_warning = "- Ceiling warning: many native pronunciation scores are exactly 100, so this proxy may be too blunt." if sum(1 for r in rows if _float(r.get("score_pronunciation")) >= 100) >= max(1, len(rows) // 2) else "- No strong ceiling-effect warning in this sample."
     lines = [
         "# JVS native sanity check",
         "",
@@ -265,7 +360,9 @@ def _write_jvs_report(path: Path, rows: Sequence[Dict[str, Any]], summary: Dict[
         f"- n: {summary.get('n')}",
         f"- display mean: {summary.get('display_mean')}",
         f"- pronunciation mean: {summary.get('pronunciation_mean')}",
-        f"- fluency/rhythm proxy mean: {summary.get('fluency_mean')}",
+        f"- fluency mean: {summary.get('fluency_mean')}",
+        f"- rhythm timing mean: {summary.get('rhythm_timing_mean')}",
+        f"- delivery fluency mean: {summary.get('delivery_fluency_mean')}",
         f"- retry rate: {summary.get('retry_rate')}",
         f"- unscorable rate: {summary.get('unscorable_rate')}",
         f"- alignment fallback rate: {summary.get('alignment_fallback_rate')}",
@@ -278,6 +375,8 @@ def _write_jvs_report(path: Path, rows: Sequence[Dict[str, Any]], summary: Dict[
         "",
         "## Interpretation",
         "- `score_pronunciation` is still a mora-timing/acoustic proxy, not phoneme correctness.",
+        ceiling_warning,
+        "- Special mora false-alarm checks are meaningful only if the calibration sample includes enough long vowels, sokuon, moraic nasals, and yoon.",
         "- F0/pitch failures should usually suppress pitch feedback instead of lowering native ability claims.",
         "- If alignment fallback is frequent, detailed mora/special-mora feedback must stay gated.",
     ])
@@ -307,7 +406,9 @@ def _write_janon_report(path: Path, rows: Sequence[Dict[str, Any]], summary: Dic
         f"- n: {summary.get('n')}",
         f"- display mean: {summary.get('display_mean')}",
         f"- pronunciation mean: {summary.get('pronunciation_mean')}",
-        f"- fluency/rhythm proxy mean: {summary.get('fluency_mean')}",
+        f"- fluency mean: {summary.get('fluency_mean')}",
+        f"- rhythm timing mean: {summary.get('rhythm_timing_mean')}",
+        f"- delivery fluency mean: {summary.get('delivery_fluency_mean')}",
         f"- retry rate: {summary.get('retry_rate')}",
         f"- unscorable rate: {summary.get('unscorable_rate')}",
         f"- alignment fallback rate: {summary.get('alignment_fallback_rate')}",
@@ -318,12 +419,61 @@ def _write_janon_report(path: Path, rows: Sequence[Dict[str, Any]], summary: Dic
         f"- mora_duration_cv outside native P05-P95: {outside_native('mora_duration_cv')}",
         f"- f0_coverage outside native P05-P95: {outside_native('f0_coverage')}",
         f"- pause_ratio outside native P05-P95: {outside_native('pause_ratio')}",
+        f"- rhythm_timing_score outside native P05-P95: {outside_native('rhythm_timing_score')}",
+        f"- delivery_fluency_score outside native P05-P95: {outside_native('delivery_fluency_score')}",
         "",
         "## Interpretation",
         "- Do not conclude that lower score equals lower Japanese ability without teacher/listener ratings.",
         "- Use this to find which feedback rules are too sensitive or too weak.",
         "- Isolated words and sentences should be analyzed separately in the next iteration.",
     ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_coverage_report(path: Path, coverage_rows: Sequence[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    all_row = next((r for r in coverage_rows if r.get("group") == "all"), {})
+    lines = [
+        "# Calibration coverage",
+        "",
+        "This report checks whether the native calibration sample covers the features that the product claims to evaluate.",
+        "",
+        "## Overall",
+        f"- total samples: {all_row.get('total_samples')}",
+        f"- speakers: {all_row.get('speaker_count')}",
+        f"- utterances: {all_row.get('utterance_count')}",
+        f"- long vowel samples: {all_row.get('samples_with_long_vowel')}",
+        f"- sokuon samples: {all_row.get('samples_with_sokuon')}",
+        f"- moraic nasal samples: {all_row.get('samples_with_moraic_nasal')}",
+        f"- yoon samples: {all_row.get('samples_with_yoon')}",
+        "",
+        "## Notes",
+        "- If a feature count is small, related user feedback should remain conservative or `uncertain`.",
+        "- This is coverage accounting, not a validation study.",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_threshold_report(path: Path, percentiles: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    all_stats = (percentiles.get("groups") or {}).get("all") or {}
+    lines = [
+        "# Rhythm and fluency threshold update",
+        "",
+        "Current recommendation: use JVS native percentiles as a guardrail for threshold tuning, but do not automatically overwrite runtime thresholds from this small snapshot.",
+        "",
+        "## Native guardrails",
+    ]
+    for field in ["speech_rate_mora_per_sec", "pause_ratio", "mora_duration_cv", "rhythm_timing_score", "delivery_fluency_score"]:
+        stats = all_stats.get(field) or {}
+        lines.append(f"- {field}: P05={stats.get('p05')}, P50={stats.get('p50')}, P95={stats.get('p95')} (n={stats.get('n')})")
+    lines.extend([
+        "",
+        "## Product rule",
+        "- Penalize native-like timing less aggressively.",
+        "- Split rhythm timing from delivery fluency so a fast but clear utterance is not forced into the same bucket as a choppy utterance.",
+        "- Keep pitch-accent diagnosis out of the display score unless the target is verified and the signal evidence is strong.",
+    ])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -335,7 +485,12 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
 
     jvs_rows = [
         _evaluate_item(item, sample_rate=args.sr, config=args.config)
-        for item in _jvs_items(Path(args.jvs_root), speakers=args.jvs_speakers, utterances_per_speaker=args.jvs_utterances_per_speaker)
+        for item in _jvs_items(
+            Path(args.jvs_root),
+            speakers=args.jvs_speakers,
+            utterances_per_speaker=args.jvs_utterances_per_speaker,
+            limit=args.jvs_limit,
+        )
     ]
     janon_rows = [
         _evaluate_item(item, sample_rate=args.sr, config=args.config)
@@ -343,22 +498,32 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     ]
 
     jvs_dist = _feature_distribution(jvs_rows)
+    jvs_percentiles = _percentile_table(jvs_rows)
+    jvs_coverage = _feature_coverage(jvs_rows)
     jvs_summary = _summary(jvs_rows)
     janon_summary = _summary(janon_rows)
 
     paths = {
         "jvs_metrics": out_dir / "jvs_native_metrics.csv",
+        "jvs_feature_coverage": out_dir / "jvs_feature_coverage.csv",
         "jvs_distribution": out_dir / "jvs_score_distribution.csv",
+        "jvs_percentiles": out_dir / "jvs_native_percentiles.json",
         "jvs_false_alarm": out_dir / "jvs_false_alarm_by_feature.csv",
         "janon_metrics": out_dir / "janon_l2_metrics.csv",
         "jvs_report": report_dir / "jvs_native_sanity_check.md",
+        "coverage_report": report_dir / "calibration_coverage.md",
+        "threshold_report": report_dir / "rhythm_fluency_threshold_update.md",
         "janon_report": report_dir / "janon_l2_trend_report.md",
     }
     _write_csv(paths["jvs_metrics"], jvs_rows)
+    _write_csv(paths["jvs_feature_coverage"], jvs_coverage)
     _write_csv(paths["jvs_distribution"], jvs_dist)
+    paths["jvs_percentiles"].write_text(json.dumps(jvs_percentiles, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     _write_csv(paths["jvs_false_alarm"], _false_alarm_rows(jvs_rows))
     _write_csv(paths["janon_metrics"], janon_rows)
     _write_jvs_report(paths["jvs_report"], jvs_rows, jvs_summary)
+    _write_coverage_report(paths["coverage_report"], jvs_coverage)
+    _write_threshold_report(paths["threshold_report"], jvs_percentiles)
     _write_janon_report(paths["janon_report"], janon_rows, janon_summary, jvs_dist)
     return {
         "jvs_summary": jvs_summary,
@@ -375,7 +540,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--report-dir", default=str(ROOT / "reports"))
     parser.add_argument("--jvs-speakers", type=int, default=2)
     parser.add_argument("--jvs-utterances-per-speaker", type=int, default=5)
+    parser.add_argument("--jvs-limit", type=int, default=None)
     parser.add_argument("--janon-limit", type=int, default=10)
+    parser.add_argument("--stratify-by-feature", action="store_true", help="Accepted for calibration runs; feature strata are always included in coverage output.")
+    parser.add_argument("--include-feature-coverage-report", action="store_true", help="Accepted for calibration runs; coverage reports are always written.")
     parser.add_argument("--sr", type=int, default=16000)
     parser.add_argument("--config", default=None)
     return parser

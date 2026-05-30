@@ -95,6 +95,52 @@ class ProductGuardrailsTest(unittest.TestCase):
         rows = score_special_mora_timing(result)
         self.assertTrue(any(row.status == "uncertain" for row in rows))
 
+    def test_pitch_accent_proxy_does_not_drive_display_score(self) -> None:
+        result = _result(
+            total_score=65,
+            pronunciation_score=90,
+            fluency_score=88,
+            prosody_score=20,
+            details={
+                "fluency": {"rhythm_timing_score": 88, "delivery_fluency_score": 90},
+                "prosody": {"pitch_accent_score": 0, "final_intonation_score": 85},
+                "pronunciation": {"mora_duration_cv": 0.08, "special_mora_penalty": 0},
+            },
+        )
+        rendered = render_user_facing_result(result)
+        self.assertGreaterEqual(rendered["display_score"], 88)
+
+    def test_weak_reference_downweights_prosody_proxy(self) -> None:
+        result = _result(
+            total_score=65,
+            pronunciation_score=92,
+            prosody_score=10,
+            fluency_score=88,
+            details={
+                "weak_reference": True,
+                "target_source": "user_confirmed_asr",
+                "fluency": {"rhythm_timing_score": 87, "delivery_fluency_score": 90},
+                "prosody": {"contour_corr": 0.1, "transition_agreement": 0.1},
+                "pronunciation": {"mora_duration_cv": 0.08, "special_mora_penalty": 0},
+            },
+        )
+        rendered = render_user_facing_result(result, mode="asr_pseudo_reference")
+        self.assertGreaterEqual(rendered["display_score"], 85)
+        self.assertTrue(rendered["debug"]["weak_reference"])
+
+    def test_missing_split_fluency_is_not_treated_as_zero(self) -> None:
+        result = _result(
+            total_score=65,
+            pronunciation_score=86,
+            fluency_score=84,
+            details={
+                "fluency": {},
+                "pronunciation": {"mora_duration_cv": 0.12, "special_mora_penalty": 0},
+            },
+        )
+        rendered = render_user_facing_result(result)
+        self.assertGreaterEqual(rendered["display_score"], 80)
+
 
 if __name__ == "__main__":
     unittest.main()

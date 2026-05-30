@@ -29,11 +29,14 @@ def _debug_payload(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) 
     pronunciation = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
     prosody = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
+    fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     return {
         "debug_total_score": result.get("total_score"),
         "pronunciation_score": result.get("pronunciation_score"),
         "prosody_score": result.get("prosody_score"),
         "fluency_score": result.get("fluency_score"),
+        "rhythm_timing_score": fluency.get("rhythm_timing_score"),
+        "delivery_fluency_score": fluency.get("delivery_fluency_score"),
         "expression_proxy_score": result.get("tone_score"),
         "alignment_confidence": reliability.get("alignment"),
         "mora_duration_cv": pronunciation.get("mora_duration_cv"),
@@ -62,6 +65,22 @@ def _as_score(value: Any, default: float = 0.0) -> float:
     return max(0.0, min(100.0, number))
 
 
+def _weighted_available(scores: Mapping[str, Any], weights: Mapping[str, float]) -> Optional[float]:
+    total = 0.0
+    denom = 0.0
+    for key, weight in weights.items():
+        if weight <= 0:
+            continue
+        value = scores.get(key)
+        if value is None or value == "":
+            continue
+        total += _as_score(value) * weight
+        denom += weight
+    if denom <= 0:
+        return None
+    return total / denom
+
+
 def _display_score(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) -> Optional[int]:
     if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
         return None
@@ -69,12 +88,57 @@ def _display_score(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) 
     pronunciation = _as_score(result.get("pronunciation_score"))
     fluency = _as_score(result.get("fluency_score"))
     prosody = _as_score(result.get("prosody_score"))
+    details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
+    content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
+    fluency_details = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
+    pronunciation_details = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
+    prosody_details = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
+    content_score = 100.0 if str(content.get("status") or "unknown") in {"pass", "unknown"} else 35.0
+    scores = {
+        "content_score": content_score,
+        "mora_clarity_score": pronunciation,
+        "special_mora_score": max(0.0, 100.0 - float(pronunciation_details.get("special_mora_penalty", 0.0) or 0.0)),
+        "rhythm_timing_score": fluency_details.get("rhythm_timing_score", fluency),
+        "phrase_intonation_score": prosody_details.get("final_intonation_score"),
+        "delivery_fluency_score": fluency_details.get("delivery_fluency_score", fluency),
+    }
     if policy.demo_only:
         return None
-    if policy.weak_reference or not gate.allow_pitch_feedback:
-        display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
+    if policy.weak_reference:
+        display = _weighted_available(scores, {
+            "content_score": 0.25,
+            "mora_clarity_score": 0.30,
+            "special_mora_score": 0.25,
+            "rhythm_timing_score": 0.15,
+            "delivery_fluency_score": 0.05,
+        })
+        if display is None:
+            display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
         if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
             display = max(display, 85.0)
+        return int(round(max(raw_total, display)))
+    if not gate.allow_pitch_feedback:
+        display = _weighted_available(scores, {
+            "content_score": 0.25,
+            "mora_clarity_score": 0.30,
+            "special_mora_score": 0.20,
+            "rhythm_timing_score": 0.15,
+            "delivery_fluency_score": 0.10,
+        })
+        if display is None:
+            display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
+        if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
+            display = max(display, 85.0)
+        return int(round(max(raw_total, display)))
+    display = _weighted_available(scores, {
+        "content_score": 0.25,
+        "mora_clarity_score": 0.25,
+        "special_mora_score": 0.20,
+        "rhythm_timing_score": 0.15,
+        "phrase_intonation_score": 0.10,
+        "delivery_fluency_score": 0.05,
+    })
+    if display is not None:
         return int(round(max(raw_total, display)))
     return int(round(raw_total))
 
