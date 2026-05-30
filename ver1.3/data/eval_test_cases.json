@@ -1,0 +1,105 @@
+{
+  "metadata": {
+    "name": "jp_speech_eval_core_test_cases",
+    "purpose": "Small fixed-reference and diagnostic utterance set for product guardrails.",
+    "notes": "These are test targets, not a complete curriculum. Pitch-accent items require verified target data before strong user-facing feedback."
+  },
+  "cases": [
+    {
+      "id": "basic_ramen",
+      "category": "basic_story",
+      "text": "ラーメンをください",
+      "expected_checks": ["result_schema", "feedback_max_2", "special_mora_debug", "kanade_not_scoring"]
+    },
+    {
+      "id": "basic_sumimasen",
+      "category": "basic_story",
+      "text": "すみません",
+      "expected_checks": ["result_schema", "feedback_max_2", "short_utterance_pitch_gate"]
+    },
+    {
+      "id": "basic_taxi_station",
+      "category": "basic_story",
+      "text": "駅までお願いします",
+      "expected_checks": ["result_schema", "feedback_max_2", "phrase_intonation_debug"]
+    },
+    {
+      "id": "basic_price",
+      "category": "basic_story",
+      "text": "これはいくらですか",
+      "expected_checks": ["result_schema", "feedback_max_2", "final_intonation_debug"]
+    },
+    {
+      "id": "basic_repeat",
+      "category": "basic_story",
+      "text": "もう一度お願いします",
+      "expected_checks": ["result_schema", "feedback_max_2", "long_vowel_debug"]
+    },
+    {
+      "id": "long_vowel_coffee",
+      "category": "long_vowel",
+      "text": "コーヒーをください",
+      "expected_checks": ["special_mora_long_vowel", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "long_vowel_supermarket",
+      "category": "long_vowel",
+      "text": "スーパーに行きます",
+      "expected_checks": ["special_mora_long_vowel", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "sokuon_kitte",
+      "category": "sokuon",
+      "text": "きってください",
+      "expected_checks": ["special_mora_sokuon", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "sokuon_matte",
+      "category": "sokuon",
+      "text": "ちょっと待ってください",
+      "expected_checks": ["special_mora_sokuon", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "nasal_book",
+      "category": "moraic_nasal",
+      "text": "本を読みます",
+      "expected_checks": ["special_mora_nasal", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "nasal_newspaper",
+      "category": "moraic_nasal",
+      "text": "新聞をください",
+      "expected_checks": ["special_mora_nasal", "uncertain_when_low_evidence"]
+    },
+    {
+      "id": "yoon_travel",
+      "category": "yoon",
+      "text": "旅行に行きます",
+      "expected_checks": ["mora_sequence", "debug_only_yoon_until_calibrated"]
+    },
+    {
+      "id": "pitch_ame_rain",
+      "category": "pitch_minimal_pair",
+      "text": "雨です",
+      "expected_checks": ["pitch_debug_only_unless_verified"]
+    },
+    {
+      "id": "pitch_ame_candy",
+      "category": "pitch_minimal_pair",
+      "text": "飴です",
+      "expected_checks": ["pitch_debug_only_unless_verified"]
+    },
+    {
+      "id": "pitch_hashi_chopsticks",
+      "category": "pitch_minimal_pair",
+      "text": "箸です",
+      "expected_checks": ["pitch_debug_only_unless_verified"]
+    },
+    {
+      "id": "pitch_hashi_bridge",
+      "category": "pitch_minimal_pair",
+      "text": "橋です",
+      "expected_checks": ["pitch_debug_only_unless_verified"]
+    }
+  ]
+}

@@ -18,6 +18,7 @@ env/
 
 # Generated audio/cache/evaluation artifacts
 JANON/
+JVS/
 datasets/
 ver1.3/cache/
 ver1.3/outputs/
