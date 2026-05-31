@@ -70,7 +70,7 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertTrue(rendered["debug"]["special_mora_decisions"])
         self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
 
-    def test_feature_flag_allows_calibrated_special_mora_feedback(self) -> None:
+    def test_legacy_threshold_metadata_blocks_user_facing_even_with_flag(self) -> None:
         result = _result(mora_table=[
             {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
             {"mora": "ー", "start_sec": 0.2, "end_sec": 0.23},
@@ -83,8 +83,9 @@ class ProductGuardrailsTest(unittest.TestCase):
             {"mora": "イ", "start_sec": 1.43, "end_sec": 1.63},
         ])
         rendered = render_user_facing_result(result, enable_user_facing_calibrated_special_mora=True)
-        self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
-        self.assertIn("もう少し", rendered["focus_feedback"]["message"])
+        self.assertIsNone(rendered["focus_feedback"])
+        reasons = {item["suppression_reason"] for item in rendered["debug"]["special_mora_decisions"]}
+        self.assertIn("legacy_threshold_metadata", reasons)
 
     def test_auto_pyopenjtalk_blocks_pitch_feedback(self) -> None:
         result = _result(details={"pitch_target_source": "auto_pyopenjtalk", "verified_level": "auto_pyopenjtalk"})
@@ -173,6 +174,66 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertIsNone(special_mora_score_from_decisions(decisions))
         rendered = render_user_facing_result(result)
         self.assertIsNone(rendered["debug"]["special_mora_score"])
+
+    def test_v2_too_long_is_debug_only_and_near_boundary_suppressed(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "thresholds_v2.json"
+            path.write_text(json.dumps({"thresholds": {
+                "long_vowel": {
+                    "status": "active",
+                    "debug_low": 0.5,
+                    "debug_high": 1.1,
+                    "low_ratio": 0.5,
+                    "high_ratio": 1.1,
+                    "user_low": 0.25,
+                    "user_high": None,
+                    "user_feedback_direction": "too_short_only",
+                    "near_boundary_margin": 0.03,
+                    "rollout_status": "limited_candidate",
+                }
+            }}), encoding="utf-8")
+            too_long = _result(mora_table=[
+                {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.1},
+                {"mora": "ー", "start_sec": 0.1, "end_sec": 0.6},
+                {"mora": "メ", "start_sec": 0.6, "end_sec": 0.7},
+                {"mora": "ン", "start_sec": 0.7, "end_sec": 0.8},
+                {"mora": "ヲ", "start_sec": 0.8, "end_sec": 0.9},
+                {"mora": "ク", "start_sec": 0.9, "end_sec": 1.0},
+                {"mora": "ダ", "start_sec": 1.0, "end_sec": 1.1},
+                {"mora": "サ", "start_sec": 1.1, "end_sec": 1.2},
+                {"mora": "イ", "start_sec": 1.2, "end_sec": 1.3},
+            ])
+            decisions = decide_special_mora_runtime(too_long, threshold_path=path, enable_user_facing=True)
+            long_vowel = next(item for item in decisions if item.type == "long_vowel")
+            self.assertEqual(long_vowel.decision, "too_long")
+            self.assertFalse(long_vowel.user_feedback_allowed)
+            self.assertEqual(long_vowel.suppression_reason, "no_correction_needed")
+
+            near = _result(mora_table=[
+                {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
+                {"mora": "ー", "start_sec": 0.2, "end_sec": 0.245},
+                {"mora": "メ", "start_sec": 0.245, "end_sec": 0.445},
+                {"mora": "ン", "start_sec": 0.445, "end_sec": 0.645},
+                {"mora": "ヲ", "start_sec": 0.645, "end_sec": 0.845},
+                {"mora": "ク", "start_sec": 0.845, "end_sec": 1.045},
+                {"mora": "ダ", "start_sec": 1.045, "end_sec": 1.245},
+                {"mora": "サ", "start_sec": 1.245, "end_sec": 1.445},
+                {"mora": "イ", "start_sec": 1.445, "end_sec": 1.645},
+            ])
+            near_decision = next(item for item in decide_special_mora_runtime(near, threshold_path=path, enable_user_facing=True) if item.type == "long_vowel")
+            self.assertTrue(near_decision.near_boundary)
+            self.assertFalse(near_decision.user_feedback_allowed)
+            self.assertEqual(near_decision.suppression_reason, "near_boundary_debug_only")
+
+    def test_user_facing_threshold_is_stricter_than_debug_threshold(self) -> None:
+        threshold = {"status": "active", "debug_low": 0.5, "debug_high": 1.5, "user_low": 0.25, "user_feedback_direction": "too_short_only"}
+        self.assertEqual(decide_special_mora_feature_value(threshold, 0.4), "too_short")
+        from jp_speech_eval.special_mora_scorer import decide_special_mora_user_feature_value
+        self.assertEqual(decide_special_mora_user_feature_value(threshold, 0.4), "ok")
 
     def test_counterfactual_decision_uses_runtime_threshold_function(self) -> None:
         threshold = {"status": "active", "low_ratio": 0.5, "high_ratio": 1.5}

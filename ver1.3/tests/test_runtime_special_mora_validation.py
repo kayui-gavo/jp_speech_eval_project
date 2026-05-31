@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from scripts.validate_runtime_special_mora_shadow import run
+from scripts.analyze_special_mora_false_alarms import run as run_false_alarm_analysis
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
@@ -67,6 +68,54 @@ class RuntimeSpecialMoraValidationTest(unittest.TestCase):
             self.assertIn("status: blocked", readiness)
             self.assertIn("status: blocked/debug_only", readiness)
             self.assertIn("trend-only", janon_report)
+
+    def test_false_alarm_analysis_generates_v2_without_overwriting_v1(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            thresholds = root / "thresholds.json"
+            original = {
+                "thresholds": {
+                    "long_vowel": {"type": "long_vowel", "status": "active", "low_ratio": 0.5, "high_ratio": 1.5, "sample_count": 40, "source_dataset": "JVS"},
+                    "moraic_nasal": {"type": "moraic_nasal", "status": "active", "low_ratio": 0.5, "high_ratio": 1.5, "sample_count": 40, "source_dataset": "JVS"},
+                    "sokuon": {"type": "sokuon", "status": "insufficient", "low_ratio": None, "high_ratio": None, "sample_count": 12, "source_dataset": "JVS"},
+                    "yoon": {"type": "yoon", "status": "debug_only", "low_ratio": 0.8, "high_ratio": 2.2, "sample_count": 66, "source_dataset": "JVS"},
+                }
+            }
+            thresholds.write_text(json.dumps(original), encoding="utf-8")
+            sample = root / "sample.csv"
+            rows = [
+                {"dataset": "jvs", "speaker_id": "s1", "utterance_id": f"u{i}", "audio_path": f"jvs/u{i}.wav", "transcript": "ラーメン", "special_mora_type": "long_vowel", "surface_mora": "ー", "mora_index": "2", "long_vowel_ratio_to_avg_mora": str(0.35 + i * 0.05), "evidence_confidence": "1.0", "mapping_success": "True", "alignment_method": "existing_label", "alignment_fallback": "False", "expected_mora_sequence": "ラ ー メ ン", "avg_mora_duration": "0.2", "neighbor_prev_duration": "0.2", "neighbor_next_duration": "0.2"}
+                for i in range(10)
+            ] + [
+                {"dataset": "jvs", "speaker_id": "s1", "utterance_id": f"n{i}", "audio_path": f"jvs/n{i}.wav", "transcript": "ほん", "special_mora_type": "moraic_nasal", "surface_mora": "ン", "mora_index": "2", "nasal_ratio_to_avg_mora": str(0.35 + i * 0.05), "evidence_confidence": "1.0", "mapping_success": "True", "alignment_method": "existing_label", "alignment_fallback": "False", "expected_mora_sequence": "ホ ン", "avg_mora_duration": "0.2", "neighbor_prev_duration": "0.2", "neighbor_next_duration": "0.2"}
+                for i in range(10)
+            ] + [
+                {"dataset": "jvs", "speaker_id": "s1", "utterance_id": "s1", "audio_path": "jvs/s.wav", "transcript": "きって", "special_mora_type": "sokuon", "surface_mora": "ッ", "mora_index": "2", "closure_ratio_to_neighbor_mora": "0.2", "evidence_confidence": "1.0", "mapping_success": "True", "alignment_method": "existing_label", "alignment_fallback": "False", "expected_mora_sequence": "キ ッ テ", "avg_mora_duration": "0.2"},
+                {"dataset": "jvs", "speaker_id": "s1", "utterance_id": "y1", "audio_path": "jvs/y.wav", "transcript": "きゃ", "special_mora_type": "yoon", "surface_mora": "キャ", "mora_index": "1", "ratio_to_avg_mora": "0.2", "evidence_confidence": "1.0", "mapping_success": "True", "alignment_method": "existing_label", "alignment_fallback": "False", "expected_mora_sequence": "キャ", "avg_mora_duration": "0.2"},
+            ]
+            _write_csv(sample, rows)
+            janon = root / "janon.csv"
+            _write_csv(janon, [dict(row, dataset="janon") for row in rows[:2]])
+            out = root / "out"
+            result = run_false_alarm_analysis(argparse.Namespace(
+                shadow_decisions=out / "missing.csv",
+                sample_audit=sample,
+                janon_sample_audit=janon,
+                threshold_path=thresholds,
+                output_dir=out,
+                report_dir=root / "reports",
+            ))
+            self.assertTrue((out / "special_mora_false_alarm_cases.csv").exists())
+            self.assertTrue((out / "special_mora_threshold_sweep_v2.csv").exists())
+            v2 = out / "special_mora_thresholds_v2.json"
+            self.assertTrue(v2.exists())
+            self.assertEqual(json.loads(thresholds.read_text(encoding="utf-8")), original)
+            readiness = (root / "reports" / "special_mora_user_facing_readiness.md").read_text(encoding="utf-8")
+            janon_report = (root / "reports" / "runtime_special_mora_janon_shadow_trend_v2.md").read_text(encoding="utf-8")
+            self.assertIn("sokuon", readiness)
+            self.assertIn("debug_only", readiness)
+            self.assertIn("v2 trend is not scoring validation", janon_report)
+            self.assertGreaterEqual(result["sweep_rows"], 1)
 
 
 if __name__ == "__main__":

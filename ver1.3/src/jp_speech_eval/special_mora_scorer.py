@@ -64,6 +64,10 @@ class RuntimeSpecialMoraDecision:
     user_feedback_allowed: bool
     suppression_reason: str
     feedback_candidate_text: str
+    user_threshold_low: Optional[float] = None
+    user_threshold_high: Optional[float] = None
+    user_decision: str = "uncertain"
+    near_boundary: bool = False
     threshold_metadata_warning: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -133,6 +137,14 @@ def load_special_mora_thresholds(path: str | Path | None = None) -> Dict[str, Di
             "generated_at",
             "warnings",
             "warning",
+            "debug_low",
+            "debug_high",
+            "user_low",
+            "user_high",
+            "user_threshold_policy",
+            "user_feedback_direction",
+            "near_boundary_margin",
+            "rollout_status",
         ):
             if field in value:
                 entry[field] = value[field]
@@ -176,11 +188,19 @@ def load_runtime_special_mora_thresholds(path: str | Path | None = None) -> Dict
         status = str(value.get("status") or "")
         low = value.get("low_ratio")
         high = value.get("high_ratio")
+        debug_low = value.get("debug_low", low)
+        debug_high = value.get("debug_high", high)
+        user_low = value.get("user_low")
+        user_high = value.get("user_high")
         entry = {
             "type": str(value.get("type") or key),
             "status": status if status in RUNTIME_THRESHOLD_STATUSES else "invalid",
-            "low_ratio": float(low) if low is not None else None,
-            "high_ratio": float(high) if high is not None else None,
+            "low_ratio": float(debug_low) if debug_low is not None else None,
+            "high_ratio": float(debug_high) if debug_high is not None else None,
+            "debug_low": float(debug_low) if debug_low is not None else None,
+            "debug_high": float(debug_high) if debug_high is not None else None,
+            "user_low": float(user_low) if user_low is not None else None,
+            "user_high": float(user_high) if user_high is not None else None,
             "feature_name": str(value.get("feature_name") or ""),
             "feature_definition": str(value.get("feature_definition") or ""),
             "denominator": str(value.get("denominator") or ""),
@@ -191,6 +211,10 @@ def load_runtime_special_mora_thresholds(path: str | Path | None = None) -> Dict
             "percentile_used": value.get("percentile_used"),
             "generated_at": value.get("generated_at", data.get("generated_at")),
             "warnings": list(value.get("warnings") or ([] if not value.get("warning") else [value.get("warning")])),
+            "user_threshold_policy": value.get("user_threshold_policy"),
+            "user_feedback_direction": value.get("user_feedback_direction", "none"),
+            "near_boundary_margin": float(value.get("near_boundary_margin", 0.0) or 0.0),
+            "rollout_status": value.get("rollout_status", "shadow"),
         }
         if entry["status"] == "active" and (entry["low_ratio"] is None or entry["high_ratio"] is None):
             entry["status"] = "invalid"
@@ -242,8 +266,8 @@ def decide_special_mora_feature_value(threshold: Mapping[str, Any], feature_valu
     """
 
     status = str(threshold.get("status") or "invalid")
-    low = threshold.get("low_ratio")
-    high = threshold.get("high_ratio")
+    low = threshold.get("debug_low", threshold.get("low_ratio"))
+    high = threshold.get("debug_high", threshold.get("high_ratio"))
     if status != "active" or feature_value is None or low is None or high is None:
         return "uncertain"
     value = float(feature_value)
@@ -252,6 +276,33 @@ def decide_special_mora_feature_value(threshold: Mapping[str, Any], feature_valu
     if value > float(high):
         return "too_long"
     return "ok"
+
+
+def decide_special_mora_user_feature_value(threshold: Mapping[str, Any], feature_value: Optional[float]) -> str:
+    direction = str(threshold.get("user_feedback_direction") or "none")
+    low = threshold.get("user_low")
+    high = threshold.get("user_high")
+    if feature_value is None or low is None:
+        return "uncertain"
+    value = float(feature_value)
+    if direction in {"too_short_only", "both"} and value < float(low):
+        return "too_short"
+    if direction == "both" and high is not None and value > float(high):
+        return "too_long"
+    return "ok"
+
+
+def _near_user_threshold_boundary(threshold: Mapping[str, Any], feature_value: Optional[float], user_decision: str) -> bool:
+    if feature_value is None or user_decision not in {"too_short", "too_long"}:
+        return False
+    margin = float(threshold.get("near_boundary_margin", 0.0) or 0.0)
+    if margin <= 0:
+        return False
+    if user_decision == "too_short":
+        low = threshold.get("user_low")
+        return low is not None and abs(float(feature_value) - float(low)) <= margin
+    high = threshold.get("user_high")
+    return high is not None and abs(float(feature_value) - float(high)) <= margin
 
 
 def _suppression_reason(
@@ -268,6 +319,9 @@ def _suppression_reason(
     weak_reference: bool,
     special_type: str,
     decision: str,
+    user_decision: str,
+    near_boundary: bool,
+    has_user_threshold: bool,
     enable_user_facing: bool,
 ) -> str:
     if threshold_status in {"invalid", ""}:
@@ -282,8 +336,14 @@ def _suppression_reason(
         return "shadow_mode_user_facing_disabled"
     if special_type not in USER_FEEDBACK_TYPES:
         return "special_mora_type_not_user_facing"
-    if decision not in {"too_short", "too_long"}:
+    if not has_user_threshold:
+        return "legacy_threshold_metadata"
+    if user_decision == "too_long":
+        return "too_long_debug_only"
+    if user_decision not in {"too_short"}:
         return "no_correction_needed"
+    if near_boundary:
+        return "near_boundary_debug_only"
     if alignment_method.endswith("fallback_equal") or alignment_method == "equal_fallback":
         return "fallback_alignment"
     if not judgement_available:
@@ -298,6 +358,8 @@ def _suppression_reason(
         return "short_utterance"
     if str(reliability.get("level") or "") == "low" or float(reliability.get("overall", 1.0) or 1.0) < 0.45:
         return "reliability_gate_low"
+    if weak_reference:
+        return "weak_reference_mild_candidate_only"
     if weak_reference and evidence_confidence < 0.75:
         return "weak_reference_requires_high_evidence"
     return ""
@@ -354,6 +416,9 @@ def decide_special_mora_runtime(
         low = threshold.get("low_ratio")
         high = threshold.get("high_ratio")
         decision = decide_special_mora_feature_value(threshold, feature_value)
+        user_decision = decide_special_mora_user_feature_value(threshold, feature_value)
+        has_user_threshold = threshold.get("user_low") is not None
+        near_boundary = _near_user_threshold_boundary(threshold, feature_value, user_decision)
         min_conf = float(threshold.get("min_evidence_confidence", 0.45) or 0.45)
         evidence_confidence = _confidence_score(ev)
         confidence = _confidence(ev)
@@ -376,9 +441,12 @@ def decide_special_mora_runtime(
             weak_reference=bool(weak_reference),
             special_type=special_type,
             decision=decision,
+            user_decision=user_decision,
+            near_boundary=near_boundary,
+            has_user_threshold=has_user_threshold,
             enable_user_facing=enable_user_facing,
         )
-        candidate = _candidate_text(ph.mora, special_type, decision, bool(weak_reference))
+        candidate = _candidate_text(ph.mora, special_type, user_decision, bool(weak_reference))
         decisions.append(RuntimeSpecialMoraDecision(
             type=special_type,
             surface_mora=ph.mora,
@@ -388,8 +456,12 @@ def decide_special_mora_runtime(
             feature_value=None if feature_value is None else round(float(feature_value), 4),
             threshold_low=None if low is None else float(low),
             threshold_high=None if high is None else float(high),
+            user_threshold_low=None if threshold.get("user_low") is None else float(threshold.get("user_low")),
+            user_threshold_high=None if threshold.get("user_high") is None else float(threshold.get("user_high")),
             threshold_status=status,
             decision=decision,
+            user_decision=user_decision,
+            near_boundary=near_boundary,
             evidence_confidence=round(float(evidence_confidence), 4),
             confidence=confidence,
             alignment_method=alignment_method,
