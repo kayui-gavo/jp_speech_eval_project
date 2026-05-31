@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import html
-import os
+import json
 from pathlib import Path
 from typing import Dict, List
 
@@ -107,10 +107,40 @@ def _audio_cell(audio_path: str, output_html: Path) -> str:
     path = Path(audio_path)
     if not path.exists():
         return f"<span class='warn'>找不到音频文件</span><br><code>{html.escape(audio_path)}</code>"
-    rel = os.path.relpath(path.resolve(), output_html.parent.resolve())
+    uri = path.resolve().as_uri()
     return (
-        f"<audio controls preload='none' src='{html.escape(rel)}'></audio>"
-        f"<br><code>{html.escape(rel)}</code>"
+        f"<audio controls preload='metadata' src='{html.escape(uri)}'></audio>"
+        f"<br><a href='{html.escape(uri)}' target='_blank'>如果播放器报错，点这里直接打开原音</a>"
+        f"<br><code>{html.escape(str(path))}</code>"
+    )
+
+
+def _select(name: str, item_id: str, options: List[str]) -> str:
+    opts = ["<option value=''></option>"] + [f"<option value='{html.escape(o)}'>{html.escape(o)}</option>" for o in options]
+    return f"<select data-field='{html.escape(name)}' data-item='{html.escape(item_id)}'>{''.join(opts)}</select>"
+
+
+def _annotation_controls(row: Dict[str, str]) -> str:
+    item_id = row.get("item_id", "")
+    yn = ["yes", "no", "unsure"]
+    severity = ["none", "mild", "clear", "severe"]
+    return (
+        "<div class='formbox'>"
+        "<label>这条提示能给用户看吗？<br>"
+        f"{_select('should_allow_user_facing', item_id, yn)}</label>"
+        "<label>这是误伤吗？<br>"
+        f"{_select('false_alarm', item_id, yn)}</label>"
+        "<label>对齐有问题吗？<br>"
+        f"{_select('alignment_issue', item_id, yn)}</label>"
+        "<label>录音质量有问题吗？<br>"
+        f"{_select('audio_quality_issue', item_id, yn)}</label>"
+        "<label>这句反馈文案可以接受吗？<br>"
+        f"{_select('wording_ok', item_id, yn)}</label>"
+        "<label>问题严重程度<br>"
+        f"{_select('severity', item_id, severity)}</label>"
+        "<label>备注<br>"
+        f"<textarea data-field='comment' data-item='{html.escape(item_id)}' placeholder='例如：母语者听起来正常，建议不要提示。'></textarea></label>"
+        "</div>"
     )
 
 
@@ -119,15 +149,20 @@ def build_review_viewer(items_csv: Path, output_html: Path) -> int:
     groups: Dict[str, List[Dict[str, str]]] = {}
     for row in rows:
         groups.setdefault(row.get("source", "unknown"), []).append(row)
+    base_rows_json = json.dumps(rows, ensure_ascii=False)
     parts = [
         "<!doctype html><html><head><meta charset='utf-8'>",
         "<title>特殊拍人工复核</title>",
         "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans CJK SC',sans-serif;margin:24px;line-height:1.55;color:#1f2937;background:#fafafa}"
         "h1{margin-bottom:6px}.summary{background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px 16px;margin:12px 0 18px}"
+        ".toolbar{position:sticky;top:0;z-index:10;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,.06)}"
+        "button{border:1px solid #2563eb;background:#2563eb;color:white;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}"
+        "button.secondary{background:white;color:#2563eb}"
         "table{border-collapse:separate;border-spacing:0;width:100%;margin:12px 0 28px;background:#fff;border:1px solid #ddd;border-radius:8px;overflow:hidden}"
         "td,th{border-bottom:1px solid #e5e7eb;padding:10px;vertical-align:top}tr:last-child td{border-bottom:0}"
         "th{background:#f3f4f6;text-align:left}.tag{font-weight:700}.muted{color:#6b7280}.warn{color:#b45309;font-weight:700}"
-        ".hint{background:#f8fafc;border-left:4px solid #2563eb;padding:8px 10px;margin-top:8px}.metric{font-size:13px;color:#4b5563}audio{width:260px;max-width:100%}code{font-size:12px;word-break:break-all}</style>",
+        ".hint{background:#f8fafc;border-left:4px solid #2563eb;padding:8px 10px;margin-top:8px}.metric{font-size:13px;color:#4b5563}audio{width:260px;max-width:100%}code{font-size:12px;word-break:break-all}"
+        ".formbox{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:260px}.formbox label{font-size:13px;font-weight:700;color:#374151}.formbox select,.formbox textarea{width:100%;box-sizing:border-box;margin-top:3px}.formbox textarea{grid-column:1/-1;min-height:58px}</style>",
         "</head><body>",
         "<h1>特殊拍人工复核</h1>",
         "<div class='summary'>"
@@ -136,6 +171,11 @@ def build_review_viewer(items_csv: Path, output_html: Path) -> int:
         "<p><b>标注建议：</b>如果提示可以给用户看，填 <code>should_allow_user_facing=yes</code>；如果母语者听起来正常却被系统判错，填 <code>false_alarm=yes</code>；如果对齐或录音有问题，填对应问题字段。</p>"
         "<p class='muted'>这不是正式听辨实验，只是上线前的人工安全检查。</p>"
         "</div>",
+        "<div class='toolbar'>"
+        "<button onclick='downloadAnnotations()'>导出当前标注 CSV</button> "
+        "<button class='secondary' onclick='markVisibleUnsure()'>把空白项临时填成 unsure</button>"
+        "<span class='muted'> 填完后点击导出，把 CSV 保存为 <code>manual_inspection_annotations.csv</code>。</span>"
+        "</div>",
     ]
     for source, items in sorted(groups.items()):
         parts.append(f"<h2>{html.escape(_source_label(source))} ({len(items)})</h2>")
@@ -143,14 +183,7 @@ def build_review_viewer(items_csv: Path, output_html: Path) -> int:
         for row in items:
             audio_path = row.get("audio_path", "")
             audio_cell = _audio_cell(audio_path, output_html)
-            fields = (
-                "<b>最低限建议填这几项：</b><br>"
-                "should_allow_user_facing: yes / no / unsure<br>"
-                "false_alarm: yes / no / unsure<br>"
-                "alignment_issue: yes / no / unsure<br>"
-                "severity: none / mild / clear / severe<br>"
-                "comment: 自由备注"
-            )
+            fields = _annotation_controls(row)
             evidence = (
                 f"<b>{html.escape(_type_label(row.get('special_mora_type','')))}</b> / 目标拍：{html.escape(row.get('surface_mora',''))}<br>"
                 f"{html.escape(_decision_label(row.get('decision','')))}<br>"
@@ -159,14 +192,26 @@ def build_review_viewer(items_csv: Path, output_html: Path) -> int:
                 f"边界附近={html.escape(row.get('near_boundary',''))}，证据置信度={html.escape(row.get('evidence_confidence',''))}，phone={html.escape(row.get('phone_sequence_for_mora',''))}</div>"
             )
             parts.append(
-                "<tr>"
+                f"<tr class='review-row' data-item='{html.escape(row.get('item_id',''))}'>"
                 f"<td><span class='tag'>{html.escape(row.get('item_id',''))}</span><br>{html.escape(source)}</td>"
                 f"<td>{html.escape(row.get('transcript',''))}<br><span class='muted'>{html.escape(row.get('speaker_id',''))}/{html.escape(row.get('utterance_id',''))}</span></td>"
                 f"<td>{evidence}</td><td>{audio_cell}</td><td>{fields}</td>"
                 "</tr>"
             )
         parts.append("</table>")
-    parts.append("</body></html>")
+    parts.append(
+        "<script>"
+        f"const BASE_ROWS = {base_rows_json};"
+        "const ANNOTATION_FIELDS = ['seems_valid_feedback','false_alarm','alignment_issue','audio_quality_issue','wording_ok','should_allow_user_facing','severity','comment'];"
+        "function csvEscape(v){v=(v??'').toString();return /[\",\\n]/.test(v)?'\"'+v.replaceAll('\"','\"\"')+'\"':v;}"
+        "function collectRows(){const byId={}; for(const r of BASE_ROWS){byId[r.item_id]={...r}; for(const f of ANNOTATION_FIELDS){if(!(f in byId[r.item_id])) byId[r.item_id][f]='';}}"
+        "document.querySelectorAll('[data-item][data-field]').forEach(el=>{const id=el.dataset.item; const f=el.dataset.field; if(byId[id]) byId[id][f]=el.value;}); return Object.values(byId);}"
+        "function downloadAnnotations(){const rows=collectRows(); const headers=[]; rows.forEach(r=>Object.keys(r).forEach(k=>{if(!headers.includes(k))headers.push(k);}));"
+        "const csv=[headers.join(',')].concat(rows.map(r=>headers.map(h=>csvEscape(r[h])).join(','))).join('\\n');"
+        "const blob=new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='manual_inspection_annotations.csv'; a.click(); URL.revokeObjectURL(a.href);}"
+        "function markVisibleUnsure(){document.querySelectorAll('select[data-field]').forEach(s=>{if(!s.value)s.value='unsure';});}"
+        "</script></body></html>"
+    )
     output_html.parent.mkdir(parents=True, exist_ok=True)
     output_html.write_text("\n".join(parts), encoding="utf-8")
     return len(rows)
