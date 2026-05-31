@@ -5,7 +5,11 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from .reliability_gate import evaluate_reliability_gate
 from .scoring_policy import ScoringPolicy, policy_from_result
-from .special_mora_scorer import score_special_mora_timing
+from .special_mora_scorer import (
+    decide_special_mora_runtime,
+    select_special_mora_feedback_candidate,
+    special_mora_score_from_decisions,
+)
 
 
 @dataclass(frozen=True)
@@ -23,7 +27,14 @@ class UserFacingResult:
         return asdict(self)
 
 
-def _debug_payload(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) -> Dict[str, Any]:
+def _debug_payload(
+    result: Mapping[str, Any],
+    policy: ScoringPolicy,
+    gate: Any,
+    *,
+    special_mora_decisions: List[Mapping[str, Any]],
+    special_mora_score: Optional[float],
+) -> Dict[str, Any]:
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
     pronunciation = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
@@ -41,6 +52,9 @@ def _debug_payload(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) 
         "alignment_confidence": reliability.get("alignment"),
         "mora_duration_cv": pronunciation.get("mora_duration_cv"),
         "special_mora_ratios": pronunciation.get("special_mora_diagnostics"),
+        "special_mora_decisions": special_mora_decisions,
+        "special_mora_score": special_mora_score,
+        "special_mora_score_available": special_mora_score is not None,
         "f0_voiced_coverage": reliability.get("f0_coverage"),
         "reference_source": details.get("reference_source"),
         "weak_reference": policy.weak_reference,
@@ -81,7 +95,13 @@ def _weighted_available(scores: Mapping[str, Any], weights: Mapping[str, float])
     return total / denom
 
 
-def _display_score(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) -> Optional[int]:
+def _display_score(
+    result: Mapping[str, Any],
+    policy: ScoringPolicy,
+    gate: Any,
+    *,
+    special_mora_score: Optional[float] = None,
+) -> Optional[int]:
     if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
         return None
     raw_total = _as_score(result.get("total_score"))
@@ -97,7 +117,7 @@ def _display_score(result: Mapping[str, Any], policy: ScoringPolicy, gate: Any) 
     scores = {
         "content_score": content_score,
         "mora_clarity_score": pronunciation,
-        "special_mora_score": max(0.0, 100.0 - float(pronunciation_details.get("special_mora_penalty", 0.0) or 0.0)),
+        "special_mora_score": special_mora_score,
         "rhythm_timing_score": fluency_details.get("rhythm_timing_score", fluency),
         "phrase_intonation_score": prosody_details.get("final_intonation_score"),
         "delivery_fluency_score": fluency_details.get("delivery_fluency_score", fluency),
@@ -156,9 +176,28 @@ def _is_retry_message(message: str) -> bool:
     return any(term.lower() in lower for term in retry_terms)
 
 
-def render_user_facing_result(result: Mapping[str, Any], *, mode: str | None = None) -> Dict[str, Any]:
+def render_user_facing_result(
+    result: Mapping[str, Any],
+    *,
+    mode: str | None = None,
+    enable_runtime_special_mora_shadow: bool = True,
+    enable_user_facing_calibrated_special_mora: bool = False,
+) -> Dict[str, Any]:
     policy = policy_from_result(result, mode=mode)
     gate = evaluate_reliability_gate(result, policy)
+    decisions = decide_special_mora_runtime(
+        result,
+        weak_reference=policy.weak_reference,
+        enable_runtime_shadow=enable_runtime_special_mora_shadow,
+        enable_user_facing=(
+            enable_user_facing_calibrated_special_mora
+            and gate.allow_special_mora_feedback
+            and policy.allow_special_mora_feedback
+            and not policy.demo_only
+        ),
+    )
+    decision_dicts = [item.to_dict() for item in decisions]
+    special_mora_score = special_mora_score_from_decisions(decisions)
     messages: List[str] = list(gate.messages)
     focus: Optional[Dict[str, Any]] = None
 
@@ -170,14 +209,10 @@ def render_user_facing_result(result: Mapping[str, Any], *, mode: str | None = N
         focus = {"category": "weak_reference", "message": messages[-1]}
 
     if gate.allow_special_mora_feedback and policy.allow_special_mora_feedback:
-        teaching_priority = {"sokuon": 4, "long_vowel": 3, "moraic_nasal": 2, "yoon": 1}
-        confidence_priority = {"high": 3, "medium": 2, "low": 1}
-        special = [item for item in score_special_mora_timing(result, weak_reference=policy.weak_reference) if item.status in {"too_short", "too_long"}]
-        special.sort(key=lambda item: (confidence_priority.get(item.confidence, 0), teaching_priority.get(item.type, 0)), reverse=True)
-        if special:
-            item = special[0]
-            focus = {"category": "special_mora", **item.to_dict()}
-            messages.append(item.message)
+        item = select_special_mora_feedback_candidate(decisions)
+        if item:
+            focus = {"category": "special_mora", **item.to_dict(), "message": item.feedback_candidate_text}
+            messages.append(item.feedback_candidate_text)
 
     raw_feedback = [str(item) for item in (result.get("feedback") or [])]
     for item in raw_feedback:
@@ -201,9 +236,15 @@ def render_user_facing_result(result: Mapping[str, Any], *, mode: str | None = N
         mode=policy.mode,
         reliability=gate.reliability,
         practice_check_result=practice,
-        display_score=_display_score(result, policy, gate),
+        display_score=_display_score(result, policy, gate, special_mora_score=special_mora_score),
         user_messages=messages[:2],
         focus_feedback=focus,
         display_total_score=False,
-        debug=_debug_payload(result, policy, gate),
+        debug=_debug_payload(
+            result,
+            policy,
+            gate,
+            special_mora_decisions=decision_dicts,
+            special_mora_score=special_mora_score,
+        ),
     ).to_dict()

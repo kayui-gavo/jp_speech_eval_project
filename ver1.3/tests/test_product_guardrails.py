@@ -6,7 +6,12 @@ from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
 from jp_speech_eval.eval_modes import evaluate_mode
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.scoring_policy import policy_from_result
-from jp_speech_eval.special_mora_scorer import load_special_mora_thresholds, score_special_mora_timing
+from jp_speech_eval.special_mora_scorer import (
+    decide_special_mora_runtime,
+    load_special_mora_thresholds,
+    score_special_mora_timing,
+    special_mora_score_from_decisions,
+)
 
 
 def _result(**overrides):
@@ -57,9 +62,26 @@ def _result(**overrides):
 
 
 class ProductGuardrailsTest(unittest.TestCase):
-    def test_human_checked_fixed_reference_allows_special_mora_feedback(self) -> None:
+    def test_human_checked_fixed_reference_shadows_special_mora_by_default(self) -> None:
         rendered = render_user_facing_result(_result())
         self.assertFalse(rendered["display_total_score"])
+        self.assertIsNone(rendered["focus_feedback"])
+        self.assertTrue(rendered["debug"]["special_mora_decisions"])
+        self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
+
+    def test_feature_flag_allows_calibrated_special_mora_feedback(self) -> None:
+        result = _result(mora_table=[
+            {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
+            {"mora": "ー", "start_sec": 0.2, "end_sec": 0.23},
+            {"mora": "メ", "start_sec": 0.23, "end_sec": 0.43},
+            {"mora": "ン", "start_sec": 0.43, "end_sec": 0.63},
+            {"mora": "ヲ", "start_sec": 0.63, "end_sec": 0.83},
+            {"mora": "ク", "start_sec": 0.83, "end_sec": 1.03},
+            {"mora": "ダ", "start_sec": 1.03, "end_sec": 1.23},
+            {"mora": "サ", "start_sec": 1.23, "end_sec": 1.43},
+            {"mora": "イ", "start_sec": 1.43, "end_sec": 1.63},
+        ])
+        rendered = render_user_facing_result(result, enable_user_facing_calibrated_special_mora=True)
         self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
         self.assertIn("もう少し", rendered["focus_feedback"]["message"])
 
@@ -111,6 +133,45 @@ class ProductGuardrailsTest(unittest.TestCase):
         result = _result(alignment_mode="cached_dtw_fallback_equal")
         rows = score_special_mora_timing(result)
         self.assertTrue(all(row.status == "uncertain" for row in rows if row.type in {"long_vowel", "moraic_nasal"}))
+
+    def test_runtime_missing_threshold_metadata_is_debug_uncertain(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing_thresholds.json"
+            decisions = decide_special_mora_runtime(_result(), threshold_path=missing, enable_user_facing=True)
+        self.assertTrue(decisions)
+        self.assertTrue(all(item.decision == "uncertain" for item in decisions))
+        self.assertTrue(all(not item.user_feedback_allowed for item in decisions))
+        self.assertIn("missing_or_invalid_threshold_metadata", {item.suppression_reason for item in decisions})
+
+    def test_sokuon_and_yoon_do_not_leak_to_user_facing(self) -> None:
+        result = _result(
+            target_text="きってきゃ",
+            kana="キッテキャ",
+            moras=["キ", "ッ", "テ", "キャ"],
+            mora_table=[
+                {"mora": "キ", "start_sec": 0.0, "end_sec": 0.2},
+                {"mora": "ッ", "start_sec": 0.2, "end_sec": 0.22},
+                {"mora": "テ", "start_sec": 0.22, "end_sec": 0.42},
+                {"mora": "キャ", "start_sec": 0.42, "end_sec": 0.62},
+            ],
+            details={"mora_evidence": [{"judgement_available": True, "boundary_confidence": 0.9, "energy_coverage": 0.9} for _ in range(4)]},
+        )
+        decisions = decide_special_mora_runtime(result, enable_user_facing=True)
+        by_type = {item.type: item for item in decisions}
+        self.assertFalse(by_type["sokuon"].user_feedback_allowed)
+        self.assertEqual(by_type["sokuon"].suppression_reason, "insufficient_native_evidence")
+        self.assertFalse(by_type["yoon"].user_feedback_allowed)
+        self.assertEqual(by_type["yoon"].suppression_reason, "debug_only_threshold")
+
+    def test_special_mora_score_unavailable_is_not_zero(self) -> None:
+        result = _result(moras=["バ", "グ"], mora_table=[{"start_sec": 0.0, "end_sec": 0.2}, {"start_sec": 0.2, "end_sec": 0.4}])
+        decisions = decide_special_mora_runtime(result)
+        self.assertIsNone(special_mora_score_from_decisions(decisions))
+        rendered = render_user_facing_result(result)
+        self.assertIsNone(rendered["debug"]["special_mora_score"])
 
     def test_weak_reference_uses_mild_special_mora_feedback(self) -> None:
         result = _result(
