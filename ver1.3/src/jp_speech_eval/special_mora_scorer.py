@@ -234,6 +234,26 @@ def _candidate_text(mora: str, special_type: str, decision: str, weak_reference:
     return core
 
 
+def decide_special_mora_feature_value(threshold: Mapping[str, Any], feature_value: Optional[float]) -> str:
+    """Apply the same calibrated threshold decision used by runtime shadow.
+
+    This helper exists so validation scripts can test counterfactual feature
+    perturbations without duplicating threshold logic.
+    """
+
+    status = str(threshold.get("status") or "invalid")
+    low = threshold.get("low_ratio")
+    high = threshold.get("high_ratio")
+    if status != "active" or feature_value is None or low is None or high is None:
+        return "uncertain"
+    value = float(feature_value)
+    if value < float(low):
+        return "too_short"
+    if value > float(high):
+        return "too_long"
+    return "ok"
+
+
 def _suppression_reason(
     *,
     threshold_status: str,
@@ -333,14 +353,7 @@ def decide_special_mora_runtime(
         status = str(threshold.get("status") or "invalid")
         low = threshold.get("low_ratio")
         high = threshold.get("high_ratio")
-        decision = "uncertain"
-        if status == "active" and feature_value is not None and low is not None and high is not None:
-            if feature_value < float(low):
-                decision = "too_short"
-            elif feature_value > float(high):
-                decision = "too_long"
-            else:
-                decision = "ok"
+        decision = decide_special_mora_feature_value(threshold, feature_value)
         min_conf = float(threshold.get("min_evidence_confidence", 0.45) or 0.45)
         evidence_confidence = _confidence_score(ev)
         confidence = _confidence(ev)

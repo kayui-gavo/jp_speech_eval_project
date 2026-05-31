@@ -7,6 +7,7 @@ from jp_speech_eval.eval_modes import evaluate_mode
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.scoring_policy import policy_from_result
 from jp_speech_eval.special_mora_scorer import (
+    decide_special_mora_feature_value,
     decide_special_mora_runtime,
     load_special_mora_thresholds,
     score_special_mora_timing,
@@ -172,6 +173,18 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertIsNone(special_mora_score_from_decisions(decisions))
         rendered = render_user_facing_result(result)
         self.assertIsNone(rendered["debug"]["special_mora_score"])
+
+    def test_counterfactual_decision_uses_runtime_threshold_function(self) -> None:
+        threshold = {"status": "active", "low_ratio": 0.5, "high_ratio": 1.5}
+        self.assertEqual(decide_special_mora_feature_value(threshold, 1.0), "ok")
+        self.assertEqual(decide_special_mora_feature_value(threshold, 0.4), "too_short")
+        self.assertEqual(decide_special_mora_feature_value(threshold, 1.6), "too_long")
+
+    def test_shortened_feature_monotonically_increases_too_short_tendency(self) -> None:
+        threshold = {"status": "active", "low_ratio": 0.5, "high_ratio": 1.5}
+        values = [1.0, 0.8, 0.6, 0.4, 0.25]
+        ranks = [1 if decide_special_mora_feature_value(threshold, value) == "too_short" else 0 for value in values]
+        self.assertEqual(ranks, sorted(ranks))
 
     def test_weak_reference_uses_mild_special_mora_feedback(self) -> None:
         result = _result(
