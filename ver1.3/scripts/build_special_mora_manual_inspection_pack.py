@@ -9,6 +9,27 @@ from typing import Any, Dict, Iterable, List, Mapping
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = ROOT.parent
+
+
+def _resolve_jvs_audio(row: Mapping[str, Any]) -> str:
+    """Best-effort local JVS audio lookup for review playback.
+
+    The audit CSVs often keep only speaker_id/utterance_id, so the manual
+    inspection pack reconstructs the usual JVS parallel100 path when possible.
+    """
+
+    audio_path = str(row.get("audio_path") or "")
+    if audio_path and Path(audio_path).exists():
+        return audio_path
+    speaker_id = str(row.get("speaker_id") or "")
+    utterance_id = str(row.get("utterance_id") or "")
+    dataset = str(row.get("dataset") or "").lower()
+    if dataset == "jvs" and speaker_id and utterance_id:
+        candidate = PROJECT_ROOT / "JVS" / speaker_id / "parallel100" / "wav24kHz16bit" / f"{utterance_id}.wav"
+        if candidate.exists():
+            return str(candidate)
+    return audio_path
 
 
 def _read_csv(path: Path) -> List[Dict[str, str]]:
@@ -42,7 +63,7 @@ def _item(source: str, row: Mapping[str, Any], idx: int) -> Dict[str, Any]:
         "dataset": row.get("dataset"),
         "speaker_id": row.get("speaker_id"),
         "utterance_id": row.get("utterance_id"),
-        "audio_path": row.get("audio_path"),
+        "audio_path": _resolve_jvs_audio(row),
         "transcript": row.get("transcript") or row.get("text"),
         "special_mora_type": row.get("special_mora_type"),
         "surface_mora": row.get("surface_mora") or row.get("mora"),

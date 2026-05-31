@@ -188,9 +188,21 @@ class RuntimeSpecialMoraValidationTest(unittest.TestCase):
             before = template.read_text(encoding="utf-8")
             self.assertFalse(build_annotation_template(items, template))
             self.assertEqual(template.read_text(encoding="utf-8"), before)
+            self.assertTrue(build_annotation_template(items, template, overwrite=True))
             html = root / "viewer.html"
             self.assertEqual(build_review_viewer(items, html), 1)
-            self.assertIn("missing.wav", html.read_text(encoding="utf-8"))
+            html_text = html.read_text(encoding="utf-8")
+            self.assertIn("特殊拍人工复核", html_text)
+            self.assertIn("找不到音频文件", html_text)
+            self.assertIn("missing.wav", html_text)
+
+            audio = root / "exists.wav"
+            audio.write_bytes(b"RIFFxxxxWAVE")
+            _write_csv(items, [dict(rows[0], audio_path=str(audio))])
+            self.assertEqual(build_review_viewer(items, html), 1)
+            html_text = html.read_text(encoding="utf-8")
+            self.assertIn("<audio controls", html_text)
+            self.assertIn("exists.wav", html_text)
 
             missing_summary = summarize(root / "missing_annotations.csv")
             self.assertEqual(missing_summary["total_annotated"], 0)
