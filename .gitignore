@@ -23,6 +23,7 @@ datasets/
 ver1.3/cache/
 ver1.3/outputs/
 ver1.3/results/
+ver1.3/reports/special_mora_manual_review_audio/
 ver1.3/data/prosody_audio/
 ver1.3/data/tts_cache/
 ver1.3/data/*.wav

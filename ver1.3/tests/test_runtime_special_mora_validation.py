@@ -202,11 +202,12 @@ class RuntimeSpecialMoraValidationTest(unittest.TestCase):
             self.assertEqual(build_review_viewer(items, html), 1)
             html_text = html.read_text(encoding="utf-8")
             self.assertIn("<audio controls", html_text)
-            self.assertIn("file://", html_text)
+            self.assertIn("special_mora_manual_review_audio", html_text)
             self.assertIn("导出当前标注 CSV", html_text)
             self.assertIn("这条提示能给用户看吗", html_text)
             self.assertIn("downloadAnnotations", html_text)
             self.assertIn("exists.wav", html_text)
+            self.assertTrue((root / "special_mora_manual_review_audio" / "audio_exists.wav").exists())
 
             missing_summary = summarize(root / "missing_annotations.csv")
             self.assertEqual(missing_summary["total_annotated"], 0)

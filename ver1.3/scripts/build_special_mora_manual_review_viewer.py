@@ -5,6 +5,7 @@ import argparse
 import csv
 import html
 import json
+import shutil
 from pathlib import Path
 from typing import Dict, List
 
@@ -101,17 +102,28 @@ def _review_prompt(row: Dict[str, str]) -> str:
     return f"请听原音并判断：{decision} 这条提示是否足够可靠，可以展示给用户。"
 
 
-def _audio_cell(audio_path: str, output_html: Path) -> str:
+def _audio_cell(audio_path: str, output_html: Path, asset_dir: Path | None) -> str:
     if not audio_path:
         return "<span class='warn'>没有音频路径：需要重新生成 inspection pack。</span>"
     path = Path(audio_path)
     if not path.exists():
         return f"<span class='warn'>找不到音频文件</span><br><code>{html.escape(audio_path)}</code>"
-    uri = path.resolve().as_uri()
+    src = path.resolve().as_uri()
+    link = src
+    shown_path = str(path)
+    if asset_dir is not None:
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        speaker_prefix = path.parent.parent.parent.name if path.parent.name == "wav24kHz16bit" else "audio"
+        dest = asset_dir / f"{speaker_prefix}_{path.stem}{path.suffix}"
+        if not dest.exists() or dest.stat().st_size != path.stat().st_size:
+            shutil.copy2(path, dest)
+        src = dest.relative_to(output_html.parent).as_posix()
+        link = src
+        shown_path = str(dest)
     return (
-        f"<audio controls preload='metadata' src='{html.escape(uri)}'></audio>"
-        f"<br><a href='{html.escape(uri)}' target='_blank'>如果播放器报错，点这里直接打开原音</a>"
-        f"<br><code>{html.escape(str(path))}</code>"
+        f"<audio controls preload='metadata' src='{html.escape(src)}'></audio>"
+        f"<br><a href='{html.escape(link)}' target='_blank'>如果播放器报错，点这里直接打开原音</a>"
+        f"<br><code>{html.escape(shown_path)}</code>"
     )
 
 
@@ -144,8 +156,9 @@ def _annotation_controls(row: Dict[str, str]) -> str:
     )
 
 
-def build_review_viewer(items_csv: Path, output_html: Path) -> int:
+def build_review_viewer(items_csv: Path, output_html: Path, *, copy_audio_assets: bool = True) -> int:
     rows = _read_csv(items_csv)
+    asset_dir = output_html.parent / "special_mora_manual_review_audio" if copy_audio_assets else None
     groups: Dict[str, List[Dict[str, str]]] = {}
     for row in rows:
         groups.setdefault(row.get("source", "unknown"), []).append(row)
@@ -182,7 +195,7 @@ def build_review_viewer(items_csv: Path, output_html: Path) -> int:
         parts.append("<table><tr><th>样本</th><th>句子</th><th>系统怀疑什么</th><th>原音</th><th>人工标注怎么填</th></tr>")
         for row in items:
             audio_path = row.get("audio_path", "")
-            audio_cell = _audio_cell(audio_path, output_html)
+            audio_cell = _audio_cell(audio_path, output_html, asset_dir)
             fields = _annotation_controls(row)
             evidence = (
                 f"<b>{html.escape(_type_label(row.get('special_mora_type','')))}</b> / 目标拍：{html.escape(row.get('surface_mora',''))}<br>"
@@ -223,9 +236,10 @@ def main() -> None:
     parser.add_argument("--annotation-template", type=Path, default=ROOT / "results" / "runtime_special_mora_validation" / "manual_inspection_annotations_template.csv")
     parser.add_argument("--output-html", type=Path, default=ROOT / "reports" / "special_mora_manual_review_viewer.html")
     parser.add_argument("--refresh-template", action="store_true", help="Overwrite the blank annotation template from current items.")
+    parser.add_argument("--no-copy-audio-assets", action="store_true", help="Do not copy review audio next to the HTML.")
     args = parser.parse_args()
     created = build_annotation_template(args.items_csv, args.annotation_template, overwrite=args.refresh_template)
-    count = build_review_viewer(args.items_csv, args.output_html)
+    count = build_review_viewer(args.items_csv, args.output_html, copy_audio_assets=not args.no_copy_audio_assets)
     print({"items": count, "template_created": created, "template": str(args.annotation_template), "html": str(args.output_html)})
 
 
