@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from .phonology import classify_mora_sequence
+from .special_mora_profiles import SpecialMoraThresholdProfile, load_threshold_profile
 
 
 DEFAULT_THRESHOLDS: Dict[str, Dict[str, float]] = {
@@ -69,6 +70,7 @@ class RuntimeSpecialMoraDecision:
     user_decision: str = "uncertain"
     near_boundary: bool = False
     threshold_metadata_warning: str = ""
+    evidence_card: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -322,10 +324,18 @@ def _suppression_reason(
     user_decision: str,
     near_boundary: bool,
     has_user_threshold: bool,
+    profile: SpecialMoraThresholdProfile,
+    mode_name: str,
+    demo_only: bool,
     enable_user_facing: bool,
+    enable_weak_reference_hint: bool,
 ) -> str:
     if threshold_status in {"invalid", ""}:
         return "missing_or_invalid_threshold_metadata"
+    if special_type in profile.blocked_types:
+        return "blocked_by_profile"
+    if special_type in profile.debug_only_types and special_type not in profile.allowed_user_facing_types:
+        return "debug_only_by_profile"
     if threshold_status == "insufficient":
         return "insufficient_native_evidence"
     if threshold_status == "debug_only":
@@ -334,15 +344,21 @@ def _suppression_reason(
         return "tentative_threshold_debug_only"
     if not enable_user_facing:
         return "shadow_mode_user_facing_disabled"
+    if demo_only:
+        return "demo_reference_not_scoring"
+    if mode_name not in profile.user_facing_modes_allowed and not (weak_reference and enable_weak_reference_hint and profile.weak_reference_hint_allowed):
+        return "mode_not_allowed_by_profile"
     if special_type not in USER_FEEDBACK_TYPES:
         return "special_mora_type_not_user_facing"
+    if special_type not in profile.allowed_user_facing_types:
+        return "type_not_allowed_by_profile"
     if not has_user_threshold:
         return "legacy_threshold_metadata"
     if user_decision == "too_long":
         return "too_long_debug_only"
     if user_decision not in {"too_short"}:
         return "no_correction_needed"
-    if near_boundary:
+    if near_boundary and profile.suppress_near_boundary:
         return "near_boundary_debug_only"
     if alignment_method.endswith("fallback_equal") or alignment_method == "equal_fallback":
         return "fallback_alignment"
@@ -358,7 +374,9 @@ def _suppression_reason(
         return "short_utterance"
     if str(reliability.get("level") or "") == "low" or float(reliability.get("overall", 1.0) or 1.0) < 0.45:
         return "reliability_gate_low"
-    if weak_reference:
+    if decision == "too_long" and not profile.too_long_user_facing_allowed:
+        return "too_long_debug_only"
+    if weak_reference and not enable_weak_reference_hint:
         return "weak_reference_mild_candidate_only"
     if weak_reference and evidence_confidence < 0.75:
         return "weak_reference_requires_high_evidence"
@@ -369,9 +387,13 @@ def decide_special_mora_runtime(
     result: Mapping[str, Any],
     *,
     threshold_path: str | Path | None = None,
+    threshold_profile: str | None = None,
     weak_reference: bool | None = None,
+    mode_name: str | None = None,
+    demo_only: bool = False,
     enable_runtime_shadow: bool = True,
     enable_user_facing: bool = False,
+    enable_weak_reference_hint: bool = False,
 ) -> List[RuntimeSpecialMoraDecision]:
     """Compute calibrated special-mora decisions for debug/candidate use.
 
@@ -389,7 +411,11 @@ def decide_special_mora_runtime(
     alignment_method = _alignment_method(result, details)
     if weak_reference is None:
         weak_reference = bool(details.get("weak_reference"))
-    thresholds = load_runtime_special_mora_thresholds(threshold_path)
+    mode = str(mode_name or details.get("mode") or result.get("mode") or "reference")
+    profile = load_threshold_profile(threshold_profile)
+    profile_path = profile.threshold_path()
+    active_threshold_path = threshold_path if threshold_path is not None else profile_path
+    thresholds = load_runtime_special_mora_thresholds(active_threshold_path)
     phonology = classify_mora_sequence(moras)
     durations: List[float] = []
     for row in mora_table:
@@ -444,9 +470,40 @@ def decide_special_mora_runtime(
             user_decision=user_decision,
             near_boundary=near_boundary,
             has_user_threshold=has_user_threshold,
+            profile=profile,
+            mode_name=mode,
+            demo_only=demo_only,
             enable_user_facing=enable_user_facing,
+            enable_weak_reference_hint=enable_weak_reference_hint,
         )
         candidate = _candidate_text(ph.mora, special_type, user_decision, bool(weak_reference))
+        evidence_card = {
+            "profile_name": profile.profile_name,
+            "profile_fallback_reason": profile.fallback_reason,
+            "threshold_version": "runtime_loaded_thresholds",
+            "special_mora_type": special_type,
+            "surface_mora": ph.mora,
+            "transcript": str(result.get("target_text") or ""),
+            "feature_name": str(threshold.get("feature_name") or ""),
+            "feature_value": None if feature_value is None else round(float(feature_value), 4),
+            "user_low": None if threshold.get("user_low") is None else float(threshold.get("user_low")),
+            "user_high": None if threshold.get("user_high") is None else float(threshold.get("user_high")),
+            "debug_low": None if low is None else float(low),
+            "debug_high": None if high is None else float(high),
+            "distance_to_user_low": None if feature_value is None or threshold.get("user_low") is None else round(float(feature_value - float(threshold.get("user_low"))), 4),
+            "near_boundary": near_boundary,
+            "decision": decision,
+            "user_decision": user_decision,
+            "evidence_confidence": round(float(evidence_confidence), 4),
+            "alignment_method": alignment_method,
+            "mora_start": ev.get("start_sec"),
+            "mora_end": ev.get("end_sec"),
+            "phone_sequence_for_mora": str(ev.get("phone_sequence_for_mora") or ""),
+            "mapping_warning_flags": mapping_warning_flags,
+            "user_feedback_allowed": not suppression,
+            "suppression_reason": suppression,
+            "feedback_candidate_text": candidate,
+        }
         decisions.append(RuntimeSpecialMoraDecision(
             type=special_type,
             surface_mora=ph.mora,
@@ -471,6 +528,7 @@ def decide_special_mora_runtime(
             suppression_reason=suppression,
             feedback_candidate_text=candidate,
             threshold_metadata_warning="|".join(str(x) for x in (threshold.get("warnings") or [])),
+            evidence_card=evidence_card,
         ))
     return decisions
 

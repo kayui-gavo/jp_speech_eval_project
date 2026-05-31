@@ -30,8 +30,10 @@ class SpeechEvalConfig:
     tts_style: Optional[str] = None
     tts_prompt: Optional[str] = None
     tts_language: str = "ja-JP"
+    special_mora_threshold_profile: str = "default_safe"
     enable_runtime_special_mora_shadow: bool = True
     enable_user_facing_calibrated_special_mora: bool = False
+    enable_weak_reference_special_mora_hint: bool = False
 
 
 @dataclass(frozen=True)
@@ -146,8 +148,10 @@ class SpeechEvaluationClient:
             user_facing = render_user_facing_result(
                 raw,
                 mode=request.mode,
+                special_mora_threshold_profile=self.config.special_mora_threshold_profile,
                 enable_runtime_special_mora_shadow=self.config.enable_runtime_special_mora_shadow,
                 enable_user_facing_calibrated_special_mora=self.config.enable_user_facing_calibrated_special_mora,
+                enable_weak_reference_special_mora_hint=self.config.enable_weak_reference_special_mora_hint,
             )
         except Exception as exc:
             return EvaluationResponse(

@@ -476,6 +476,7 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             f"- false_alarm_v1: {v1_rates.get(special_type, {}).get('false_alarm_proxy_rate_all')}",
             f"- false_alarm_v2: {v2_rates.get(special_type, {}).get('false_alarm_proxy_rate_all')}",
             f"- sensitivity summary: {v2.get(special_type, {}).get('counterfactual_detection_summary')}",
+            "- requirements before actual rollout: profile=v2_limited_candidate, explicit flag enabled, strong_reference only, too_short only, near-boundary suppressed, manual inspection recommended",
             "- allowed modes if future enabled: fixed-reference strong target only; weak-reference remains mild candidate only",
             "- recommended wording: short, non-accusatory too-short suggestion",
             "",

@@ -34,6 +34,7 @@ def _debug_payload(
     *,
     special_mora_decisions: List[Mapping[str, Any]],
     special_mora_score: Optional[float],
+    special_mora_profile: Mapping[str, Any],
 ) -> Dict[str, Any]:
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
@@ -53,6 +54,8 @@ def _debug_payload(
         "mora_duration_cv": pronunciation.get("mora_duration_cv"),
         "special_mora_ratios": pronunciation.get("special_mora_diagnostics"),
         "special_mora_decisions": special_mora_decisions,
+        "special_mora_evidence_cards": [item.get("evidence_card") for item in special_mora_decisions if item.get("evidence_card")],
+        "special_mora_threshold_profile": special_mora_profile,
         "special_mora_score": special_mora_score,
         "special_mora_score_available": special_mora_score is not None,
         "f0_voiced_coverage": reliability.get("f0_coverage"),
@@ -182,12 +185,17 @@ def render_user_facing_result(
     mode: str | None = None,
     enable_runtime_special_mora_shadow: bool = True,
     enable_user_facing_calibrated_special_mora: bool = False,
+    special_mora_threshold_profile: str | None = "default_safe",
+    enable_weak_reference_special_mora_hint: bool = False,
 ) -> Dict[str, Any]:
     policy = policy_from_result(result, mode=mode)
     gate = evaluate_reliability_gate(result, policy)
     decisions = decide_special_mora_runtime(
         result,
+        threshold_profile=special_mora_threshold_profile,
         weak_reference=policy.weak_reference,
+        mode_name=policy.mode,
+        demo_only=policy.demo_only,
         enable_runtime_shadow=enable_runtime_special_mora_shadow,
         enable_user_facing=(
             enable_user_facing_calibrated_special_mora
@@ -195,6 +203,7 @@ def render_user_facing_result(
             and policy.allow_special_mora_feedback
             and not policy.demo_only
         ),
+        enable_weak_reference_hint=enable_weak_reference_special_mora_hint,
     )
     decision_dicts = [item.to_dict() for item in decisions]
     special_mora_score = special_mora_score_from_decisions(decisions)
@@ -246,5 +255,6 @@ def render_user_facing_result(
             gate,
             special_mora_decisions=decision_dicts,
             special_mora_score=special_mora_score,
+            special_mora_profile=(decision_dicts[0].get("evidence_card", {}) if decision_dicts else {}),
         ),
     ).to_dict()

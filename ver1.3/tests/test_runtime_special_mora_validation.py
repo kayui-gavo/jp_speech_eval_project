@@ -9,6 +9,8 @@ from tempfile import TemporaryDirectory
 
 from scripts.validate_runtime_special_mora_shadow import run
 from scripts.analyze_special_mora_false_alarms import run as run_false_alarm_analysis
+from scripts.validate_runtime_special_mora_profile import run as run_profile_validation
+from scripts.build_special_mora_manual_inspection_pack import run as run_manual_pack
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
@@ -116,6 +118,45 @@ class RuntimeSpecialMoraValidationTest(unittest.TestCase):
             self.assertIn("debug_only", readiness)
             self.assertIn("v2 trend is not scoring validation", janon_report)
             self.assertGreaterEqual(result["sweep_rows"], 1)
+
+    def test_profile_validation_and_manual_pack_are_generated(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "out"
+            reports = root / "reports"
+            rows = run_profile_validation(argparse.Namespace(output_dir=out, report_dir=reports))
+            self.assertTrue((out / "profile_validation_summary.csv").exists())
+            self.assertTrue((reports / "runtime_special_mora_profile_validation.md").exists())
+            by_profile = {(row["profile_name"], row["flag_enabled"]): row for row in rows}
+            self.assertEqual(by_profile[("default_safe", False)]["candidate_count"], 0)
+            self.assertEqual(by_profile[("v2_shadow", False)]["candidate_count"], 0)
+            self.assertGreaterEqual(by_profile[("v2_limited_candidate", True)]["candidate_count"], 1)
+            self.assertEqual(by_profile[("v2_limited_candidate", True)]["sokuon_yoon_leakage"], 0)
+            self.assertEqual(by_profile[("v2_limited_candidate", True)]["too_long_leakage"], 0)
+
+            false_cases = out / "false.csv"
+            v2_jvs = out / "v2.csv"
+            janon = out / "janon.csv"
+            counter = out / "counter.csv"
+            sample = out / "sample.csv"
+            base = [{"dataset": "jvs", "speaker_id": "s", "utterance_id": "u", "audio_path": "a.wav", "transcript": "ラーメン", "special_mora_type": "long_vowel", "surface_mora": "ー", "decision": "too_short", "feature_value": "0.2", "user_low": "0.23", "near_boundary": "False", "evidence_confidence": "1.0", "phone_sequence_for_mora": "a"}]
+            _write_csv(false_cases, base)
+            _write_csv(v2_jvs, [dict(base[0], user_feedback_allowed="True")])
+            _write_csv(janon, base)
+            _write_csv(counter, [dict(base[0], too_short="True")])
+            _write_csv(sample, base)
+            items = run_manual_pack(argparse.Namespace(
+                false_alarm_cases=false_cases,
+                v2_jvs_decisions=v2_jvs,
+                janon_v2=janon,
+                counterfactual=counter,
+                sample_audit=sample,
+                output_csv=out / "manual.csv",
+                report=reports / "manual.md",
+            ))
+            self.assertTrue((out / "manual.csv").exists())
+            self.assertTrue((reports / "manual.md").exists())
+            self.assertGreaterEqual(len(items), 1)
 
 
 if __name__ == "__main__":

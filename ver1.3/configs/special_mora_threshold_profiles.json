@@ -1,0 +1,72 @@
+{
+  "default_profile": "default_safe",
+  "profiles": {
+    "default_safe": {
+      "profile_name": "default_safe",
+      "threshold_file": "configs/special_mora_thresholds_v2.json",
+      "allowed_user_facing_types": [],
+      "blocked_types": ["sokuon"],
+      "debug_only_types": ["long_vowel", "moraic_nasal", "yoon"],
+      "user_facing_modes_allowed": [],
+      "require_high_evidence": true,
+      "suppress_near_boundary": true,
+      "too_long_user_facing_allowed": false,
+      "default_user_facing_enabled": false,
+      "weak_reference_hint_allowed": false,
+      "description": "Safest runtime profile: compute debug evidence only; never show calibrated special-mora feedback.",
+      "limitations": [
+        "limited_candidate is not full rollout",
+        "JVS controls native false alarm risk but does not prove learner benefit"
+      ]
+    },
+    "v1_debug": {
+      "profile_name": "v1_debug",
+      "threshold_file": "results/calibration/special_mora_thresholds.json",
+      "allowed_user_facing_types": [],
+      "blocked_types": ["sokuon"],
+      "debug_only_types": ["long_vowel", "moraic_nasal", "yoon"],
+      "user_facing_modes_allowed": [],
+      "require_high_evidence": true,
+      "suppress_near_boundary": true,
+      "too_long_user_facing_allowed": false,
+      "default_user_facing_enabled": false,
+      "weak_reference_hint_allowed": false,
+      "description": "Original calibrated thresholds for debug comparison only.",
+      "limitations": ["v1 native false alarm exceeded the 5% target"]
+    },
+    "v2_shadow": {
+      "profile_name": "v2_shadow",
+      "threshold_file": "configs/special_mora_thresholds_v2.json",
+      "allowed_user_facing_types": [],
+      "blocked_types": ["sokuon"],
+      "debug_only_types": ["long_vowel", "moraic_nasal", "yoon"],
+      "user_facing_modes_allowed": [],
+      "require_high_evidence": true,
+      "suppress_near_boundary": true,
+      "too_long_user_facing_allowed": false,
+      "default_user_facing_enabled": false,
+      "weak_reference_hint_allowed": false,
+      "description": "V2 thresholds loaded for shadow/debug decisions; no user-facing feedback.",
+      "limitations": ["manual inspection is still required before rollout"]
+    },
+    "v2_limited_candidate": {
+      "profile_name": "v2_limited_candidate",
+      "threshold_file": "configs/special_mora_thresholds_v2.json",
+      "allowed_user_facing_types": ["long_vowel", "moraic_nasal"],
+      "blocked_types": ["sokuon"],
+      "debug_only_types": ["yoon"],
+      "user_facing_modes_allowed": ["reference", "reference_based", "fixed_reference"],
+      "require_high_evidence": true,
+      "suppress_near_boundary": true,
+      "too_long_user_facing_allowed": false,
+      "default_user_facing_enabled": false,
+      "weak_reference_hint_allowed": false,
+      "description": "Limited candidate profile: may show one too-short long-vowel or moraic-nasal hint only when explicitly enabled.",
+      "limitations": [
+        "limited_candidate is not full rollout",
+        "counterfactual is not human validation",
+        "JANON has no teacher/native listener rating"
+      ]
+    }
+  }
+}

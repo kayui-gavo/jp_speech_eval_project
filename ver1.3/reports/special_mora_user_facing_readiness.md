@@ -6,6 +6,7 @@ This report recommends rollout state only. limited_candidate does not mean full 
 - false_alarm_v1: 0.0859
 - false_alarm_v2: 0.0342
 - sensitivity summary: {'detection_rate_25': 0.8376, 'detection_rate_40': 0.5812, 'detection_rate_60': 0.2479, 'detection_rate_80': 0.1111}
+- requirements before actual rollout: profile=v2_limited_candidate, explicit flag enabled, strong_reference only, too_short only, near-boundary suppressed, manual inspection recommended
 - allowed modes if future enabled: fixed-reference strong target only; weak-reference remains mild candidate only
 - recommended wording: short, non-accusatory too-short suggestion
 
@@ -14,6 +15,7 @@ This report recommends rollout state only. limited_candidate does not mean full 
 - false_alarm_v1: 0.12
 - false_alarm_v2: 0.0455
 - sensitivity summary: {'detection_rate_25': 0.9318, 'detection_rate_40': 0.5909, 'detection_rate_60': 0.2727, 'detection_rate_80': 0.1364}
+- requirements before actual rollout: profile=v2_limited_candidate, explicit flag enabled, strong_reference only, too_short only, near-boundary suppressed, manual inspection recommended
 - allowed modes if future enabled: fixed-reference strong target only; weak-reference remains mild candidate only
 - recommended wording: short, non-accusatory too-short suggestion
 
@@ -22,6 +24,7 @@ This report recommends rollout state only. limited_candidate does not mean full 
 - false_alarm_v1: 0.0
 - false_alarm_v2: 0.0
 - sensitivity summary: None
+- requirements before actual rollout: profile=v2_limited_candidate, explicit flag enabled, strong_reference only, too_short only, near-boundary suppressed, manual inspection recommended
 - allowed modes if future enabled: fixed-reference strong target only; weak-reference remains mild candidate only
 - recommended wording: short, non-accusatory too-short suggestion
 
@@ -30,6 +33,7 @@ This report recommends rollout state only. limited_candidate does not mean full 
 - false_alarm_v1: 0.0
 - false_alarm_v2: 0.0
 - sensitivity summary: None
+- requirements before actual rollout: profile=v2_limited_candidate, explicit flag enabled, strong_reference only, too_short only, near-boundary suppressed, manual inspection recommended
 - allowed modes if future enabled: fixed-reference strong target only; weak-reference remains mild candidate only
 - recommended wording: short, non-accusatory too-short suggestion
 

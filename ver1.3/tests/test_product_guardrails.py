@@ -13,6 +13,7 @@ from jp_speech_eval.special_mora_scorer import (
     score_special_mora_timing,
     special_mora_score_from_decisions,
 )
+from jp_speech_eval.special_mora_profiles import load_threshold_profile
 
 
 def _result(**overrides):
@@ -82,10 +83,10 @@ class ProductGuardrailsTest(unittest.TestCase):
             {"mora": "サ", "start_sec": 1.23, "end_sec": 1.43},
             {"mora": "イ", "start_sec": 1.43, "end_sec": 1.63},
         ])
-        rendered = render_user_facing_result(result, enable_user_facing_calibrated_special_mora=True)
+        rendered = render_user_facing_result(result, special_mora_threshold_profile="v1_debug", enable_user_facing_calibrated_special_mora=True)
         self.assertIsNone(rendered["focus_feedback"])
         reasons = {item["suppression_reason"] for item in rendered["debug"]["special_mora_decisions"]}
-        self.assertIn("legacy_threshold_metadata", reasons)
+        self.assertTrue({"legacy_threshold_metadata", "debug_only_by_profile"}.intersection(reasons))
 
     def test_auto_pyopenjtalk_blocks_pitch_feedback(self) -> None:
         result = _result(details={"pitch_target_source": "auto_pyopenjtalk", "verified_level": "auto_pyopenjtalk"})
@@ -164,9 +165,9 @@ class ProductGuardrailsTest(unittest.TestCase):
         decisions = decide_special_mora_runtime(result, enable_user_facing=True)
         by_type = {item.type: item for item in decisions}
         self.assertFalse(by_type["sokuon"].user_feedback_allowed)
-        self.assertEqual(by_type["sokuon"].suppression_reason, "insufficient_native_evidence")
+        self.assertEqual(by_type["sokuon"].suppression_reason, "blocked_by_profile")
         self.assertFalse(by_type["yoon"].user_feedback_allowed)
-        self.assertEqual(by_type["yoon"].suppression_reason, "debug_only_threshold")
+        self.assertEqual(by_type["yoon"].suppression_reason, "debug_only_by_profile")
 
     def test_special_mora_score_unavailable_is_not_zero(self) -> None:
         result = _result(moras=["バ", "グ"], mora_table=[{"start_sec": 0.0, "end_sec": 0.2}, {"start_sec": 0.2, "end_sec": 0.4}])
@@ -207,7 +208,7 @@ class ProductGuardrailsTest(unittest.TestCase):
                 {"mora": "サ", "start_sec": 1.1, "end_sec": 1.2},
                 {"mora": "イ", "start_sec": 1.2, "end_sec": 1.3},
             ])
-            decisions = decide_special_mora_runtime(too_long, threshold_path=path, enable_user_facing=True)
+            decisions = decide_special_mora_runtime(too_long, threshold_path=path, threshold_profile="v2_limited_candidate", mode_name="reference_based", enable_user_facing=True)
             long_vowel = next(item for item in decisions if item.type == "long_vowel")
             self.assertEqual(long_vowel.decision, "too_long")
             self.assertFalse(long_vowel.user_feedback_allowed)
@@ -224,7 +225,7 @@ class ProductGuardrailsTest(unittest.TestCase):
                 {"mora": "サ", "start_sec": 1.245, "end_sec": 1.445},
                 {"mora": "イ", "start_sec": 1.445, "end_sec": 1.645},
             ])
-            near_decision = next(item for item in decide_special_mora_runtime(near, threshold_path=path, enable_user_facing=True) if item.type == "long_vowel")
+            near_decision = next(item for item in decide_special_mora_runtime(near, threshold_path=path, threshold_profile="v2_limited_candidate", mode_name="reference_based", enable_user_facing=True) if item.type == "long_vowel")
             self.assertTrue(near_decision.near_boundary)
             self.assertFalse(near_decision.user_feedback_allowed)
             self.assertEqual(near_decision.suppression_reason, "near_boundary_debug_only")
@@ -234,6 +235,72 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertEqual(decide_special_mora_feature_value(threshold, 0.4), "too_short")
         from jp_speech_eval.special_mora_scorer import decide_special_mora_user_feature_value
         self.assertEqual(decide_special_mora_user_feature_value(threshold, 0.4), "ok")
+
+    def test_missing_threshold_profile_falls_back_to_default_safe(self) -> None:
+        profile = load_threshold_profile("missing_profile_name")
+        self.assertEqual(profile.profile_name, "default_safe")
+        self.assertIn("unknown_profile", profile.fallback_reason)
+
+    def test_default_safe_and_shadow_never_emit_user_facing(self) -> None:
+        result = _result()
+        for profile in ("default_safe", "v2_shadow"):
+            rendered = render_user_facing_result(
+                result,
+                special_mora_threshold_profile=profile,
+                enable_user_facing_calibrated_special_mora=True,
+            )
+            self.assertIsNone(rendered["focus_feedback"])
+            self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
+
+    def test_v2_limited_candidate_requires_flag_and_can_emit_allowed_types(self) -> None:
+        result = _result(mora_table=[
+            {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
+            {"mora": "ー", "start_sec": 0.2, "end_sec": 0.235},
+            {"mora": "メ", "start_sec": 0.235, "end_sec": 0.435},
+            {"mora": "ン", "start_sec": 0.435, "end_sec": 0.635},
+            {"mora": "ヲ", "start_sec": 0.635, "end_sec": 0.835},
+            {"mora": "ク", "start_sec": 0.835, "end_sec": 1.035},
+            {"mora": "ダ", "start_sec": 1.035, "end_sec": 1.235},
+            {"mora": "サ", "start_sec": 1.235, "end_sec": 1.435},
+            {"mora": "イ", "start_sec": 1.435, "end_sec": 1.635},
+        ])
+        flag_off = render_user_facing_result(result, special_mora_threshold_profile="v2_limited_candidate")
+        self.assertFalse(any(item["user_feedback_allowed"] for item in flag_off["debug"]["special_mora_decisions"]))
+        flag_on = render_user_facing_result(
+            result,
+            special_mora_threshold_profile="v2_limited_candidate",
+            enable_user_facing_calibrated_special_mora=True,
+        )
+        self.assertEqual(flag_on["focus_feedback"]["category"], "special_mora")
+        self.assertEqual(flag_on["focus_feedback"]["type"], "long_vowel")
+
+    def test_kanade_demo_cannot_enable_special_mora_correction(self) -> None:
+        result = _result(details={"mode": "kanade_asr_voice_reference", "demo_only": True})
+        rendered = render_user_facing_result(
+            result,
+            mode="kanade_asr_voice_reference",
+            special_mora_threshold_profile="v2_limited_candidate",
+            enable_user_facing_calibrated_special_mora=True,
+        )
+        self.assertEqual(rendered["focus_feedback"]["category"], "demo")
+        self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
+
+    def test_weak_reference_hint_disabled_by_default(self) -> None:
+        result = _result(details={"weak_reference": True})
+        rendered = render_user_facing_result(
+            result,
+            mode="asr_confirmed_weak_reference",
+            special_mora_threshold_profile="v2_limited_candidate",
+            enable_user_facing_calibrated_special_mora=True,
+        )
+        self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
+
+    def test_evidence_card_fields_are_present(self) -> None:
+        rendered = render_user_facing_result(_result(), special_mora_threshold_profile="v2_limited_candidate")
+        cards = rendered["debug"]["special_mora_evidence_cards"]
+        self.assertTrue(cards)
+        for key in ("profile_name", "feature_value", "debug_low", "user_low", "suppression_reason"):
+            self.assertIn(key, cards[0])
 
     def test_counterfactual_decision_uses_runtime_threshold_function(self) -> None:
         threshold = {"status": "active", "low_ratio": 0.5, "high_ratio": 1.5}
