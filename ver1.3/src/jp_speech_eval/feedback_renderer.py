@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Mapping, Optional
 
 from .reliability_gate import evaluate_reliability_gate
@@ -10,21 +9,12 @@ from .special_mora_scorer import (
     select_special_mora_feedback_candidate,
     special_mora_score_from_decisions,
 )
-
-
-@dataclass(frozen=True)
-class UserFacingResult:
-    mode: str
-    reliability: str
-    practice_check_result: str
-    display_score: Optional[int]
-    user_messages: List[str]
-    focus_feedback: Optional[Dict[str, Any]]
-    display_total_score: bool
-    debug: Dict[str, Any]
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+from .user_facing_policy import (
+    PracticeScore,
+    UserFacingResult,
+    practice_score_explanation,
+    practice_score_label,
+)
 
 
 def _debug_payload(
@@ -107,7 +97,6 @@ def _display_score(
 ) -> Optional[int]:
     if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
         return None
-    raw_total = _as_score(result.get("total_score"))
     pronunciation = _as_score(result.get("pronunciation_score"))
     fluency = _as_score(result.get("fluency_score"))
     prosody = _as_score(result.get("prosody_score"))
@@ -120,7 +109,6 @@ def _display_score(
     scores = {
         "content_score": content_score,
         "mora_clarity_score": pronunciation,
-        "special_mora_score": special_mora_score,
         "rhythm_timing_score": fluency_details.get("rhythm_timing_score", fluency),
         "phrase_intonation_score": prosody_details.get("final_intonation_score"),
         "delivery_fluency_score": fluency_details.get("delivery_fluency_score", fluency),
@@ -131,39 +119,79 @@ def _display_score(
         display = _weighted_available(scores, {
             "content_score": 0.25,
             "mora_clarity_score": 0.30,
-            "special_mora_score": 0.25,
             "rhythm_timing_score": 0.15,
-            "delivery_fluency_score": 0.05,
+            "delivery_fluency_score": 0.30,
         })
         if display is None:
             display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
         if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
             display = max(display, 85.0)
-        return int(round(max(raw_total, display)))
+        return int(round(display))
     if not gate.allow_pitch_feedback:
         display = _weighted_available(scores, {
             "content_score": 0.25,
             "mora_clarity_score": 0.30,
-            "special_mora_score": 0.20,
-            "rhythm_timing_score": 0.15,
-            "delivery_fluency_score": 0.10,
+            "rhythm_timing_score": 0.20,
+            "delivery_fluency_score": 0.25,
         })
         if display is None:
             display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
         if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
             display = max(display, 85.0)
-        return int(round(max(raw_total, display)))
+        return int(round(display))
     display = _weighted_available(scores, {
         "content_score": 0.25,
         "mora_clarity_score": 0.25,
-        "special_mora_score": 0.20,
-        "rhythm_timing_score": 0.15,
+        "rhythm_timing_score": 0.20,
         "phrase_intonation_score": 0.10,
-        "delivery_fluency_score": 0.05,
+        "delivery_fluency_score": 0.20,
     })
     if display is not None:
-        return int(round(max(raw_total, display)))
-    return int(round(raw_total))
+        return int(round(display))
+    return int(round(0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody))
+
+
+def _mode_notice(policy: ScoringPolicy, gate: Any) -> str:
+    if policy.demo_only and "kanade" in policy.mode:
+        return "Kanade は理想参考音の再生用です。Kanade 音声との類似度は採点していません。"
+    if policy.weak_reference:
+        return "確認済みテキストから作った弱い reference による練習用フィードバックです。"
+    if gate.allow_pitch_feedback:
+        return "fixed-reference mode: verified target に基づく練習確認です。"
+    return "fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。"
+
+
+def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -> str:
+    if gate.practice_check_result == "retry":
+        return "retry"
+    if policy.demo_only:
+        return "debug_only"
+    if policy.weak_reference and "confirmed" not in policy.mode:
+        return "debug_only"
+    if gate.reliability == "low":
+        return "debug_only"
+    if focus and focus.get("category") not in {"demo", "weak_reference"}:
+        return "practice_suggestion"
+    return "pass"
+
+
+def _summary_text(status: str, messages: List[str]) -> str:
+    if status == "retry":
+        return messages[0] if messages else "録音を確認して，もう一度試してください。"
+    if status == "debug_only":
+        return "今回は練習用の参考結果として表示しています。厳密な発音判定ではありません。"
+    if status == "practice_suggestion":
+        return "全体としては確認できています。ひとつだけ練習ポイントがあります。"
+    return "今回の練習は大きな問題なく確認できました。"
+
+
+def _suppressed_reasons(gate: Any, decision_dicts: List[Mapping[str, Any]]) -> List[str]:
+    reasons = list(gate.reasons or [])
+    for item in decision_dicts:
+        reason = item.get("suppression_reason")
+        if reason and reason not in reasons:
+            reasons.append(str(reason))
+    return reasons
 
 
 def _is_retry_message(message: str) -> bool:
@@ -240,12 +268,36 @@ def render_user_facing_result(
         practice = "needs_attention"
     else:
         practice = gate.practice_check_result
+    display_score = _display_score(result, policy, gate, special_mora_score=special_mora_score)
+    status = _status(policy, gate, focus)
+    mode_notice = _mode_notice(policy, gate)
+    primary = None
+    suggestion_type = "none"
+    if focus and focus.get("category") not in {"demo", "weak_reference"}:
+        primary = str(focus.get("message") or "")
+        suggestion_type = str(focus.get("category") or "none")
+    elif len(messages) > 1 and status == "practice_suggestion":
+        primary = messages[1]
+    practice_score = PracticeScore(
+        value=display_score if status != "debug_only" else None,
+        label=practice_score_label(display_score if status != "debug_only" else None, status),
+        explanation=practice_score_explanation(mode_notice),
+    )
 
     return UserFacingResult(
         mode=policy.mode,
+        status=status,
         reliability=gate.reliability,
+        confidence=gate.reliability,
         practice_check_result=practice,
-        display_score=_display_score(result, policy, gate, special_mora_score=special_mora_score),
+        practice_score=practice_score,
+        summary_text=_summary_text(status, messages),
+        primary_suggestion_text=primary,
+        suggestion_type=suggestion_type,
+        mode_notice=mode_notice,
+        debug_available=True,
+        suppressed_reasons=_suppressed_reasons(gate, decision_dicts),
+        display_score=display_score,
         user_messages=messages[:2],
         focus_feedback=focus,
         display_total_score=False,

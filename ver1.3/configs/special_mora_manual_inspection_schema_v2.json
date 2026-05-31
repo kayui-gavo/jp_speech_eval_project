@@ -1,0 +1,43 @@
+{
+  "schema_version": "special_mora_manual_inspection_v2",
+  "purpose": "Separate audible special-mora variation from true learner-facing pronunciation issues.",
+  "item_metadata": [
+    "item_id",
+    "source",
+    "dataset",
+    "speaker_id",
+    "utterance_id",
+    "transcript",
+    "special_mora_type",
+    "surface_mora",
+    "decision",
+    "feature_value",
+    "near_boundary",
+    "severity_from_system",
+    "evidence_confidence",
+    "feedback_candidate_text",
+    "audio_path"
+  ],
+  "human_annotation": {
+    "intelligibility": ["clear", "mostly_clear", "hard_to_understand", "unsure"],
+    "naturalness": ["natural", "slightly_unnatural", "unnatural", "unsure"],
+    "communication_impact": ["none", "minor", "clear", "severe", "unsure"],
+    "variation_type": ["natural_variation", "acceptable_variation", "possible_issue", "likely_error", "alignment_uncertain", "unsure"],
+    "audible_variation": ["yes", "no", "unsure"],
+    "should_feedback": ["yes", "no", "unsure"],
+    "feedback_strength": ["none", "gentle_tip", "practice_focus", "correction"],
+    "wording_ok": ["yes", "no", "unsure"],
+    "alignment_issue": ["yes", "no", "unsure"],
+    "audio_quality_issue": ["yes", "no", "unsure"],
+    "comment": "free_text"
+  },
+  "guidelines": [
+    "Audible variation is not the same as a pronunciation error.",
+    "Natural or acceptable variation should not reduce practice_score.",
+    "communication_impact none/minor should not create strong user-facing correction.",
+    "Only clear/severe impact with should_feedback=yes can become a user-facing candidate.",
+    "For the C-end product, feedback_strength=correction is not used yet; use gentle_tip or practice_focus at most.",
+    "near_boundary and mild variation are accepted by default.",
+    "too_long is debug-only by default."
+  ]
+}

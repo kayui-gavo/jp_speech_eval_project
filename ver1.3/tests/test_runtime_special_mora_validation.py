@@ -11,7 +11,12 @@ from scripts.validate_runtime_special_mora_shadow import run
 from scripts.analyze_special_mora_false_alarms import run as run_false_alarm_analysis
 from scripts.validate_runtime_special_mora_profile import run as run_profile_validation
 from scripts.build_special_mora_manual_inspection_pack import run as run_manual_pack
-from scripts.build_special_mora_manual_review_viewer import build_annotation_template, build_review_viewer
+from scripts.build_special_mora_manual_review_viewer import (
+    build_annotation_template,
+    build_annotation_template_v2,
+    build_review_viewer,
+    write_guideline_v2,
+)
 from scripts.summarize_special_mora_manual_annotations import summarize, write_outputs
 from scripts.evaluate_special_mora_rollout_gate import evaluate_gate
 
@@ -30,6 +35,14 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
 
 
 class RuntimeSpecialMoraValidationTest(unittest.TestCase):
+    def test_manual_inspection_schema_v2_has_required_fields(self) -> None:
+        schema_path = Path(__file__).resolve().parents[1] / "configs" / "special_mora_manual_inspection_schema_v2.json"
+        data = json.loads(schema_path.read_text(encoding="utf-8"))
+        self.assertEqual(data["schema_version"], "special_mora_manual_inspection_v2")
+        annotations = data["human_annotation"]
+        for field in ("audible_variation", "variation_type", "communication_impact", "should_feedback", "feedback_strength"):
+            self.assertIn(field, annotations)
+
     def test_validation_outputs_reports_and_keeps_sokuon_yoon_blocked(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -189,6 +202,14 @@ class RuntimeSpecialMoraValidationTest(unittest.TestCase):
             self.assertFalse(build_annotation_template(items, template))
             self.assertEqual(template.read_text(encoding="utf-8"), before)
             self.assertTrue(build_annotation_template(items, template, overwrite=True))
+            template_v2 = root / "annotations_v2_template.csv"
+            guideline_v2 = root / "guideline_v2.md"
+            self.assertTrue(build_annotation_template_v2(items, template_v2))
+            write_guideline_v2(guideline_v2)
+            v2_text = template_v2.read_text(encoding="utf-8")
+            self.assertIn("audible_variation", v2_text)
+            self.assertIn("communication_impact", v2_text)
+            self.assertIn("听得出变化，不等于发音错误", guideline_v2.read_text(encoding="utf-8"))
             html = root / "viewer.html"
             self.assertEqual(build_review_viewer(items, html), 1)
             html_text = html.read_text(encoding="utf-8")

@@ -22,6 +22,20 @@ ANNOTATION_FIELDS = [
     "comment",
 ]
 
+ANNOTATION_FIELDS_V2 = [
+    "intelligibility",
+    "naturalness",
+    "communication_impact",
+    "variation_type",
+    "audible_variation",
+    "should_feedback",
+    "feedback_strength",
+    "wording_ok",
+    "alignment_issue",
+    "audio_quality_issue",
+    "comment",
+]
+
 
 def _read_csv(path: Path) -> List[Dict[str, str]]:
     if not path.exists():
@@ -46,6 +60,22 @@ def _write_csv(path: Path, rows: List[Dict[str, str]]) -> None:
         writer.writerows([{**row, **{k: row.get(k, "") for k in ANNOTATION_FIELDS}} for row in rows])
 
 
+def _write_csv_with_fields(path: Path, rows: List[Dict[str, str]], annotation_fields: List[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields: List[str] = []
+    for row in rows:
+        for key in row:
+            if key not in fields:
+                fields.append(key)
+    for field in annotation_fields:
+        if field not in fields:
+            fields.append(field)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows([{**row, **{k: row.get(k, "") for k in annotation_fields}} for row in rows])
+
+
 def build_annotation_template(items_csv: Path, output_csv: Path, *, overwrite: bool = False) -> bool:
     """Create a blank annotation CSV.
 
@@ -56,6 +86,58 @@ def build_annotation_template(items_csv: Path, output_csv: Path, *, overwrite: b
         return False
     _write_csv(output_csv, _read_csv(items_csv))
     return True
+
+
+def build_annotation_template_v2(items_csv: Path, output_csv: Path, *, overwrite: bool = False) -> bool:
+    """Create a v2 annotation CSV that separates variation from true errors."""
+
+    if output_csv.exists() and not overwrite:
+        return False
+    rows: List[Dict[str, str]] = []
+    for row in _read_csv(items_csv):
+        rows.append({
+            **row,
+            "severity_from_system": row.get("severity_from_system", ""),
+            "feedback_candidate_text": row.get("feedback_candidate_text", ""),
+        })
+    _write_csv_with_fields(output_csv, rows, ANNOTATION_FIELDS_V2)
+    return True
+
+
+def write_guideline_v2(path: Path) -> None:
+    lines = [
+        "# 特殊拍人工复核指南 v2",
+        "",
+        "目标：区分“听得出长短变化”和“真的应该给学习者反馈的问题”。",
+        "",
+        "## 核心原则",
+        "- 听得出变化，不等于发音错误。",
+        "- 母语者语流中的长音、拨音会自然伸缩。",
+        "- near-boundary 和 mild variation 默认通过，不扣分，不强提示。",
+        "- too_long 默认 debug-only，不进入用户端纠错。",
+        "- JANON 只看学习者趋势，不当 ground truth。",
+        "- counterfactual 只测规则敏感度，不是真人验证。",
+        "",
+        "## 字段怎么填",
+        "- intelligibility: 是否听得懂。clear / mostly_clear / hard_to_understand / unsure。",
+        "- naturalness: 听起来是否自然。natural / slightly_unnatural / unnatural / unsure。",
+        "- communication_impact: 是否影响交流。none / minor / clear / severe / unsure。",
+        "- variation_type: natural_variation / acceptable_variation / possible_issue / likely_error / alignment_uncertain / unsure。",
+        "- audible_variation: 是否听得出长短变化。yes / no / unsure。",
+        "- should_feedback: 是否值得给用户提示。yes / no / unsure。",
+        "- feedback_strength: none / gentle_tip / practice_focus / correction。",
+        "- wording_ok: 当前候选文案是否可以接受。",
+        "- alignment_issue: 对齐是否疑似有问题。",
+        "- audio_quality_issue: 原音质量是否影响判断。",
+        "",
+        "## 上线规则",
+        "- natural_variation / acceptable_variation 不应扣分。",
+        "- communication_impact none/minor 不应强反馈。",
+        "- 只有 clear/severe + should_feedback=yes 才可能进入用户端提示候选。",
+        "- C 端当前最多使用 gentle_tip / practice_focus，不使用 correction。",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _source_label(source: str) -> str:
@@ -234,13 +316,25 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build special mora manual review template and static HTML viewer")
     parser.add_argument("--items-csv", type=Path, default=ROOT / "results" / "runtime_special_mora_validation" / "manual_inspection_items.csv")
     parser.add_argument("--annotation-template", type=Path, default=ROOT / "results" / "runtime_special_mora_validation" / "manual_inspection_annotations_template.csv")
+    parser.add_argument("--annotation-v2-template", type=Path, default=ROOT / "results" / "runtime_special_mora_validation" / "manual_inspection_annotations_v2_template.csv")
+    parser.add_argument("--guideline-v2", type=Path, default=ROOT / "reports" / "manual_inspection_guideline_v2.md")
     parser.add_argument("--output-html", type=Path, default=ROOT / "reports" / "special_mora_manual_review_viewer.html")
     parser.add_argument("--refresh-template", action="store_true", help="Overwrite the blank annotation template from current items.")
     parser.add_argument("--no-copy-audio-assets", action="store_true", help="Do not copy review audio next to the HTML.")
     args = parser.parse_args()
     created = build_annotation_template(args.items_csv, args.annotation_template, overwrite=args.refresh_template)
+    created_v2 = build_annotation_template_v2(args.items_csv, args.annotation_v2_template, overwrite=args.refresh_template)
+    write_guideline_v2(args.guideline_v2)
     count = build_review_viewer(args.items_csv, args.output_html, copy_audio_assets=not args.no_copy_audio_assets)
-    print({"items": count, "template_created": created, "template": str(args.annotation_template), "html": str(args.output_html)})
+    print({
+        "items": count,
+        "template_created": created,
+        "template": str(args.annotation_template),
+        "template_v2_created": created_v2,
+        "template_v2": str(args.annotation_v2_template),
+        "guideline_v2": str(args.guideline_v2),
+        "html": str(args.output_html),
+    })
 
 
 if __name__ == "__main__":

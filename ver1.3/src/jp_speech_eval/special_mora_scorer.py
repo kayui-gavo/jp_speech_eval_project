@@ -247,16 +247,16 @@ def _feature_value(special_type: str, duration: float, avg: float, prev_duration
 
 
 def _candidate_text(mora: str, special_type: str, decision: str, weak_reference: bool) -> str:
-    if decision not in {"too_short", "too_long"}:
+    if decision != "too_short":
         return ""
     if special_type == "long_vowel":
-        core = f"「{mora}」をもう少し伸ばすと自然です。" if decision == "too_short" else f"「{mora}」が少し長く聞こえます。"
+        core = f"全体としては問題ありません。より自然にするなら，「{mora}」を少し長めに意識するとよいです。"
     elif special_type == "moraic_nasal":
-        core = f"「{mora}」を少し残して言うと聞き取りやすくなります。" if decision == "too_short" else f"「{mora}」が少し長く聞こえます。"
+        core = f"全体としては問題ありません。より聞き取りやすくするなら，「{mora}」を少し残して言うとよいです。"
     else:
         return ""
     if weak_reference:
-        return "もしその表現を言いたい場合は，" + core
+        return "これは練習のための軽いアドバイスです。" + core
     return core
 
 

@@ -364,6 +364,8 @@ class ProductGuardrailsTest(unittest.TestCase):
         )
         rendered = render_user_facing_result(result)
         self.assertGreaterEqual(rendered["display_score"], 88)
+        self.assertEqual(rendered["practice_score"]["value"], rendered["display_score"])
+        self.assertIn("練習用の目安", rendered["practice_score"]["explanation"])
 
     def test_weak_reference_downweights_prosody_proxy(self) -> None:
         result = _result(
@@ -382,6 +384,8 @@ class ProductGuardrailsTest(unittest.TestCase):
         rendered = render_user_facing_result(result, mode="asr_pseudo_reference")
         self.assertGreaterEqual(rendered["display_score"], 85)
         self.assertTrue(rendered["debug"]["weak_reference"])
+        self.assertEqual(rendered["status"], "debug_only")
+        self.assertIsNone(rendered["practice_score"]["value"])
 
     def test_missing_split_fluency_is_not_treated_as_zero(self) -> None:
         result = _result(
@@ -395,6 +399,51 @@ class ProductGuardrailsTest(unittest.TestCase):
         )
         rendered = render_user_facing_result(result)
         self.assertGreaterEqual(rendered["display_score"], 80)
+
+    def test_special_mora_score_does_not_enter_practice_score(self) -> None:
+        base = _result(
+            total_score=10,
+            pronunciation_score=90,
+            fluency_score=90,
+            prosody_score=10,
+            details={
+                "fluency": {"rhythm_timing_score": 90, "delivery_fluency_score": 90},
+                "pronunciation": {"mora_duration_cv": 0.08, "special_mora_penalty": 0},
+            },
+        )
+        rendered = render_user_facing_result(base)
+        self.assertGreaterEqual(rendered["practice_score"]["value"], 85)
+        self.assertNotIn("ネイティブ", rendered["practice_score"]["explanation"])
+
+    def test_user_facing_result_has_safe_contract_fields(self) -> None:
+        rendered = render_user_facing_result(_result())
+        for key in (
+            "status",
+            "practice_score",
+            "confidence",
+            "summary_text",
+            "primary_suggestion_text",
+            "suggestion_type",
+            "mode_notice",
+            "debug_available",
+            "suppressed_reasons",
+        ):
+            self.assertIn(key, rendered)
+        self.assertFalse(rendered["display_total_score"])
+
+    def test_poor_recording_triggers_retry_status(self) -> None:
+        rendered = render_user_facing_result(_result(details={"recording_quality": {"score": 0.1}}))
+        self.assertEqual(rendered["status"], "retry")
+        self.assertEqual(rendered["practice_score"]["label"], "録音を確認")
+
+    def test_kanade_mode_is_debug_only_playback_notice(self) -> None:
+        rendered = render_user_facing_result(
+            _result(details={"mode": "kanade_asr_voice_reference", "demo_only": True}),
+            mode="kanade_asr_voice_reference",
+        )
+        self.assertEqual(rendered["status"], "debug_only")
+        self.assertIn("Kanade", rendered["mode_notice"])
+        self.assertIsNone(rendered["practice_score"]["value"])
 
 
 if __name__ == "__main__":
