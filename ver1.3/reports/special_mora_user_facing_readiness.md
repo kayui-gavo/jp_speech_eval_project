@@ -45,3 +45,17 @@ This report recommends rollout state only. limited_candidate does not mean full 
 - sokuon threshold insufficient
 - yoon duration threshold debug_only
 - limited_candidate does not mean full rollout
+
+## Rollout gate status
+- long_vowel: blocked_pending_manual_inspection
+- moraic_nasal: blocked_pending_manual_inspection
+- sokuon: blocked_insufficient_native_evidence
+- yoon: blocked_debug_only_duration_not_valid
+
+## Required manual checks before actual rollout
+- profile must be v2_limited_candidate
+- flag must be explicitly enabled
+- strong_reference only
+- feedback direction must be too_short only
+- near-boundary cases must be suppressed
+- manual inspection should annotate at least 10 items with >=80% should_allow_user_facing and <=10% false_alarm

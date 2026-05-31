@@ -11,6 +11,9 @@ from scripts.validate_runtime_special_mora_shadow import run
 from scripts.analyze_special_mora_false_alarms import run as run_false_alarm_analysis
 from scripts.validate_runtime_special_mora_profile import run as run_profile_validation
 from scripts.build_special_mora_manual_inspection_pack import run as run_manual_pack
+from scripts.build_special_mora_manual_review_viewer import build_annotation_template, build_review_viewer
+from scripts.summarize_special_mora_manual_annotations import summarize, write_outputs
+from scripts.evaluate_special_mora_rollout_gate import evaluate_gate
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
@@ -157,6 +160,66 @@ class RuntimeSpecialMoraValidationTest(unittest.TestCase):
             self.assertTrue((out / "manual.csv").exists())
             self.assertTrue((reports / "manual.md").exists())
             self.assertGreaterEqual(len(items), 1)
+
+    def test_manual_review_workflow_and_rollout_gate_block_without_annotations(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            items = root / "items.csv"
+            rows = [{
+                "item_id": "i1",
+                "source": "JVS_false_alarm",
+                "dataset": "jvs",
+                "speaker_id": "s",
+                "utterance_id": "u",
+                "audio_path": str(root / "missing.wav"),
+                "transcript": "ラーメン",
+                "special_mora_type": "long_vowel",
+                "surface_mora": "ー",
+                "decision": "too_short",
+                "feature_value": "0.2",
+                "threshold_user_low": "0.23",
+                "near_boundary": "False",
+                "evidence_confidence": "1.0",
+                "phone_sequence_for_mora": "a",
+            }]
+            _write_csv(items, rows)
+            template = root / "annotations_template.csv"
+            self.assertTrue(build_annotation_template(items, template))
+            before = template.read_text(encoding="utf-8")
+            self.assertFalse(build_annotation_template(items, template))
+            self.assertEqual(template.read_text(encoding="utf-8"), before)
+            html = root / "viewer.html"
+            self.assertEqual(build_review_viewer(items, html), 1)
+            self.assertIn("missing.wav", html.read_text(encoding="utf-8"))
+
+            missing_summary = summarize(root / "missing_annotations.csv")
+            self.assertEqual(missing_summary["total_annotated"], 0)
+            empty = root / "empty.csv"
+            empty.write_text("", encoding="utf-8")
+            self.assertEqual(summarize(empty)["total_annotated"], 0)
+            summary_csv = root / "summary.csv"
+            report = root / "summary.md"
+            write_outputs(missing_summary, summary_csv, report)
+            self.assertIn("no human annotations yet", report.read_text(encoding="utf-8"))
+
+            profile_csv = root / "profile.csv"
+            _write_csv(profile_csv, [{
+                "profile_name": "v2_limited_candidate",
+                "flag_enabled": "True",
+                "sokuon_yoon_leakage": "0",
+                "too_long_leakage": "0",
+                "near_boundary_leakage": "0",
+            }])
+            false_csv = root / "false.csv"
+            _write_csv(false_csv, [
+                {"special_mora_type": "long_vowel", "false_alarm_proxy_rate_all": "0.034"},
+                {"special_mora_type": "moraic_nasal", "false_alarm_proxy_rate_all": "0.045"},
+            ])
+            gate = evaluate_gate(profile_csv, false_csv, summary_csv)
+            self.assertEqual(gate["decisions"]["long_vowel"]["rollout_status"], "blocked_pending_manual_inspection")
+            self.assertEqual(gate["decisions"]["moraic_nasal"]["rollout_status"], "blocked_pending_manual_inspection")
+            self.assertEqual(gate["decisions"]["sokuon"]["rollout_status"], "blocked_insufficient_native_evidence")
+            self.assertEqual(gate["decisions"]["yoon"]["rollout_status"], "blocked_debug_only_duration_not_valid")
 
 
 if __name__ == "__main__":

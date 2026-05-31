@@ -1,0 +1,36 @@
+{
+  "schema_version": "special_mora_manual_inspection_v1",
+  "item_metadata": [
+    "item_id",
+    "source",
+    "dataset",
+    "speaker_id",
+    "utterance_id",
+    "transcript",
+    "special_mora_type",
+    "surface_mora",
+    "decision",
+    "feature_value",
+    "threshold_user_low",
+    "threshold_user_high",
+    "near_boundary",
+    "evidence_confidence",
+    "phone_sequence_for_mora",
+    "audio_path"
+  ],
+  "human_annotation": {
+    "seems_valid_feedback": ["yes", "no", "unsure"],
+    "false_alarm": ["yes", "no", "unsure"],
+    "alignment_issue": ["yes", "no", "unsure"],
+    "audio_quality_issue": ["yes", "no", "unsure"],
+    "wording_ok": ["yes", "no", "unsure"],
+    "should_allow_user_facing": ["yes", "no", "unsure"],
+    "severity": ["none", "mild", "clear", "severe"],
+    "comment": "free_text"
+  },
+  "notes": [
+    "Manual inspection is a developer/teacher-side check, not a full listener study.",
+    "Do not treat JANON rows as ground truth.",
+    "Do not promote limited_candidate to rollout without passing the rollout gate."
+  ]
+}
