@@ -25,6 +25,7 @@ def _with_failure(ev: AlignmentEvidence, *, method: str, warning: str, failure_r
         usable_for_pitch_feedback=False,
         warning_flags=[warning],
         failure_reason=failure_reason,
+        mapping_debug=ev.mapping_debug,
     )
 
 

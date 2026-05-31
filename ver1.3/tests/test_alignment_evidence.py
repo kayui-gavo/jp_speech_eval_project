@@ -63,6 +63,8 @@ item [1]:
         self.assertFalse(info["mapping_success"])
         self.assertIsInstance(segments, list)
         self.assertTrue(info["mapping_warning_flags"])
+        self.assertIn("expected_mora_sequence", info)
+        self.assertIn("observed_phone_sequence", info)
 
     def test_feature_extractor_returns_uncertain_for_unreliable_alignment(self) -> None:
         ev = build_alignment_evidence(

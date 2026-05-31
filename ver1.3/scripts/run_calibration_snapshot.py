@@ -26,6 +26,33 @@ from jp_speech_eval.text_frontend import build_text_info
 
 SPECIAL_TYPES = ("long_vowel", "sokuon", "moraic_nasal", "yoon")
 
+FEATURE_DEFINITIONS: Dict[str, Dict[str, str]] = {
+    "long_vowel": {
+        "feature_name": "long_vowel_ratio_to_avg_mora",
+        "feature_definition": "duration of the mora mapped to the long vowel mark / vowel-lengthening mora, measured from reliable phone-label-backed mora segment",
+        "denominator": "mean duration of mapped mora segments in the utterance; pauses are excluded by phone label parser, special mora are currently included",
+        "interpretation": "low means the lengthening mora is short relative to this utterance's mora timing; high means it may be over-held",
+    },
+    "sokuon": {
+        "feature_name": "closure_ratio_to_neighbor_mora",
+        "feature_definition": "duration of the sokuon mora segment mapped from phone labels; if labels lack explicit closure, this is a grouping proxy",
+        "denominator": "mean duration of previous and next mapped mora segments",
+        "interpretation": "tentative only until enough samples verify whether the label captures closure/geminate timing",
+    },
+    "moraic_nasal": {
+        "feature_name": "nasal_ratio_to_avg_mora",
+        "feature_definition": "duration of the moraic nasal mora segment, often mapped to /N/ or its allophonic label in JVS lab",
+        "denominator": "mean duration of mapped mora segments in the utterance; pauses excluded, special mora included",
+        "interpretation": "low can indicate a collapsed nasal or mapper under-segmentation; high can indicate over-held nasal",
+    },
+    "yoon": {
+        "feature_name": "yoon_mora_count_consistency",
+        "feature_definition": "whether a yoon surface mora is grouped as one mora with its phone cluster; duration is debug-only",
+        "denominator": "not a pure duration threshold; duration ratios are reported only for audit",
+        "interpretation": "yoon feedback should prioritize one-mora grouping/glide mapping, not too_short/too_long duration",
+    },
+}
+
 
 def _float(value: Any, default: float = 0.0) -> float:
     try:
@@ -463,21 +490,43 @@ def _special_mora_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
             alignment_method = str(inst.get("alignment_method") or "")
             alignment_unsafe = bool(inst.get("fallback_used")) or alignment_method in {"equal", "equal_fallback"} or alignment_method.endswith("fallback_equal")
             uncertain = alignment_unsafe or evidence_conf < 0.45 or not bool(inst.get("judgement_available"))
+            ratio_prev = inst.get("ratio_to_prev")
+            ratio_next = inst.get("ratio_to_next")
             out.append({
                 "dataset": row.get("dataset"),
                 "split": row.get("split"),
                 "speaker_id": row.get("speaker_id"),
                 "utterance_id": row.get("utterance_id"),
+                "audio_path": row.get("audio_path"),
+                "transcript": row.get("text"),
                 "text": row.get("text"),
                 "special_type": special_type,
+                "special_mora_type": special_type,
                 "mora": inst.get("mora"),
+                "surface_mora": inst.get("mora"),
                 "mora_index": inst.get("mora_index"),
+                "phone_sequence_for_mora": inst.get("phone_sequence_for_mora", ""),
+                "mora_start": inst.get("mora_start"),
+                "mora_end": inst.get("mora_end"),
+                "mora_duration": inst.get("duration_sec"),
+                "neighbor_prev_duration": inst.get("neighbor_prev_duration"),
+                "neighbor_next_duration": inst.get("neighbor_next_duration"),
+                "avg_mora_duration": inst.get("avg_mora_duration"),
+                "ratio_to_prev": ratio_prev,
+                "ratio_to_next": ratio_next,
+                "ratio_to_avg": inst.get("ratio_to_avg_mora"),
                 "length_bucket": inst.get("length_bucket"),
                 "speech_rate_mora_per_sec": inst.get("speech_rate_mora_per_sec"),
                 "alignment_fallback": bool(inst.get("fallback_used")),
                 "alignment_method": alignment_method,
+                "alignment_confidence": row.get("alignment_evidence_confidence"),
                 "alignment_unsafe_for_threshold": alignment_unsafe,
                 "evidence_confidence": evidence_conf,
+                "mapping_success": inst.get("mapping_success"),
+                "mapping_warning_flags": inst.get("mapping_warning_flags", ""),
+                "expected_mora_sequence": inst.get("expected_mora_sequence", ""),
+                "observed_phone_sequence": inst.get("observed_phone_sequence", ""),
+                "mora_grouping_rationale": inst.get("mora_grouping_rationale", ""),
                 "uncertain": uncertain,
                 "duration_sec": inst.get("duration_sec"),
                 "ratio_to_avg_mora": inst.get("ratio_to_avg_mora"),
@@ -538,10 +587,34 @@ def _build_special_thresholds(native_special_rows: Sequence[Dict[str, Any]], *, 
     }
     for row in _special_distribution(native_special_rows):
         special_type = str(row["special_type"])
+        definition = FEATURE_DEFINITIONS.get(special_type, {})
         count = int(row.get("count") or 0)
         reliable_count = int(row.get("reliable_count") or 0)
         sufficient = reliable_count >= min_coverage
+        values = [
+            _float(r.get("ratio_to_avg_mora"))
+            for r in native_special_rows
+            if r.get("special_type") == special_type
+            and not r.get("uncertain")
+            and not r.get("alignment_unsafe_for_threshold")
+            and r.get("ratio_to_avg_mora") not in {None, ""}
+        ]
+        warnings: List[str] = []
+        if reliable_count < min_coverage:
+            warnings.append("insufficient reliable alignment evidence")
+        if values and min(values) < 0.20:
+            warnings.append("min_ratio_extremely_low_check_mapping")
+        if row.get("p95") is not None and row.get("p05") is not None and _float(row.get("p95")) / max(_float(row.get("p05")), 1e-8) > 8.0:
+            warnings.append("wide_ratio_distribution_check_feature_definition")
+        if special_type == "yoon":
+            warnings.append("yoon_duration_threshold_debug_only_use_mora_count_consistency")
+        status = "active" if sufficient else "insufficient"
+        if special_type == "sokuon" and not sufficient:
+            status = "insufficient"
+        if special_type == "yoon":
+            status = "debug_only"
         thresholds["thresholds"][special_type] = {
+            "type": special_type,
             "coverage_count": count,
             "reliable_count": reliable_count,
             "sufficient_evidence": sufficient,
@@ -549,7 +622,12 @@ def _build_special_thresholds(native_special_rows: Sequence[Dict[str, Any]], *, 
             "alignment_backend": "reliable_alignment_only",
             "sample_count": reliable_count,
             "percentile_used": "P05/P95",
-            "warning": None if sufficient else "insufficient reliable alignment evidence",
+            "status": status,
+            "feature_name": definition.get("feature_name"),
+            "feature_definition": definition.get("feature_definition"),
+            "denominator": definition.get("denominator"),
+            "warning": "; ".join(warnings) if warnings else None,
+            "warnings": warnings,
             "low_ratio": row.get("p05") if sufficient else None,
             "high_ratio": row.get("p95") if sufficient else None,
             "conservative_low_ratio": row.get("p01") if sufficient else None,
@@ -581,6 +659,53 @@ def _janon_special_trends(janon_rows: Sequence[Dict[str, Any]], thresholds: Dict
             "uncertain_rate": round(sum(1 for r in rows if r.get("uncertain")) / len(rows), 4) if rows else None,
             "alignment_failure_rate": round(sum(1 for r in rows if r.get("alignment_fallback")) / len(rows), 4) if rows else None,
             "speaker_count": len({r.get("speaker_id") for r in rows if r.get("speaker_id")}),
+        })
+    return out
+
+
+def _apply_special_decisions(rows: Sequence[Dict[str, Any]], thresholds: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    threshold_map = thresholds.get("thresholds") or {}
+    for row in rows:
+        item = dict(row)
+        th = threshold_map.get(str(item.get("special_type"))) or {}
+        low = th.get("low_ratio")
+        high = th.get("high_ratio")
+        item["threshold_low"] = low
+        item["threshold_high"] = high
+        if item.get("uncertain") or th.get("status") in {"insufficient", "debug_only"} or low is None or high is None:
+            decision = "uncertain"
+        else:
+            ratio = _float(item.get("ratio_to_avg_mora"))
+            if ratio < _float(low):
+                decision = "too_short"
+            elif ratio > _float(high):
+                decision = "too_long"
+            else:
+                decision = "ok"
+        item["decision"] = decision
+        out.append(item)
+    return out
+
+
+def _sokuon_candidate_rows(items: Sequence[Dict[str, str]], evaluated_rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    evaluated = {str(row.get("utterance_id")): row for row in evaluated_rows}
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        types = _item_special_types(item.get("text", ""))
+        if "sokuon" not in types:
+            continue
+        row = evaluated.get(str(item.get("utterance_id")))
+        out.append({
+            "speaker_id": item.get("speaker_id"),
+            "utterance_id": item.get("utterance_id"),
+            "text": item.get("text"),
+            "audio_path": item.get("audio_path"),
+            "label_path": item.get("label_path"),
+            "evaluated": row is not None,
+            "alignment_method": row.get("alignment_evidence_method") if row else "",
+            "usable_for_special_mora_feedback": row.get("usable_for_special_mora_feedback") if row else "",
+            "failure_reason": row.get("alignment_evidence_failure_reason") if row else "not_selected_or_not_evaluated",
         })
     return out
 
@@ -770,7 +895,7 @@ def _write_special_mora_report(
     for special_type in SPECIAL_TYPES:
         th = threshold_map.get(special_type) or {}
         if th.get("sufficient_evidence"):
-            lines.append(f"- {special_type}: low={th.get('low_ratio')}, high={th.get('high_ratio')} (P05/P95 conservative guardrail)")
+            lines.append(f"- {special_type}: status={th.get('status')}, low={th.get('low_ratio')}, high={th.get('high_ratio')} (P05/P95 conservative guardrail)")
         else:
             lines.append(f"- {special_type}: insufficient reliable alignment evidence; keep default/evidence-gated behavior")
     lines.extend([
@@ -795,7 +920,7 @@ def _write_special_threshold_report(path: Path, thresholds: Dict[str, Any]) -> N
     for special_type, th in (thresholds.get("thresholds") or {}).items():
         lines.append(
             f"- {special_type}: coverage={th.get('coverage_count')}, reliable={th.get('reliable_count')}, sufficient={th.get('sufficient_evidence')}, "
-            f"low_ratio={th.get('low_ratio')}, high_ratio={th.get('high_ratio')}"
+            f"status={th.get('status')}, low_ratio={th.get('low_ratio')}, high_ratio={th.get('high_ratio')}"
         )
     lines.extend([
         "",
@@ -883,6 +1008,110 @@ def _write_special_alignment_report(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_feature_definition_report(path: Path, thresholds: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Special mora feature definition audit",
+        "",
+        "This report defines the acoustic proxy behind each special-mora feature before any user-facing threshold is trusted.",
+        "",
+    ]
+    threshold_map = thresholds.get("thresholds") or {}
+    for special_type in SPECIAL_TYPES:
+        definition = FEATURE_DEFINITIONS[special_type]
+        th = threshold_map.get(special_type) or {}
+        lines.extend([
+            f"## {special_type}",
+            f"- feature: {definition['feature_name']}",
+            f"- definition: {definition['feature_definition']}",
+            f"- denominator: {definition['denominator']}",
+            f"- interpretation: {definition['interpretation']}",
+            f"- threshold status: {th.get('status')}",
+            f"- low/high: {th.get('low_ratio')} / {th.get('high_ratio')}",
+            f"- warnings: {th.get('warning')}",
+            "",
+        ])
+    lines.extend([
+        "## Important notes",
+        "- Yoon is not primarily a duration problem; duration ratios are debug-only unless later validated.",
+        "- Sokuon requires enough real closure/geminate evidence; current low sample count keeps it insufficient.",
+        "- Average mora duration currently includes mapped special mora but excludes silence/pause phones removed by the label parser.",
+    ])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _near_threshold(rows: Sequence[Dict[str, Any]], key: str, n: int = 5) -> List[Dict[str, Any]]:
+    valid = [r for r in rows if r.get(key) not in {None, ""} and r.get("ratio_to_avg_mora") not in {None, ""}]
+    return sorted(valid, key=lambda r: abs(_float(r.get("ratio_to_avg_mora")) - _float(r.get(key))))[:n]
+
+
+def _format_example(row: Dict[str, Any]) -> str:
+    return (
+        f"  - {row.get('transcript')}: {row.get('special_type')} {row.get('surface_mora')} "
+        f"phones=[{row.get('phone_sequence_for_mora')}] ratio={row.get('ratio_to_avg_mora')} "
+        f"duration={row.get('mora_duration')} decision={row.get('decision')} warnings={row.get('mapping_warning_flags')}"
+    )
+
+
+def _write_outlier_report(path: Path, sample_rows: Sequence[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Special mora outlier examples",
+        "",
+        "Examples are selected from sample-level audit rows to make thresholds inspectable.",
+        "",
+    ]
+    for special_type in SPECIAL_TYPES:
+        rows = [r for r in sample_rows if r.get("special_type") == special_type and r.get("ratio_to_avg_mora") not in {None, ""}]
+        lines.append(f"## {special_type}")
+        if not rows:
+            lines.append("- no examples")
+            lines.append("")
+            continue
+        shortest = sorted(rows, key=lambda r: _float(r.get("ratio_to_avg_mora")))[:5]
+        longest = sorted(rows, key=lambda r: _float(r.get("ratio_to_avg_mora")), reverse=True)[:5]
+        warning_examples = [r for r in rows if r.get("mapping_warning_flags")][:5]
+        groups = [
+            ("shortest", shortest),
+            ("longest", longest),
+            ("near low threshold", _near_threshold(rows, "threshold_low")),
+            ("near high threshold", _near_threshold(rows, "threshold_high")),
+            ("mapping warning examples", warning_examples),
+        ]
+        for title, group in groups:
+            lines.append(f"- {title}:")
+            lines.extend(_format_example(row) for row in group)
+        lines.append("")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_sokuon_coverage_report(path: Path, candidate_rows: Sequence[Dict[str, Any]], reliable_count: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    searched = len(candidate_rows)
+    evaluated = sum(1 for row in candidate_rows if row.get("evaluated"))
+    failed = [row for row in candidate_rows if row.get("evaluated") and not row.get("usable_for_special_mora_feedback")]
+    lines = [
+        "# Sokuon coverage report",
+        "",
+        f"- searched candidate utterances: {searched}",
+        f"- evaluated candidate utterances: {evaluated}",
+        f"- reliable sokuon count: {reliable_count}",
+        "",
+        "## Failure examples",
+    ]
+    if failed:
+        lines.extend(f"- {row.get('utterance_id')}: {row.get('failure_reason')}" for row in failed[:10])
+    else:
+        lines.append("- no evaluated mapping failures in this run")
+    lines.extend([
+        "",
+        "## Interpretation",
+        "- If reliable sokuon count is below 30, keep sokuon thresholds insufficient.",
+        "- Increase `--jvs-speakers`, `--jvs-utterances-per-speaker`, or target a larger sokuon candidate pool.",
+    ])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def run(args: argparse.Namespace) -> Dict[str, Any]:
     out_dir = Path(args.out_dir)
     report_dir = Path(args.report_dir)
@@ -898,8 +1127,10 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         utterances_per_speaker=args.jvs_utterances_per_speaker,
         limit=args.jvs_limit if not args.focus_special_mora else None,
     ))
+    sokuon_candidate_source_items = list(jvs_source_items)
     janon_source_items = list(_janon_items(Path(args.janon_root), limit=args.janon_limit if not args.focus_special_mora else max(args.janon_limit, args.max_per_type * len(special_types) * 2)))
     if args.focus_special_mora:
+        sokuon_candidates = _sokuon_candidate_rows(jvs_source_items, [])
         jvs_source_items = _focus_special_items(
             jvs_source_items,
             types=special_types,
@@ -914,6 +1145,8 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             max_per_type=args.max_per_type,
             limit=args.janon_limit,
         )
+    else:
+        sokuon_candidates = _sokuon_candidate_rows(jvs_source_items, [])
 
     jvs_rows = [
         _evaluate_item(
@@ -945,8 +1178,12 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     janon_special_rows = _special_mora_rows(janon_rows)
     special_distribution = _special_distribution(jvs_special_rows)
     special_thresholds = _build_special_thresholds(jvs_special_rows, min_coverage=args.min_reliable_per_type)
+    jvs_special_rows = _apply_special_decisions(jvs_special_rows, special_thresholds)
+    janon_special_rows = _apply_special_decisions(janon_special_rows, special_thresholds)
+    sample_audit_rows = jvs_special_rows + janon_special_rows
     janon_special_trends = _janon_special_trends(janon_special_rows, special_thresholds)
     backend_rows = _alignment_backend_rows(jvs_rows + janon_rows)
+    sokuon_candidates = _sokuon_candidate_rows(sokuon_candidate_source_items, jvs_rows)
     jvs_summary = _summary(jvs_rows)
     janon_summary = _summary(janon_rows)
 
@@ -957,6 +1194,8 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         "jvs_feature_coverage": out_dir / "jvs_feature_coverage.csv",
         "special_mora_feature_coverage": out_dir / "special_mora_feature_coverage.csv",
         "special_mora_reliable_counts": out_dir / "special_mora_reliable_counts.csv",
+        "special_mora_sample_audit": out_dir / "special_mora_sample_audit.csv",
+        "sokuon_candidate_search": out_dir / "sokuon_candidate_search.csv",
         "alignment_backend_comparison": out_dir / "alignment_backend_comparison.csv",
         "jvs_distribution": out_dir / "jvs_score_distribution.csv",
         "jvs_percentiles": out_dir / "jvs_native_percentiles.json",
@@ -972,6 +1211,9 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         "special_mora_threshold_report": report_dir / "special_mora_threshold_update.md",
         "alignment_backend_report": report_dir / "alignment_backend_comparison.md",
         "special_mora_alignment_report": report_dir / "special_mora_alignment_calibration_report.md",
+        "feature_definition_report": report_dir / "special_mora_feature_definition_audit.md",
+        "outlier_report": report_dir / "special_mora_outlier_examples.md",
+        "sokuon_coverage_report": report_dir / "sokuon_coverage_report.md",
         "janon_report": report_dir / "janon_l2_trend_report.md",
         "janon_special_report": report_dir / "janon_special_mora_trend_report.md",
     }
@@ -981,6 +1223,8 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     _write_csv(paths["jvs_feature_coverage"], jvs_coverage)
     _write_csv(paths["special_mora_feature_coverage"], special_distribution)
     _write_csv(paths["special_mora_reliable_counts"], special_distribution)
+    _write_csv(paths["special_mora_sample_audit"], sample_audit_rows)
+    _write_csv(paths["sokuon_candidate_search"], sokuon_candidates)
     _write_csv(paths["alignment_backend_comparison"], backend_rows)
     _write_csv(paths["jvs_distribution"], jvs_dist)
     paths["jvs_percentiles"].write_text(json.dumps(jvs_percentiles, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -1006,6 +1250,10 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         native_distribution=special_distribution,
         thresholds=special_thresholds,
     )
+    _write_feature_definition_report(paths["feature_definition_report"], special_thresholds)
+    _write_outlier_report(paths["outlier_report"], sample_audit_rows)
+    sokuon_reliable = next((int(row.get("reliable_count") or 0) for row in special_distribution if row.get("special_type") == "sokuon"), 0)
+    _write_sokuon_coverage_report(paths["sokuon_coverage_report"], sokuon_candidates, sokuon_reliable)
     _write_janon_report(paths["janon_report"], janon_rows, janon_summary, jvs_dist)
     _write_janon_special_report(paths["janon_special_report"], janon_special_trends)
     return {

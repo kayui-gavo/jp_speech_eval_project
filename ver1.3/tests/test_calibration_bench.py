@@ -64,6 +64,43 @@ class CalibrationBenchTest(unittest.TestCase):
         self.assertIn("trend only", text)
         self.assertIn("do not prove scoring correctness", text)
 
+    def test_threshold_metadata_includes_feature_definition(self) -> None:
+        thresholds = snapshot._build_special_thresholds(
+            [{"special_type": "long_vowel", "ratio_to_avg_mora": 0.8, "uncertain": False, "alignment_unsafe_for_threshold": False}],
+            min_coverage=1,
+        )
+        entry = thresholds["thresholds"]["long_vowel"]
+        self.assertIn("feature_definition", entry)
+        self.assertIn("denominator", entry)
+
+    def test_yoon_threshold_is_debug_only_by_default(self) -> None:
+        rows = [
+            {"special_type": "yoon", "ratio_to_avg_mora": 1.0 + i * 0.01, "uncertain": False, "alignment_unsafe_for_threshold": False}
+            for i in range(35)
+        ]
+        thresholds = snapshot._build_special_thresholds(rows, min_coverage=30)
+        self.assertEqual(thresholds["thresholds"]["yoon"]["status"], "debug_only")
+
+    def test_threshold_updater_warns_on_suspicious_distribution(self) -> None:
+        rows = [
+            {"special_type": "long_vowel", "ratio_to_avg_mora": 0.01 if i == 0 else 1.0, "uncertain": False, "alignment_unsafe_for_threshold": False}
+            for i in range(35)
+        ]
+        thresholds = snapshot._build_special_thresholds(rows, min_coverage=30)
+        self.assertTrue(thresholds["thresholds"]["long_vowel"]["warnings"])
+
+    def test_apply_special_decisions_includes_evidence_confidence(self) -> None:
+        thresholds = snapshot._build_special_thresholds(
+            [{"special_type": "long_vowel", "ratio_to_avg_mora": 1.0, "uncertain": False, "alignment_unsafe_for_threshold": False}],
+            min_coverage=1,
+        )
+        rows = snapshot._apply_special_decisions(
+            [{"special_type": "long_vowel", "ratio_to_avg_mora": 1.0, "evidence_confidence": 0.9, "uncertain": False}],
+            thresholds,
+        )
+        self.assertEqual(rows[0]["decision"], "ok")
+        self.assertEqual(rows[0]["evidence_confidence"], 0.9)
+
 
 if __name__ == "__main__":
     unittest.main()

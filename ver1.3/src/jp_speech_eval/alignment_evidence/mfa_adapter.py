@@ -39,6 +39,7 @@ def evidence_from_textgrid(
         usable_for_pitch_feedback=usable,
         warning_flags=warnings,
         failure_reason=None if usable else "phone_to_mora_mapping_incomplete",
+        mapping_debug=mapping,
     )
 
 
@@ -67,6 +68,7 @@ def evidence_from_lab(
         usable_for_pitch_feedback=usable,
         warning_flags=warnings,
         failure_reason=None if usable else "lab_phone_to_mora_mapping_incomplete",
+        mapping_debug=mapping,
     )
 
 

@@ -43,6 +43,7 @@ class AlignmentEvidence:
     usable_for_pitch_feedback: bool = False
     warning_flags: List[str] = field(default_factory=list)
     failure_reason: Optional[str] = None
+    mapping_debug: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)

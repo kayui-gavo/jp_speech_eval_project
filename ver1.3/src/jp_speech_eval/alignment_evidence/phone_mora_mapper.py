@@ -52,6 +52,7 @@ def map_phones_to_moras(phone_segments: Sequence[PhoneSegment], moras: Sequence[
     segments: List[MoraSegment] = []
     ph_rows = classify_mora_sequence([str(m) for m in moras])
     expected = [_expected_phone_count(str(mora), canonical_special_type(ph_rows[idx].mora_type, ph_rows[idx].mora)) for idx, mora in enumerate(moras)]
+    original_expected = list(expected)
     diff = len(phone_segments) - sum(expected)
     idx = 0
     while diff > 0 and expected:
@@ -100,4 +101,18 @@ def map_phones_to_moras(phone_segments: Sequence[PhoneSegment], moras: Sequence[
         "unmapped_mora": [str(m) for m in moras[len(segments):]],
         "special_mora_mapping_success": len(mapped_special) == len(expected_special),
         "mapping_warning_flags": warnings,
+        "expected_mora_sequence": [str(m) for m in moras],
+        "expected_phone_count_by_mora_initial": original_expected,
+        "expected_phone_count_by_mora_adjusted": expected,
+        "observed_phone_sequence": [p.phone for p in phone_segments],
+        "mora_grouping_rationale": "sequential phone grouping using mora-type expected counts, with global length-difference adjustment",
+        "special_mora_mapping_rationale": [
+            {
+                "mora": seg.mora,
+                "special_type": seg.special_mora_type,
+                "phones": seg.phones,
+                "reason": "special mora inferred from pyopenjtalk mora classification; phones grouped sequentially",
+            }
+            for seg in mapped_special
+        ],
     }
