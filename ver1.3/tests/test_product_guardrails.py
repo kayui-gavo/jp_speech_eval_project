@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
+import json
+from pathlib import Path
 
 from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
 from jp_speech_eval.eval_modes import evaluate_mode
 from jp_speech_eval.feedback_renderer import render_user_facing_result
+from jp_speech_eval.user_facing_policy import load_user_facing_messages
 from jp_speech_eval.scoring_policy import policy_from_result
 from jp_speech_eval.special_mora_scorer import (
     decide_special_mora_feature_value,
@@ -442,8 +445,53 @@ class ProductGuardrailsTest(unittest.TestCase):
             mode="kanade_asr_voice_reference",
         )
         self.assertEqual(rendered["status"], "debug_only")
-        self.assertIn("Kanade", rendered["mode_notice"])
+        self.assertIn("声", rendered["mode_notice"])
         self.assertIsNone(rendered["practice_score"]["value"])
+
+    def test_user_facing_message_config_has_no_forbidden_wording(self) -> None:
+        messages = load_user_facing_messages()
+        forbidden = ("間違っています", "発音できていません", "ネイティブ度", "完全な発音正確度", "発音は不正確")
+        joined = "\n".join(messages.values())
+        for word in forbidden:
+            self.assertNotIn(word, joined)
+        self.assertEqual(messages["status.pass"], "全体としてよくできています。")
+
+    def test_demo_fixed_targets_are_present_and_pitch_policy_is_clear(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "demo_fixed_targets.json"
+        targets = json.loads(path.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(targets), 5)
+        by_id = {item["target_id"]: item for item in targets}
+        self.assertEqual(by_id["ramen_kudasai"]["verified_level"], "human_checked")
+        self.assertEqual(by_id["coffee_kudasai"]["verified_level"], "auto_pyopenjtalk")
+        self.assertTrue(by_id["coffee_kudasai"]["moras"])
+
+    def test_demo_smoke_test_script_generates_expected_rows(self) -> None:
+        from scripts.run_demo_flow_smoke_tests import run
+
+        rows = run()
+        self.assertEqual(len(rows), 11)
+        self.assertTrue(all(row["passed"] for row in rows))
+        kanade = next(row for row in rows if row["scenario"] == "kanade_excluded_from_scoring")
+        self.assertFalse(kanade["kanade_scoring_leakage"])
+
+    def test_too_long_never_user_facing(self) -> None:
+        result = _result(mora_table=[
+            {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.1},
+            {"mora": "ー", "start_sec": 0.1, "end_sec": 0.7},
+            {"mora": "メ", "start_sec": 0.7, "end_sec": 0.8},
+            {"mora": "ン", "start_sec": 0.8, "end_sec": 0.9},
+            {"mora": "ヲ", "start_sec": 0.9, "end_sec": 1.0},
+            {"mora": "ク", "start_sec": 1.0, "end_sec": 1.1},
+            {"mora": "ダ", "start_sec": 1.1, "end_sec": 1.2},
+            {"mora": "サ", "start_sec": 1.2, "end_sec": 1.3},
+            {"mora": "イ", "start_sec": 1.3, "end_sec": 1.4},
+        ])
+        rendered = render_user_facing_result(
+            result,
+            special_mora_threshold_profile="v2_limited_candidate",
+            enable_user_facing_calibrated_special_mora=True,
+        )
+        self.assertFalse(any(item["decision"] == "too_long" and item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
 
 
 if __name__ == "__main__":

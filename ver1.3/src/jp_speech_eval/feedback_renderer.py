@@ -14,6 +14,7 @@ from .user_facing_policy import (
     UserFacingResult,
     practice_score_explanation,
     practice_score_label,
+    user_message,
 )
 
 
@@ -153,12 +154,12 @@ def _display_score(
 
 def _mode_notice(policy: ScoringPolicy, gate: Any) -> str:
     if policy.demo_only and "kanade" in policy.mode:
-        return "Kanade は理想参考音の再生用です。Kanade 音声との類似度は採点していません。"
+        return user_message("notice.kanade")
     if policy.weak_reference:
-        return "確認済みテキストから作った弱い reference による練習用フィードバックです。"
+        return user_message("notice.weak_reference")
     if gate.allow_pitch_feedback:
-        return "fixed-reference mode: verified target に基づく練習確認です。"
-    return "fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。"
+        return user_message("notice.fixed_verified")
+    return user_message("notice.fixed_limited")
 
 
 def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -> str:
@@ -177,12 +178,12 @@ def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -
 
 def _summary_text(status: str, messages: List[str]) -> str:
     if status == "retry":
-        return messages[0] if messages else "録音を確認して，もう一度試してください。"
+        return user_message("status.retry")
     if status == "debug_only":
-        return "今回は練習用の参考結果として表示しています。厳密な発音判定ではありません。"
+        return user_message("status.debug_only")
     if status == "practice_suggestion":
-        return "全体としては確認できています。ひとつだけ練習ポイントがあります。"
-    return "今回の練習は大きな問題なく確認できました。"
+        return user_message("status.practice_suggestion")
+    return user_message("status.pass")
 
 
 def _suppressed_reasons(gate: Any, decision_dicts: List[Mapping[str, Any]]) -> List[str]:

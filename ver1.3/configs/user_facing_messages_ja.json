@@ -1,0 +1,11 @@
+{
+  "status.pass": "全体としてよくできています。",
+  "status.practice_suggestion": "全体としては問題ありません。より自然にするための練習ポイントがあります。",
+  "status.retry": "録音が短すぎるか，音声がはっきり取れていません。もう一度録音してください。",
+  "status.debug_only": "このモードでは，厳密な発音判定は行わず，練習用の参考として表示しています。",
+  "special_mora.mild_long": "より自然にするなら，「{mora}」を少し長めに意識するとよいです。",
+  "notice.weak_reference": "認識された文をもとにした参考判定です。厳密な発音評価ではありません。",
+  "notice.kanade": "これはあなたの声に近い参考音です。声の似ている度合いは採点していません。",
+  "notice.fixed_verified": "fixed-reference mode: verified target に基づく練習確認です。",
+  "notice.fixed_limited": "fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。"
+}

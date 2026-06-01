@@ -54,6 +54,9 @@ class PublicApiTest(unittest.TestCase):
         self.assertIn("practice_score", response.user_facing)
         self.assertIn("summary_text", response.user_facing)
         self.assertEqual(response.raw_result["target_text"], "ラーメンをください")
+        self.assertIn("debug_total_score", response.user_facing["debug"])
+        self.assertNotIn("total_score", response.user_facing["summary_text"])
+        self.assertFalse(response.user_facing["display_total_score"])
 
     def test_one_shot_helper_uses_public_request(self) -> None:
         with patch("jp_speech_eval.api.evaluate_mode", return_value=_raw_result()):
@@ -80,6 +83,17 @@ class PublicApiTest(unittest.TestCase):
             response = build_asr_confirmation("user.wav")
         self.assertTrue(response["ok"])
         self.assertEqual(response["prompt"]["mode"], "asr_confirm")
+
+    def test_c_end_response_can_ignore_raw_total_score(self) -> None:
+        raw = _raw_result()
+        raw["total_score"] = 5
+        raw["pronunciation_score"] = 90
+        raw["fluency_score"] = 90
+        with patch("jp_speech_eval.api.evaluate_mode", return_value=raw):
+            response = evaluate_speech(EvaluationRequest(audio_path="user.wav", mode="reference"))
+        self.assertTrue(response["ok"])
+        self.assertIn("practice_score", response["user_facing"])
+        self.assertGreaterEqual(response["user_facing"]["practice_score"]["value"], 80)
 
 
 if __name__ == "__main__":

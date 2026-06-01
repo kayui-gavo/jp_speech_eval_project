@@ -13,6 +13,13 @@ ASR + Kanade is a playback-centered practice mode. It is not a stricter scoring 
 7. The app plays the user-voice-style ideal reference.
 8. Scoring uses non-Kanade reference features, content, rhythm, fluency, and reliable evidence only.
 
+## Required response flags
+
+- `demo_only=true`
+- `playback_only=true` when audio metadata is returned by the UI/API layer
+- `exclude_from_pronunciation_score=true`
+- `similarity_to_kanade` should not be computed or displayed
+
 ## Product policy
 
 - Kanade is only for playback and auditory feedback.
@@ -21,6 +28,7 @@ ASR + Kanade is a playback-centered practice mode. It is not a stricter scoring 
 - ASR raw result must not become a scoring reference until the user confirms or edits it.
 - ASR-generated reference is weak-reference practice; it should not claim strict pronunciation correctness.
 - Special mora feedback is conservative and hidden by default.
+- The visible learner result should be `response.user_facing`; raw scores stay in debug.
 
 ## User-facing wording
 

@@ -1,0 +1,52 @@
+[
+  {
+    "target_id": "ramen_kudasai",
+    "target_text": "ラーメンをください",
+    "kana": "ラーメンヲクダサイ",
+    "moras": ["ラ", "ー", "メ", "ン", "ヲ", "ク", "ダ", "サ", "イ"],
+    "reference_audio": "cache/ramen_kudasai/reference.wav",
+    "verified_level": "human_checked",
+    "pitch_target_source": "human_checked",
+    "scoring_note": "Current main fixed-reference demo target. Pitch feedback may be shown only when reliability gates pass."
+  },
+  {
+    "target_id": "coffee_kudasai",
+    "target_text": "コーヒーをください",
+    "kana": "コーヒーヲクダサイ",
+    "moras": ["コ", "ー", "ヒ", "ー", "ヲ", "ク", "ダ", "サ", "イ"],
+    "reference_audio": null,
+    "verified_level": "auto_pyopenjtalk",
+    "pitch_target_source": "auto_pyopenjtalk",
+    "scoring_note": "Good special-mora practice item; pitch feedback is suppressed until OJAD/manual verification."
+  },
+  {
+    "target_id": "sumimasen",
+    "target_text": "すみません",
+    "kana": "スミマセン",
+    "moras": ["ス", "ミ", "マ", "セ", "ン"],
+    "reference_audio": null,
+    "verified_level": "auto_pyopenjtalk",
+    "pitch_target_source": "auto_pyopenjtalk",
+    "scoring_note": "Short polite phrase. Use coarse content/rhythm feedback; avoid strong pitch feedback."
+  },
+  {
+    "target_id": "mou_ichido_onegaishimasu",
+    "target_text": "もう一度お願いします",
+    "kana": "モウイチドオネガイシマス",
+    "moras": ["モ", "ウ", "イ", "チ", "ド", "オ", "ネ", "ガ", "イ", "シ", "マ", "ス"],
+    "reference_audio": null,
+    "verified_level": "auto_pyopenjtalk",
+    "pitch_target_source": "auto_pyopenjtalk",
+    "scoring_note": "Longer fixed-reference practice item for rhythm and fluency."
+  },
+  {
+    "target_id": "eki_made_onegaishimasu",
+    "target_text": "駅までお願いします",
+    "kana": "エキマデオネガイシマス",
+    "moras": ["エ", "キ", "マ", "デ", "オ", "ネ", "ガ", "イ", "シ", "マ", "ス"],
+    "reference_audio": null,
+    "verified_level": "auto_pyopenjtalk",
+    "pitch_target_source": "auto_pyopenjtalk",
+    "scoring_note": "Taxi/conversation-style fixed-reference practice item."
+  }
+]
