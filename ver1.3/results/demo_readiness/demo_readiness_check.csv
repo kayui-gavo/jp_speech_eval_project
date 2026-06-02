@@ -1,0 +1,24 @@
+check,status,detail
+file:demo_fixed_targets,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/data/demo_fixed_targets.json
+file:user_facing_messages,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/configs/user_facing_messages_ja.json
+file:api_contract,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/docs/api_user_facing_contract.md
+file:fixed_reference_flow,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/fixed_reference_demo_flow.md
+file:asr_confirmed_flow,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/asr_confirmed_reference_flow.md
+file:asr_kanade_flow,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/asr_kanade_demo_flow.md
+file:frontend_checklist,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/frontend_user_facing_checklist.md
+file:known_limitations,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/demo_known_limitations.md
+file:presentation_script,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/demo_presentation_script.md
+file:api_examples_report,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/demo_api_response_examples.md
+file:api_examples_json,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/results/demo_readiness/demo_api_examples.json
+file:human_validation_plan,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/minimal_human_validation_plan.md
+file:freeze_checklist,ready,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/reports/demo_freeze_checklist.md
+demo_targets_nonempty,ready,5 targets
+pitch_feedback_requires_verified_target,ready,1 verified targets
+user_facing_messages_nonempty,ready,9 messages
+api_examples_contain_user_facing,ready,
+no_raw_debug_score_leakage,ready,
+demo_smoke_tests_pass,ready,
+pytest_command_available,warning,Run `../.venv/bin/python -m pytest tests` before demo freeze.
+kanade_playback_only_policy,ready,Kanade must stay demo_only/playback_only and excluded from correctness scoring.
+special_mora_default_hidden,ready,Special mora remains shadow/debug unless explicitly enabled.
+weak_reference_conservative,ready,ASR-generated reference requires user confirmation and weak-reference notice.

@@ -249,7 +249,12 @@ def render_user_facing_result(
     if gate.allow_special_mora_feedback and policy.allow_special_mora_feedback:
         item = select_special_mora_feedback_candidate(decisions)
         if item:
-            focus = {"category": "special_mora", **item.to_dict(), "message": item.feedback_candidate_text}
+            focus = {
+                "category": "special_mora",
+                "type": item.type,
+                "mora": item.surface_mora,
+                "message": item.feedback_candidate_text,
+            }
             messages.append(item.feedback_candidate_text)
 
     raw_feedback = [str(item) for item in (result.get("feedback") or [])]

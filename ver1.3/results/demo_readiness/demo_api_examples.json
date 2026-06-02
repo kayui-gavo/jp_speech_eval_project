@@ -1,0 +1,383 @@
+[
+  {
+    "name": "fixed_reference_pass",
+    "input_condition": {
+      "mode": "reference",
+      "target_id": "ramen_kudasai"
+    },
+    "response": {
+      "user_facing": {
+        "mode": "reference_based",
+        "status": "pass",
+        "reliability": "high",
+        "confidence": "high",
+        "practice_check_result": "ok",
+        "practice_score": {
+          "value": 93,
+          "label": "良好",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 fixed-reference mode: verified target に基づく練習確認です。"
+        },
+        "summary_text": "全体としてよくできています。",
+        "primary_suggestion_text": null,
+        "suggestion_type": "none",
+        "mode_notice": "fixed-reference mode: verified target に基づく練習確認です。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "debug_only_by_profile"
+        ],
+        "display_score": 93,
+        "user_messages": [
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": null,
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": false,
+        "demo_only": false,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": true,
+        "exclude_from_pronunciation_score": false
+      }
+    },
+    "why_safe_for_c_end_ui": "Learner fields contain only status, practice score, summary, and mode notice."
+  },
+  {
+    "name": "fixed_reference_practice_suggestion",
+    "input_condition": {
+      "mode": "reference",
+      "special_mora_flag": "on"
+    },
+    "response": {
+      "user_facing": {
+        "mode": "reference_based",
+        "status": "practice_suggestion",
+        "reliability": "high",
+        "confidence": "high",
+        "practice_check_result": "ok",
+        "practice_score": {
+          "value": 93,
+          "label": "良好",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 fixed-reference mode: verified target に基づく練習確認です。"
+        },
+        "summary_text": "全体としては問題ありません。より自然にするための練習ポイントがあります。",
+        "primary_suggestion_text": "全体としては問題ありません。より自然にするなら，「ー」を少し長めに意識するとよいです。",
+        "suggestion_type": "special_mora",
+        "mode_notice": "fixed-reference mode: verified target に基づく練習確認です。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "no_correction_needed"
+        ],
+        "display_score": 93,
+        "user_messages": [
+          "全体としては問題ありません。より自然にするなら，「ー」を少し長めに意識するとよいです。",
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": {
+          "category": "special_mora",
+          "type": "long_vowel",
+          "mora": "ー",
+          "message": "全体としては問題ありません。より自然にするなら，「ー」を少し長めに意識するとよいです。"
+        },
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": false,
+        "demo_only": false,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": true,
+        "exclude_from_pronunciation_score": false
+      }
+    },
+    "why_safe_for_c_end_ui": "Special mora appears only as a gentle practice point, not a correctness penalty."
+  },
+  {
+    "name": "fixed_reference_retry_poor_recording",
+    "input_condition": {
+      "mode": "reference",
+      "recording_quality": "poor"
+    },
+    "response": {
+      "user_facing": {
+        "mode": "reference_based",
+        "status": "retry",
+        "reliability": "unscorable",
+        "confidence": "unscorable",
+        "practice_check_result": "retry",
+        "practice_score": {
+          "value": null,
+          "label": "録音を確認",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。"
+        },
+        "summary_text": "録音が短すぎるか，音声がはっきり取れていません。もう一度録音してください。",
+        "primary_suggestion_text": null,
+        "suggestion_type": "none",
+        "mode_notice": "fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "recording_quality_bad",
+          "debug_only_by_profile"
+        ],
+        "display_score": null,
+        "user_messages": [
+          "録音が聞き取りにくいため、もう一度録音してください。",
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": null,
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": false,
+        "demo_only": false,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": true,
+        "exclude_from_pronunciation_score": false
+      }
+    },
+    "why_safe_for_c_end_ui": "Retry is framed as recording quality, not pronunciation failure."
+  },
+  {
+    "name": "weak_reference_unconfirmed_asr",
+    "input_condition": {
+      "mode": "asr_pseudo_reference",
+      "confirmed": false
+    },
+    "response": {
+      "user_facing": {
+        "mode": "asr_pseudo_reference",
+        "status": "debug_only",
+        "reliability": "high",
+        "confidence": "high",
+        "practice_check_result": "needs_attention",
+        "practice_score": {
+          "value": null,
+          "label": "判定できません",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 認識された文をもとにした参考判定です。厳密な発音評価ではありません。"
+        },
+        "summary_text": "このモードでは，厳密な発音判定は行わず，練習用の参考として表示しています。",
+        "primary_suggestion_text": null,
+        "suggestion_type": "none",
+        "mode_notice": "認識された文をもとにした参考判定です。厳密な発音評価ではありません。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "debug_only_by_profile"
+        ],
+        "display_score": 94,
+        "user_messages": [
+          "確認した文をもとにした練習用フィードバックです。厳密な発音採点ではありません。",
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": {
+          "category": "weak_reference",
+          "message": "確認した文をもとにした練習用フィードバックです。厳密な発音採点ではありません。"
+        },
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": true,
+        "demo_only": false,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": false,
+        "exclude_from_pronunciation_score": false
+      }
+    },
+    "why_safe_for_c_end_ui": "Unconfirmed ASR stays debug-only and has no practice score value."
+  },
+  {
+    "name": "weak_reference_confirmed",
+    "input_condition": {
+      "mode": "asr_confirmed_weak_reference",
+      "confirmed": true
+    },
+    "response": {
+      "user_facing": {
+        "mode": "asr_confirmed_weak_reference",
+        "status": "pass",
+        "reliability": "high",
+        "confidence": "high",
+        "practice_check_result": "needs_attention",
+        "practice_score": {
+          "value": 94,
+          "label": "良好",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 認識された文をもとにした参考判定です。厳密な発音評価ではありません。"
+        },
+        "summary_text": "全体としてよくできています。",
+        "primary_suggestion_text": null,
+        "suggestion_type": "none",
+        "mode_notice": "認識された文をもとにした参考判定です。厳密な発音評価ではありません。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "debug_only_by_profile"
+        ],
+        "display_score": 94,
+        "user_messages": [
+          "確認した文をもとにした練習用フィードバックです。厳密な発音採点ではありません。",
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": {
+          "category": "weak_reference",
+          "message": "確認した文をもとにした練習用フィードバックです。厳密な発音採点ではありません。"
+        },
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": true,
+        "demo_only": false,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": false,
+        "exclude_from_pronunciation_score": false
+      }
+    },
+    "why_safe_for_c_end_ui": "Confirmed weak-reference keeps a weak-reference notice visible."
+  },
+  {
+    "name": "asr_kanade_playback_notice",
+    "input_condition": {
+      "mode": "kanade_asr_voice_reference",
+      "kanade_audio": "mocked"
+    },
+    "response": {
+      "user_facing": {
+        "mode": "kanade_asr_voice_reference",
+        "status": "debug_only",
+        "reliability": "high",
+        "confidence": "high",
+        "practice_check_result": "needs_attention",
+        "practice_score": {
+          "value": null,
+          "label": "判定できません",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 これはあなたの声に近い参考音です。声の似ている度合いは採点していません。"
+        },
+        "summary_text": "このモードでは，厳密な発音判定は行わず，練習用の参考として表示しています。",
+        "primary_suggestion_text": null,
+        "suggestion_type": "none",
+        "mode_notice": "これはあなたの声に近い参考音です。声の似ている度合いは採点していません。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "debug_only_by_profile"
+        ],
+        "display_score": null,
+        "user_messages": [
+          "このモードは参考音のデモです。発音の正しさ判定には使いません。",
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": {
+          "category": "demo",
+          "message": "このモードは参考音のデモです。発音の正しさ判定には使いません。"
+        },
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": true,
+        "demo_only": true,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": false,
+        "exclude_from_pronunciation_score": true
+      }
+    },
+    "why_safe_for_c_end_ui": "Kanade notice says voice similarity is not scored; correctness scoring is excluded."
+  },
+  {
+    "name": "special_mora_suppressed",
+    "input_condition": {
+      "mode": "reference",
+      "special_mora_flag": "off"
+    },
+    "response": {
+      "user_facing": {
+        "mode": "reference_based",
+        "status": "pass",
+        "reliability": "high",
+        "confidence": "high",
+        "practice_check_result": "ok",
+        "practice_score": {
+          "value": 93,
+          "label": "良好",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 fixed-reference mode: verified target に基づく練習確認です。"
+        },
+        "summary_text": "全体としてよくできています。",
+        "primary_suggestion_text": null,
+        "suggestion_type": "none",
+        "mode_notice": "fixed-reference mode: verified target に基づく練習確認です。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "shadow_mode_user_facing_disabled"
+        ],
+        "display_score": 93,
+        "user_messages": [
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": null,
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": false,
+        "demo_only": false,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": true,
+        "exclude_from_pronunciation_score": false
+      }
+    },
+    "why_safe_for_c_end_ui": "Near-boundary special-mora evidence remains hidden from learner fields."
+  },
+  {
+    "name": "pitch_suppressed_unverified_target",
+    "input_condition": {
+      "mode": "reference",
+      "target_id": "coffee_kudasai",
+      "verified_level": "auto_pyopenjtalk"
+    },
+    "response": {
+      "user_facing": {
+        "mode": "reference_based",
+        "status": "pass",
+        "reliability": "high",
+        "confidence": "high",
+        "practice_check_result": "ok",
+        "practice_score": {
+          "value": 94,
+          "label": "良好",
+          "explanation": "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした練習用の目安です。発音能力そのものを厳密に評価するものではありません。 fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。"
+        },
+        "summary_text": "全体としてよくできています。",
+        "primary_suggestion_text": null,
+        "suggestion_type": "none",
+        "mode_notice": "fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。",
+        "debug_available": true,
+        "suppressed_reasons": [
+          "debug_only_by_profile"
+        ],
+        "display_score": 94,
+        "user_messages": [
+          "今回の練習は大きな問題なく確認できました。"
+        ],
+        "focus_feedback": null,
+        "display_total_score": false
+      },
+      "debug_summary": {
+        "weak_reference": false,
+        "demo_only": false,
+        "alignment_confidence": 0.9,
+        "f0_voiced_coverage": 0.9,
+        "special_mora_decision_count": 2,
+        "allow_pitch_feedback": false,
+        "exclude_from_pronunciation_score": false
+      }
+    },
+    "why_safe_for_c_end_ui": "Pitch feedback is suppressed because the target is not OJAD/manual verified."
+  }
+]
