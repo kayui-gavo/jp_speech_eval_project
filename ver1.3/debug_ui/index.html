@@ -2575,6 +2575,18 @@
           ja: "「{mora}」の長さが短い可能性があります。",
           en: "The mora “{mora}” may be too short."
         },
+        mildLongVowel: {
+          "zh-CN": "整体没有大问题。想更自然的话，可以把「{mora}」稍微保留长一点。",
+          "zh-TW": "整體沒有大問題。想更自然的話，可以把「{mora}」稍微保留長一點。",
+          ja: "全体としては問題ありません。より自然にするなら，「{mora}」を少し長めに意識するとよいです。",
+          en: "Overall it is fine. To sound more natural, hold “{mora}” a little longer."
+        },
+        mildNasal: {
+          "zh-CN": "整体没有大问题。想更清楚的话，可以把「{mora}」稍微留住一点。",
+          "zh-TW": "整體沒有大問題。想更清楚的話，可以把「{mora}」稍微留住一點。",
+          ja: "全体としては問題ありません。より聞き取りやすくするなら，「{mora}」を少し残して言うとよいです。",
+          en: "Overall it is fine. To make it clearer, leave “{mora}” slightly more audible."
+        },
         pitchLift: {
           "zh-CN": "在「{from}〜{to}」附近，音高可以再抬清楚一点。",
           "zh-TW": "在「{from}〜{to}」附近，音高可以再抬清楚一點。",
@@ -2612,6 +2624,10 @@
       if (match) return feedbackTemplate("longPauseCount", { count: match[1] });
       match = text.match(/^「(.+)」这个音可能太短。$/);
       if (match) return feedbackTemplate("moraTooShort", { mora: match[1] });
+      match = text.match(/^全体としては問題ありません。より自然にするなら，「(.+)」を少し長めに意識するとよいです。$/);
+      if (match) return feedbackTemplate("mildLongVowel", { mora: match[1] });
+      match = text.match(/^全体としては問題ありません。より聞き取りやすくするなら，「(.+)」を少し残して言うとよいです。$/);
+      if (match) return feedbackTemplate("mildNasal", { mora: match[1] });
       match = text.match(/^在「(.+)〜(.+)」附近，音高可以再抬清楚一点。$/);
       if (match) return feedbackTemplate("pitchLift", { from: match[1], to: match[2] });
       match = text.match(/^在「(.+)〜(.+)」附近，音高下降还不够明显。$/);

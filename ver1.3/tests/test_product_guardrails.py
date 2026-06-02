@@ -67,11 +67,41 @@ def _result(**overrides):
 
 
 class ProductGuardrailsTest(unittest.TestCase):
-    def test_human_checked_fixed_reference_shadows_special_mora_by_default(self) -> None:
-        rendered = render_user_facing_result(_result())
+    def test_human_checked_fixed_reference_shows_mild_special_mora_when_evidence_is_strong(self) -> None:
+        rendered = render_user_facing_result(_result(mora_table=[
+            {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
+            {"mora": "ー", "start_sec": 0.2, "end_sec": 0.23},
+            {"mora": "メ", "start_sec": 0.23, "end_sec": 0.43},
+            {"mora": "ン", "start_sec": 0.43, "end_sec": 0.63},
+            {"mora": "ヲ", "start_sec": 0.63, "end_sec": 0.83},
+            {"mora": "ク", "start_sec": 0.83, "end_sec": 1.03},
+            {"mora": "ダ", "start_sec": 1.03, "end_sec": 1.23},
+            {"mora": "サ", "start_sec": 1.23, "end_sec": 1.43},
+            {"mora": "イ", "start_sec": 1.43, "end_sec": 1.63},
+        ]))
         self.assertFalse(rendered["display_total_score"])
-        self.assertIsNone(rendered["focus_feedback"])
+        self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
+        self.assertIn("全体としては問題ありません", rendered["focus_feedback"]["message"])
         self.assertTrue(rendered["debug"]["special_mora_decisions"])
+        self.assertTrue(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
+
+    def test_weak_reference_still_blocks_special_mora_user_feedback(self) -> None:
+        result = _result(
+            mora_table=[
+                {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
+                {"mora": "ー", "start_sec": 0.2, "end_sec": 0.23},
+                {"mora": "メ", "start_sec": 0.23, "end_sec": 0.43},
+                {"mora": "ン", "start_sec": 0.43, "end_sec": 0.63},
+                {"mora": "ヲ", "start_sec": 0.63, "end_sec": 0.83},
+                {"mora": "ク", "start_sec": 0.83, "end_sec": 1.03},
+                {"mora": "ダ", "start_sec": 1.03, "end_sec": 1.23},
+                {"mora": "サ", "start_sec": 1.23, "end_sec": 1.43},
+                {"mora": "イ", "start_sec": 1.43, "end_sec": 1.63},
+            ],
+            details={"mode": "asr_pseudo_reference", "weak_reference": True},
+        )
+        rendered = render_user_facing_result(result, mode="asr_pseudo_reference")
+        self.assertEqual(rendered["focus_feedback"]["category"], "weak_reference")
         self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
 
     def test_legacy_threshold_metadata_blocks_user_facing_even_with_flag(self) -> None:
@@ -255,7 +285,7 @@ class ProductGuardrailsTest(unittest.TestCase):
             self.assertIsNone(rendered["focus_feedback"])
             self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
 
-    def test_v2_limited_candidate_requires_flag_and_can_emit_allowed_types(self) -> None:
+    def test_v2_limited_candidate_emits_allowed_types_by_default(self) -> None:
         result = _result(mora_table=[
             {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
             {"mora": "ー", "start_sec": 0.2, "end_sec": 0.235},
@@ -267,15 +297,10 @@ class ProductGuardrailsTest(unittest.TestCase):
             {"mora": "サ", "start_sec": 1.235, "end_sec": 1.435},
             {"mora": "イ", "start_sec": 1.435, "end_sec": 1.635},
         ])
-        flag_off = render_user_facing_result(result, special_mora_threshold_profile="v2_limited_candidate")
-        self.assertFalse(any(item["user_feedback_allowed"] for item in flag_off["debug"]["special_mora_decisions"]))
-        flag_on = render_user_facing_result(
-            result,
-            special_mora_threshold_profile="v2_limited_candidate",
-            enable_user_facing_calibrated_special_mora=True,
-        )
-        self.assertEqual(flag_on["focus_feedback"]["category"], "special_mora")
-        self.assertEqual(flag_on["focus_feedback"]["type"], "long_vowel")
+        rendered = render_user_facing_result(result, special_mora_threshold_profile="v2_limited_candidate")
+        self.assertTrue(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
+        self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
+        self.assertEqual(rendered["focus_feedback"]["type"], "long_vowel")
 
     def test_kanade_demo_cannot_enable_special_mora_correction(self) -> None:
         result = _result(details={"mode": "kanade_asr_voice_reference", "demo_only": True})
