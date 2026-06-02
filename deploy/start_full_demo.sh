@@ -15,6 +15,8 @@ PUBLIC_DEMO_FAST_START="${PUBLIC_DEMO_FAST_START:-1}"
 TTS_BACKEND="pyopenjtalk"
 TTS_MODEL=""
 TTS_VOICE=""
+DEMO_CACHE="cache/ramen_kudasai"
+DEMO_WAV="cache/ramen_kudasai.ref.wav"
 AIVIS_PID=""
 
 if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" && -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
@@ -28,6 +30,8 @@ if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" && -f "${GOOGLE_APPLICATION_CREDE
   TTS_BACKEND="google"
   TTS_MODEL="${GOOGLE_TTS_MODEL}"
   TTS_VOICE="${GOOGLE_TTS_VOICE}"
+  DEMO_CACHE="${GOOGLE_DEMO_CACHE:-cache/ramen_kudasai_google_chirp3}"
+  DEMO_WAV="${DEMO_CACHE}.ref.wav"
   echo "[demo] Using Google Cloud TTS reference backend: model=${TTS_MODEL} voice=${TTS_VOICE}"
 elif [[ "${ENABLE_AIVIS}" == "1" ]]; then
   TTS_BACKEND="aivis_http"
@@ -38,6 +42,27 @@ else
   echo "[demo] Google Cloud TTS credentials not configured."
   echo "[demo] AivisSpeech disabled by default for fast public demo startup."
   echo "[demo] Using pyopenjtalk cached/local pseudo-reference fallback."
+fi
+
+if [[ "${TTS_BACKEND}" == "google" ]]; then
+  if [[ ! -f "${DEMO_CACHE}.json" || ! -f "${DEMO_CACHE}.npz" || ! -f "${DEMO_WAV}" ]]; then
+    echo "[demo] Preparing Google TTS demo reference cache: ${DEMO_CACHE}"
+    if ! "${PYTHON_BIN}" scripts/prepare_cache.py \
+      --text "ラーメンをください" \
+      --out "${DEMO_CACHE}" \
+      --save-ref-wav \
+      --tts-backend google \
+      --tts-model "${TTS_MODEL}" \
+      --tts-voice "${TTS_VOICE}" \
+      --reference-id google_chirp3_teacher; then
+      echo "[demo] Google demo reference generation failed; falling back to pyopenjtalk cache."
+      TTS_BACKEND="pyopenjtalk"
+      TTS_MODEL=""
+      TTS_VOICE=""
+      DEMO_CACHE="cache/ramen_kudasai"
+      DEMO_WAV="cache/ramen_kudasai.ref.wav"
+    fi
+  fi
 fi
 
 cleanup() {
@@ -97,7 +122,8 @@ CMD=("${PYTHON_BIN}" scripts/debug_ui.py
   --host "${APP_HOST}"
   --port "${APP_PORT}"
   --mode reference
-  --wav cache/ramen_kudasai.ref.wav
+  --cache "${DEMO_CACHE}"
+  --wav "${DEMO_WAV}"
   --tts-backend "${TTS_BACKEND}"
   --public-demo
   --available-modes reference,asr_pseudo_reference,kanade_asr_voice_reference)
