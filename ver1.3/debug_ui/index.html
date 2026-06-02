@@ -1089,9 +1089,12 @@
         practiceNeedsAttention: "需要注意",
         practiceRetry: "建议重录",
         practiceUnscorable: "暂时无法判断",
-        overallPerformance: "综合表现",
+        overallPerformance: "练习参考分",
         referenceIndex: "练习参考",
         notStrictScore: "非严格分数",
+        pronunciationClarity: "发音清晰度",
+        rhythmFluency: "节奏/流畅度",
+        practiceCompletion: "练习完成度",
         reliabilitySimple: "判断可信度",
         reliabilityHigh: "较高",
         reliabilityMedium: "中等",
@@ -1290,9 +1293,12 @@
         practiceNeedsAttention: "需要注意",
         practiceRetry: "建議重錄",
         practiceUnscorable: "暫時無法判斷",
-        overallPerformance: "綜合表現",
+        overallPerformance: "練習參考分",
         referenceIndex: "練習參考",
         notStrictScore: "非嚴格分數",
+        pronunciationClarity: "發音清晰度",
+        rhythmFluency: "節奏/流暢度",
+        practiceCompletion: "練習完成度",
         reliabilitySimple: "判斷可信度",
         reliabilityHigh: "較高",
         reliabilityMedium: "中等",
@@ -1491,9 +1497,12 @@
         practiceNeedsAttention: "要注意",
         practiceRetry: "録り直し推奨",
         practiceUnscorable: "判定保留",
-        overallPerformance: "総合チェック",
+        overallPerformance: "練習目安",
         referenceIndex: "練習参考",
         notStrictScore: "厳密な点数ではありません",
+        pronunciationClarity: "発音の明瞭さ",
+        rhythmFluency: "リズム/流暢さ",
+        practiceCompletion: "練習の完了度",
         reliabilitySimple: "判断の信頼度",
         reliabilityHigh: "高め",
         reliabilityMedium: "中程度",
@@ -1692,9 +1701,12 @@
         practiceNeedsAttention: "Needs attention",
         practiceRetry: "Try again",
         practiceUnscorable: "Not scorable",
-        overallPerformance: "Overall check",
+        overallPerformance: "Practice reference",
         referenceIndex: "Practice reference",
         notStrictScore: "not a strict score",
+        pronunciationClarity: "Pronunciation clarity",
+        rhythmFluency: "Rhythm/fluency",
+        practiceCompletion: "Practice completion",
         reliabilitySimple: "Judgment confidence",
         reliabilityHigh: "high",
         reliabilityMedium: "medium",
@@ -1844,6 +1856,36 @@
           "zh-TW": "這個功能主要用來試聽參考音，不用來判斷發音正不正確。",
           ja: "このモードは参考音のデモです。発音の正しさ判定には使いません。",
           en: "This mode is for reference playback, not pronunciation correctness."
+        },
+        "録音ははっきりしています。ただし，発音の明瞭さにはまだ改善の余地があります。まずは参考音声をゆっくり聞きながら練習してみましょう。": {
+          "zh-CN": "录音是清楚的，但发音清晰度还有提升空间。建议先慢一点，跟着参考音把每个音说稳。",
+          "zh-TW": "錄音是清楚的，但發音清晰度還有進步空間。建議先慢一點，跟著參考音把每個音說穩。",
+          ja: "録音ははっきりしています。ただし，発音の明瞭さにはまだ改善の余地があります。まずは参考音声をゆっくり聞きながら練習してみましょう。",
+          en: "The recording is clear, but pronunciation clarity still needs practice. Try listening slowly to the reference first."
+        },
+        "今回は音声の細かい位置合わせが不安定なため，表示スコアは控えめにしています。": {
+          "zh-CN": "这次细节对齐不够稳定，所以显示分会保守一些。",
+          "zh-TW": "這次細節對齊不夠穩定，所以顯示分數會保守一些。",
+          ja: "今回は音声の細かい位置合わせが不安定なため，表示スコアは控えめにしています。",
+          en: "Fine alignment is unstable this time, so the displayed score is capped conservatively."
+        },
+        "目標文との一致が不足しているため，今回は発音スコアを表示しません。": {
+          "zh-CN": "这次没有稳定匹配到目标句，所以不显示发音分。",
+          "zh-TW": "這次沒有穩定對上練習句，所以不顯示發音分數。",
+          ja: "目標文との一致が不足しているため，今回は発音スコアを表示しません。",
+          en: "The target sentence was not matched reliably, so no pronunciation score is shown."
+        },
+        "文が短いため，今回は全体的な練習コメントを中心に表示します。細かい発音の断定は控えます。": {
+          "zh-CN": "句子较短，这次主要看整体练习情况，不强行判断细节发音。",
+          "zh-TW": "句子比較短，這次主要看整體練習狀況，不強行判斷細節發音。",
+          ja: "文が短いため，今回は全体的な練習コメントを中心に表示します。細かい発音の断定は控えます。",
+          en: "The sentence is short, so this focuses on overall practice and avoids detailed pronunciation claims."
+        },
+        "このモードは参考音声のデモです。発音の正しさは採点していません。": {
+          "zh-CN": "这个模式是参考音试听，不给发音正误打分。",
+          "zh-TW": "這個模式是參考音試聽，不會評分發音正不正確。",
+          ja: "このモードは参考音声のデモです。発音の正しさは採点していません。",
+          en: "This mode is reference-audio demo only; pronunciation correctness is not scored."
         },
         "今回は一部の判定だけ参考にしてください。": {
           "zh-CN": "这次只有一部分判断适合作参考。",
@@ -2525,19 +2567,33 @@
       const total = Number(userFacing?.display_score ?? result.total_score);
       if (Number.isFinite(total) && result.details?.mode !== "reference_free_acoustic") {
         cards.push(`<div class="score total"><span>${t("overallPerformance")}</span><strong>${total}</strong><span>/ 100 · ${t("notStrictScore")}</span></div>`);
+      } else if (userFacing) {
+        cards.push(`<div class="score total"><span>${t("overallPerformance")}</span><strong>--</strong><span>${t("notStrictScore")}</span></div>`);
       }
       if (userFacing) {
         const status = userFacing.practice_check_result || "needs_attention";
-        const reliability = userFacing.reliability || "unknown";
+        const reliability = userFacing.confidence_label || userFacing.reliability || "unknown";
+        const clarity = userFacing.pronunciation_clarity_score;
+        const rhythmFluency = userFacing.rhythm_fluency_score;
+        const completion = userFacing.practice_completion_score;
+        const scoreCard = (label, value) => (
+          Number.isFinite(Number(value))
+            ? `<div class="score"><span>${label}</span><strong>${Number(value)}</strong><span>/ 100</span></div>`
+            : `<div class="score"><span>${label}</span><strong>--</strong><span>${t("notStrictScore")}</span></div>`
+        );
+        cards.push(scoreCard(t("pronunciationClarity"), clarity));
+        cards.push(scoreCard(t("rhythmFluency"), rhythmFluency));
+        cards.push(scoreCard(t("practiceCompletion"), completion));
         cards.push(`<div class="score"><span>${t("practiceResult")}</span><strong>${practiceResultLabel(status)}</strong><span>${t("reliabilitySimple")}：${reliabilityDisplay(reliability)}</span></div>`);
+      } else {
+        const keys = hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys;
+        cards.push(...keys.map((key) => {
+          const label = tGroup("scoreLabels", key);
+          const value = result[key] ?? 0;
+          const className = key === "total_score" ? "score total" : "score";
+          return `<div class="${className}"><span>${label}</span><strong>${value}</strong><span>/ 100</span></div>`;
+        }));
       }
-      const keys = hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys;
-      cards.push(...keys.map((key) => {
-        const label = tGroup("scoreLabels", key);
-        const value = result[key] ?? 0;
-        const className = key === "total_score" ? "score total" : "score";
-        return `<div class="${className}"><span>${label}</span><strong>${value}</strong><span>/ 100</span></div>`;
-      }));
       $("scoreGrid").innerHTML = cards.join("");
     }
 

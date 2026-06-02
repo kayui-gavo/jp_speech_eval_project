@@ -410,7 +410,8 @@ class ProductGuardrailsTest(unittest.TestCase):
             },
         )
         rendered = render_user_facing_result(result, mode="asr_pseudo_reference")
-        self.assertGreaterEqual(rendered["display_score"], 85)
+        self.assertLessEqual(rendered["display_score"], 80)
+        self.assertIn("weak_reference_cap", rendered["score_policy_warnings"])
         self.assertTrue(rendered["debug"]["weak_reference"])
         self.assertEqual(rendered["status"], "debug_only")
         self.assertIsNone(rendered["practice_score"]["value"])

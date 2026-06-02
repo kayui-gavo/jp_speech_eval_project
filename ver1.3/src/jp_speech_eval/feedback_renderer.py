@@ -9,6 +9,7 @@ from .special_mora_scorer import (
     select_special_mora_feedback_candidate,
     special_mora_score_from_decisions,
 )
+from .user_score_policy import apply_user_score_policy
 from .user_facing_policy import (
     PracticeScore,
     UserFacingResult,
@@ -26,6 +27,7 @@ def _debug_payload(
     special_mora_decisions: List[Mapping[str, Any]],
     special_mora_score: Optional[float],
     special_mora_profile: Mapping[str, Any],
+    user_score_policy: Mapping[str, Any],
 ) -> Dict[str, Any]:
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
@@ -54,6 +56,7 @@ def _debug_payload(
         "weak_reference": policy.weak_reference,
         "demo_only": policy.demo_only,
         "scoring_policy": policy.to_dict(),
+        "user_score_policy": dict(user_score_policy),
         "reliability_gate": gate.to_dict(),
         "alignment": alignment,
         "prosody_debug": {
@@ -162,6 +165,10 @@ def _mode_notice(policy: ScoringPolicy, gate: Any) -> str:
     return user_message("notice.fixed_limited")
 
 
+def _policy_message(message_key: str) -> str:
+    return user_message(f"score_policy.{message_key}") if message_key else ""
+
+
 def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -> str:
     if gate.practice_check_result == "retry":
         return "retry"
@@ -236,6 +243,11 @@ def render_user_facing_result(
     )
     decision_dicts = [item.to_dict() for item in decisions]
     special_mora_score = special_mora_score_from_decisions(decisions)
+    user_score = apply_user_score_policy(
+        result,
+        mode=policy.mode,
+        special_mora_decisions=decision_dicts,
+    )
     messages: List[str] = list(gate.messages)
     focus: Optional[Dict[str, Any]] = None
 
@@ -257,6 +269,12 @@ def render_user_facing_result(
             }
             messages.append(item.feedback_candidate_text)
 
+    policy_message = _policy_message(str(user_score.get("main_message_key") or ""))
+    if policy_message and policy_message not in messages:
+        messages.append(policy_message)
+        if focus is None and str(user_score.get("main_message_key")) not in {"weak_reference_practice_feedback"}:
+            focus = {"category": "score_policy", "message": policy_message}
+
     raw_feedback = [str(item) for item in (result.get("feedback") or [])]
     for item in raw_feedback:
         if len(messages) >= 2:
@@ -274,7 +292,9 @@ def render_user_facing_result(
         practice = "needs_attention"
     else:
         practice = gate.practice_check_result
-    display_score = _display_score(result, policy, gate, special_mora_score=special_mora_score)
+    display_score = user_score.get("display_score")
+    if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
+        display_score = None
     status = _status(policy, gate, focus)
     mode_notice = _mode_notice(policy, gate)
     primary = None
@@ -304,6 +324,13 @@ def render_user_facing_result(
         debug_available=True,
         suppressed_reasons=_suppressed_reasons(gate, decision_dicts),
         display_score=display_score,
+        pronunciation_clarity_score=user_score.get("pronunciation_clarity_score"),
+        rhythm_fluency_score=user_score.get("rhythm_fluency_score"),
+        practice_completion_score=user_score.get("practice_completion_score"),
+        confidence_label=str(user_score.get("confidence_label") or gate.reliability),
+        score_policy_warnings=list(user_score.get("score_policy_warnings") or []),
+        score_caps=dict(user_score.get("score_caps") or {}),
+        detail_feedback_allowed=bool(user_score.get("detail_feedback_allowed", True)),
         user_messages=messages[:2],
         focus_feedback=focus,
         display_total_score=False,
@@ -314,5 +341,6 @@ def render_user_facing_result(
             special_mora_decisions=decision_dicts,
             special_mora_score=special_mora_score,
             special_mora_profile=(decision_dicts[0].get("evidence_card", {}) if decision_dicts else {}),
+            user_score_policy=user_score,
         ),
     ).to_dict()
