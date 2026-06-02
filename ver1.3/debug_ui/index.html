@@ -910,7 +910,7 @@
         <summary data-i18n="researchDebug">研究调试</summary>
         <div class="advanced-body">
           <div class="controls-mini">
-            <button id="compareModesBtn" data-i18n="compareModes">比较模式</button>
+            <button id="compareModesBtn" data-i18n="compareModes" hidden>比较模式</button>
             <button id="exportFeaturesBtn" data-i18n="exportCsv">导出 CSV</button>
             <button id="copyJsonBtn" disabled data-i18n="copyJson">复制 JSON</button>
           </div>
@@ -1759,6 +1759,8 @@
       kanade_asr_voice_reference: { group: "free", hint: "modeHintKanadeAsr", tone: "warn", tags: ["自由说话", "确认文本", "声线参考"] }
     };
 
+    const publicUiModes = ["reference", "asr_pseudo_reference", "kanade_asr_voice_reference"];
+
     const modeText = {
       "zh-CN": {
         groups: { core: "主评价模式", free: "自由说话模式", diagnostic: "诊断工具", experimental: "实验功能" },
@@ -2189,9 +2191,10 @@
     function renderModeOptions() {
       const select = $("evalMode");
       const selected = select.value || state.config?.eval_mode || "reference";
-      const modes = Array.isArray(state.config?.available_modes) && state.config.available_modes.length
+      const configuredModes = Array.isArray(state.config?.available_modes) && state.config.available_modes.length
         ? state.config.available_modes
-        : ["reference", "asr_pseudo_reference", "kanade_asr_voice_reference"];
+        : publicUiModes;
+      const modes = configuredModes.filter((mode) => publicUiModes.includes(mode));
       const groups = ["core", "free", "diagnostic", "experimental"];
       select.innerHTML = groups.map((group) => {
         const groupModes = modes.filter((mode) => (modeCatalog[mode]?.group || "diagnostic") === group);
@@ -3093,14 +3096,16 @@
         $("rawJson").textContent = JSON.stringify(payload, null, 2);
         $("copyJsonBtn").disabled = false;
       };
-      $("compareModesBtn").onclick = async () => {
-        setBusy(true, "comparing");
-        const payload = await fetch("/api/compare-sample").then((r) => r.json());
-        setBusy(false);
-        if (!payload.ok) throw new Error(payload.error || "Compare failed");
-        $("rawJson").textContent = JSON.stringify(payload, null, 2);
-        $("copyJsonBtn").disabled = false;
-      };
+      if ($("compareModesBtn")) {
+        $("compareModesBtn").onclick = async () => {
+          setBusy(true, "comparing");
+          const payload = await fetch("/api/compare-sample").then((r) => r.json());
+          setBusy(false);
+          if (!payload.ok) throw new Error(payload.error || "Compare failed");
+          $("rawJson").textContent = JSON.stringify(payload, null, 2);
+          $("copyJsonBtn").disabled = false;
+        };
+      }
     }
 
     window.addEventListener("resize", () => drawPitchComparison(state.lastPayload?.result || null));

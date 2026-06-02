@@ -464,7 +464,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
     def _compare_sample(self) -> None:
         modes = [
             mode
-            for mode in ["reference", "acoustic", "transcript_assisted_light", "asr_pseudo_reference"]
+            for mode in PUBLIC_DEMO_MODES
             if mode in self.server.available_modes  # type: ignore[attr-defined]
         ]
         rows: List[Dict[str, Any]] = []
