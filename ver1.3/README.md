@@ -3,8 +3,8 @@
 A lightweight Python prototype for Japanese speaking evaluation.
 
 For integration into another project, use the Python package API:
-`pip install -e ver1.3`, then import `SpeechEvaluationClient` from
-`jp_speech_eval`. See `docs/python_package_api.md` and
+run `pip install -e .` from this package directory, then import
+`SpeechEvaluationClient` from `jp_speech_eval`. See `docs/python_package_api.md` and
 `examples/package_api_quickstart.py`.
 
 This version adds:

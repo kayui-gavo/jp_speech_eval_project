@@ -1,7 +1,9 @@
 # Japanese Speech Evaluation Project
 
-Research-oriented prototype for Japanese speaking evaluation, with the current
-implementation in [`ver1.3/`](ver1.3/README.md).
+Research-oriented prototype for Japanese speaking evaluation. The importable
+Python package is `jp_speech_eval`; the current source tree is kept in the
+internal project directory [`ver1.3/`](ver1.3/README.md) for compatibility with
+existing scripts.
 
 Public demo:
 
@@ -24,7 +26,7 @@ end-to-end scoring. Current capabilities include:
 - optional ASR-assisted content checks
 - pluggable pseudo-reference TTS backends, including AivisSpeech-compatible HTTP engines
 - a small C-end MVP layer for voice calibration, personalized progress feedback,
-  and three-step practice without changing the v1.3 fixed-reference scorer
+  and three-step practice without changing the fixed-reference scorer
 
 ## Quick Start
 
@@ -45,7 +47,7 @@ python scripts/debug_ui.py
 Then open `http://127.0.0.1:8765/`.
 
 For the full setup guide, evaluation limitations, and optional AivisSpeech /
-Kanade experiments, see [`ver1.3/README.md`](ver1.3/README.md).
+Kanade experiments, see the package README in [`ver1.3/`](ver1.3/README.md).
 
 ## Full Web Demo
 

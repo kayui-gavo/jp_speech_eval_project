@@ -4,17 +4,14 @@ This package exposes a small Python interface for integrating the speech evaluat
 
 ## Install locally
 
-From the repository root:
+From the repository root, enter the current package source directory and install it editable:
 
 ```bash
-python -m pip install -e ver1.3
-```
-
-Or from inside `ver1.3`:
-
-```bash
+cd ver1.3
 python -m pip install -e .
 ```
+
+The directory name `ver1.3` is an internal project folder kept for compatibility. External callers should depend on the package/import name `jp_speech_eval`, not on the directory name.
 
 ## Main import
 

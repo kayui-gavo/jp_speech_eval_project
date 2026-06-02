@@ -9,14 +9,12 @@ UI internals.
 From this repository:
 
 ```bash
-pip install -e ver1.3
-```
-
-Or, if you are already inside `ver1.3`:
-
-```bash
+cd ver1.3
 pip install -e .
 ```
+
+The directory name is internal. External pipeline code should import
+`jp_speech_eval` and should not depend on the folder name.
 
 ## Fixed-reference reading
 
