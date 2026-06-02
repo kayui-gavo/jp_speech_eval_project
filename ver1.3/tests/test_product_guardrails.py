@@ -6,6 +6,7 @@ from pathlib import Path
 
 from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
 from jp_speech_eval.eval_modes import evaluate_mode
+from jp_speech_eval.eval_modes import _known_pregenerated_reference_cache
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.user_facing_policy import load_user_facing_messages
 from jp_speech_eval.scoring_policy import policy_from_result
@@ -130,6 +131,12 @@ class ProductGuardrailsTest(unittest.TestCase):
     def test_asr_raw_result_cannot_score(self) -> None:
         with self.assertRaises(ValueError):
             evaluate_mode("asr_pseudo_reference", "dummy.wav", cache_path="cache/ramen_kudasai")
+
+    def test_known_asr_reference_uses_pregenerated_aivis_cache(self) -> None:
+        prefix = _known_pregenerated_reference_cache("ラーメンをください")
+        self.assertIsNotNone(prefix)
+        self.assertEqual(prefix.name, "ramen_kudasai_aivis")
+        self.assertTrue(prefix.with_suffix(".ref.wav").exists())
 
     def test_confirmed_text_builds_weak_target(self) -> None:
         target = build_confirmed_weak_target("ラーメンをください")

@@ -88,6 +88,7 @@ class PackageAndUiContractTest(unittest.TestCase):
         publish = (repo_root / "deploy" / "publish_hf_space.sh").read_text(encoding="utf-8")
         self.assertIn('ENABLE_AIVIS="${ENABLE_AIVIS:-0}"', start)
         self.assertIn('PREWARM_REFERENCES="${PREWARM_REFERENCES:-1}"', start)
+        self.assertIn('DEMO_CACHE="${PREGENERATED_DEMO_CACHE:-assets/reference_cache/ramen_kudasai_aivis}"', start)
         self.assertIn('DEMO_CACHE="${GOOGLE_DEMO_CACHE:-cache/ramen_kudasai_google_chirp3}"', start)
         self.assertIn('DEMO_WAV="${DEMO_CACHE}.ref.wav"', start)
         self.assertIn('--cache "${DEMO_CACHE}"', start)
@@ -102,6 +103,14 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn("/api/kanade/status", ui_source)
         self.assertIn("/api/kanade/reference.wav", ui_source)
         self.assertIn("ThreadPoolExecutor", ui_source)
+
+    def test_pregenerated_aivis_reference_asset_exists_for_fast_hosted_demo(self) -> None:
+        prefix = ROOT / "assets" / "reference_cache" / "ramen_kudasai_aivis"
+        self.assertTrue(prefix.with_suffix(".json").exists())
+        self.assertTrue(prefix.with_suffix(".npz").exists())
+        self.assertTrue(prefix.with_suffix(".ref.wav").exists())
+        meta = prefix.with_suffix(".json").read_text(encoding="utf-8")
+        self.assertIn("aivis_http_pseudo_reference", meta)
 
 
 if __name__ == "__main__":

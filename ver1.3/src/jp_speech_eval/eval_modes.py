@@ -21,6 +21,22 @@ from .transcript_assisted import evaluate_transcript_assisted_light
 from .vad import trim_to_speech
 
 
+ROOT = Path(__file__).resolve().parents[2]
+KNOWN_PREGENERATED_REFERENCE_CACHES = {
+    "ラーメンをください": ROOT / "assets" / "reference_cache" / "ramen_kudasai_aivis",
+}
+
+
+def _known_pregenerated_reference_cache(text: str) -> Path | None:
+    normalized = str(text or "").strip()
+    prefix = KNOWN_PREGENERATED_REFERENCE_CACHES.get(normalized)
+    if prefix is None:
+        return None
+    if prefix.with_suffix(".json").exists() and prefix.with_suffix(".npz").exists() and prefix.with_suffix(".ref.wav").exists():
+        return prefix
+    return None
+
+
 def generated_cache_prefix(
     text: str,
     root: str | Path = "outputs/generated_refs",
@@ -195,7 +211,8 @@ def evaluate_asr_confirmed_weak_reference(
 ) -> Dict[str, Any]:
     base_cache = load_sentence_cache(base_cache_path)
     weak_target = build_confirmed_weak_target(user_confirmed_text)
-    generated_prefix = _build_dynamic_tts_cache(
+    pregenerated_prefix = _known_pregenerated_reference_cache(weak_target["text"])
+    generated_prefix = pregenerated_prefix or _build_dynamic_tts_cache(
         weak_target["text"],
         sr=base_cache.meta.sr,
         generated_cache_dir=generated_cache_dir,
@@ -225,7 +242,12 @@ def evaluate_asr_confirmed_weak_reference(
     result["details"]["reference_warning"] = "user_confirmed_tts_pseudo_reference_not_ground_truth"
     result["details"]["verified_level"] = "auto_pyopenjtalk"
     result["details"]["scoring_policy"] = weak_target["scoring_policy"]
-    result["details"]["reference_source"] = "tts_pseudo_reference"
+    result["details"]["reference_source"] = (
+        "pregenerated_aivis_pseudo_reference"
+        if pregenerated_prefix is not None
+        else "tts_pseudo_reference"
+    )
+    result["details"]["reference_cache_prefix"] = str(generated_prefix)
     return result
 
 
@@ -256,7 +278,8 @@ def evaluate_kanade_asr_confirmed_voice_reference(
     """
     base_cache = load_sentence_cache(base_cache_path)
     weak_target = build_confirmed_weak_target(user_confirmed_text)
-    scoring_prefix = _build_dynamic_tts_cache(
+    pregenerated_prefix = _known_pregenerated_reference_cache(weak_target["text"])
+    scoring_prefix = pregenerated_prefix or _build_dynamic_tts_cache(
         weak_target["text"],
         sr=base_cache.meta.sr,
         generated_cache_dir=generated_cache_dir,
@@ -309,14 +332,23 @@ def evaluate_kanade_asr_confirmed_voice_reference(
     result["details"]["user_confirmed_text"] = weak_target["text"]
     result["details"]["weak_reference"] = True
     result["details"]["weak_target"] = weak_target
-    result["details"]["reference_warning"] = "confirmed_tts_pseudo_reference_used_for_scoring;kanade_reference_is_playback_only"
+    result["details"]["reference_warning"] = (
+        "confirmed_pregenerated_pseudo_reference_used_for_scoring;kanade_reference_is_playback_only"
+        if pregenerated_prefix is not None
+        else "confirmed_tts_pseudo_reference_used_for_scoring;kanade_reference_is_playback_only"
+    )
     result["details"]["playback_reference_source"] = "kanade_voice_conditioned_playback_pseudo_reference"
     result["details"]["voice_reference_cache_prefix"] = str(voice_prefix)
     result["details"]["speaker_reference_audio"] = str(speaker_path)
     result["details"]["kanade_model_id"] = model_id
     result["details"]["verified_level"] = "auto_pyopenjtalk"
     result["details"]["scoring_policy"] = weak_target["scoring_policy"]
-    result["details"]["reference_source"] = "tts_pseudo_reference"
+    result["details"]["reference_source"] = (
+        "pregenerated_aivis_pseudo_reference"
+        if pregenerated_prefix is not None
+        else "tts_pseudo_reference"
+    )
+    result["details"]["scoring_reference_cache_prefix"] = str(scoring_prefix)
     result["details"]["demo_only"] = True
     result["details"]["exclude_from_pronunciation_score"] = True
     return result

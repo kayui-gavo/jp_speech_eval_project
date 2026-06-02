@@ -1,0 +1,163 @@
+{
+  "text": "ラーメンをください",
+  "kana": "ラーメンヲクダサイ",
+  "moras": [
+    "ラ",
+    "ー",
+    "メ",
+    "ン",
+    "ヲ",
+    "ク",
+    "ダ",
+    "サ",
+    "イ"
+  ],
+  "target_pitch": [
+    "H",
+    "L",
+    "L",
+    "L",
+    "L",
+    "L",
+    "H",
+    "H",
+    "L"
+  ],
+  "pitch_target_source": "openjtalk_accent_phrase_chain",
+  "is_question": false,
+  "sr": 16000,
+  "ref_duration_sec": 1.12,
+  "ref_mora_boundaries": [
+    [
+      0.0,
+      0.124444
+    ],
+    [
+      0.124444,
+      0.248889
+    ],
+    [
+      0.248889,
+      0.373333
+    ],
+    [
+      0.373333,
+      0.497778
+    ],
+    [
+      0.497778,
+      0.622222
+    ],
+    [
+      0.622222,
+      0.746667
+    ],
+    [
+      0.746667,
+      0.871111
+    ],
+    [
+      0.871111,
+      0.995556
+    ],
+    [
+      0.995556,
+      1.12
+    ]
+  ],
+  "frontend_raw": [
+    {
+      "string": "ラーメン",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "ラーメン",
+      "read": "ラーメン",
+      "pron": "ラーメン",
+      "acc": 1,
+      "mora_size": 4,
+      "chain_rule": "C1",
+      "chain_flag": -1
+    },
+    {
+      "string": "を",
+      "pos": "助詞",
+      "pos_group1": "格助詞",
+      "pos_group2": "一般",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "を",
+      "read": "ヲ",
+      "pron": "ヲ",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "動詞%F5/名詞%F1",
+      "chain_flag": 1
+    },
+    {
+      "string": "ください",
+      "pos": "動詞",
+      "pos_group1": "自立",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "五段・ラ行特殊",
+      "cform": "連用形",
+      "orig": "くださる",
+      "read": "クダサイ",
+      "pron": "クダサイ",
+      "acc": 3,
+      "mora_size": 4,
+      "chain_rule": "*",
+      "chain_flag": 0
+    }
+  ],
+  "accent_phrases": [
+    {
+      "words": [
+        "ラーメン",
+        "を"
+      ],
+      "moras": [
+        "ラ",
+        "ー",
+        "メ",
+        "ン",
+        "ヲ"
+      ],
+      "accent_position": 1,
+      "chain_flags": [
+        -1,
+        1
+      ],
+      "chain_rules": [
+        "C1",
+        "動詞%F5/名詞%F1"
+      ]
+    },
+    {
+      "words": [
+        "ください"
+      ],
+      "moras": [
+        "ク",
+        "ダ",
+        "サ",
+        "イ"
+      ],
+      "accent_position": 3,
+      "chain_flags": [
+        0
+      ],
+      "chain_rules": [
+        "*"
+      ]
+    }
+  ],
+  "reference_text": "ラーメンをください",
+  "reference_source": "aivis_http_pseudo_reference",
+  "ref_boundary_method": "equal_mora"
+}

@@ -15,8 +15,8 @@ PUBLIC_DEMO_FAST_START="${PUBLIC_DEMO_FAST_START:-1}"
 TTS_BACKEND="pyopenjtalk"
 TTS_MODEL=""
 TTS_VOICE=""
-DEMO_CACHE="cache/ramen_kudasai"
-DEMO_WAV="cache/ramen_kudasai.ref.wav"
+DEMO_CACHE="${PREGENERATED_DEMO_CACHE:-assets/reference_cache/ramen_kudasai_aivis}"
+DEMO_WAV="${DEMO_CACHE}.ref.wav"
 AIVIS_PID=""
 
 if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" && -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
@@ -59,8 +59,8 @@ if [[ "${TTS_BACKEND}" == "google" ]]; then
       TTS_BACKEND="pyopenjtalk"
       TTS_MODEL=""
       TTS_VOICE=""
-      DEMO_CACHE="cache/ramen_kudasai"
-      DEMO_WAV="cache/ramen_kudasai.ref.wav"
+      DEMO_CACHE="${PREGENERATED_DEMO_CACHE:-assets/reference_cache/ramen_kudasai_aivis}"
+      DEMO_WAV="${DEMO_CACHE}.ref.wav"
     fi
   fi
 fi
