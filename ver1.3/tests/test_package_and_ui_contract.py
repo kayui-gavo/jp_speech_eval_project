@@ -103,6 +103,9 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn("/api/kanade/status", ui_source)
         self.assertIn("/api/kanade/reference.wav", ui_source)
         self.assertIn("ThreadPoolExecutor", ui_source)
+        self.assertIn('if self.path.startswith("/api/asr-confirm-sample")', ui_source)
+        self.assertIn('mode = query.get("mode", [self.server.eval_mode])[0]', ui_source)
+        self.assertIn('self._asr_confirmation_response(prompt, self.server.sample_wav, mode)', ui_source)
 
     def test_pregenerated_aivis_reference_asset_exists_for_fast_hosted_demo(self) -> None:
         prefix = ROOT / "assets" / "reference_cache" / "ramen_kudasai_aivis"

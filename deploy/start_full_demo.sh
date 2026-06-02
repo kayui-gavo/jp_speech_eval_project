@@ -41,7 +41,8 @@ elif [[ "${ENABLE_AIVIS}" == "1" ]]; then
 else
   echo "[demo] Google Cloud TTS credentials not configured."
   echo "[demo] AivisSpeech disabled by default for fast public demo startup."
-  echo "[demo] Using pyopenjtalk cached/local pseudo-reference fallback."
+  echo "[demo] Using pregenerated Aivis pseudo-reference for the fixed hosted demo."
+  echo "[demo] Dynamic unknown text still uses pyopenjtalk unless Google/Aivis is configured."
 fi
 
 if [[ "${TTS_BACKEND}" == "google" ]]; then

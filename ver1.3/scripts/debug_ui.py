@@ -213,8 +213,14 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             self._evaluate_wav(self.server.sample_wav, mode=mode)  # type: ignore[attr-defined]
             return
         if self.path.startswith("/api/asr-confirm-sample"):
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            mode = query.get("mode", [self.server.eval_mode])[0]  # type: ignore[attr-defined]
+            if mode not in {"asr_pseudo_reference", "kanade_asr_voice_reference"}:
+                mode = "asr_pseudo_reference"
             prompt = build_asr_confirmation_prompt(self.server.sample_wav)  # type: ignore[attr-defined]
-            self._asr_confirmation_response(prompt, self.server.sample_wav, "asr_pseudo_reference")  # type: ignore[attr-defined]
+            self._asr_confirmation_response(prompt, self.server.sample_wav, mode)  # type: ignore[attr-defined]
             return
         if self.path.startswith("/api/evaluate-confirmed-sample"):
             from urllib.parse import parse_qs, urlparse
