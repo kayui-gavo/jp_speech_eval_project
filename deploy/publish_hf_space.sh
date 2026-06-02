@@ -25,6 +25,7 @@ rsync -a \
   --exclude '*.egg-info/' \
   --exclude '.DS_Store' \
   --exclude 'JANON/' \
+  --exclude 'JVS/' \
   --exclude 'ver1.0/' \
   --exclude 'ver1.3/outputs/' \
   --exclude '20260424_EE-F_2_TianhaoYUAN.pdf' \
@@ -33,6 +34,8 @@ rsync -a \
   "${root_dir}/" "${bundle_dir}/"
 
 cp "${root_dir}/deploy/hf-space/README.md" "${bundle_dir}/README.md"
+
+echo "Bundle file count: $(find "${bundle_dir}" -type f | wc -l | tr -d ' ')"
 
 "${root_dir}/.venv/bin/hf" repos create "${repo_id}" \
   --repo-type space \
