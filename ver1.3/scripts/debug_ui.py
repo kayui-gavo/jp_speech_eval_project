@@ -8,6 +8,8 @@ import json
 import os
 import sys
 import tempfile
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List
@@ -41,6 +43,9 @@ from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_ligh
 from jp_speech_eval.unified_result import unify_evaluation_result
 from jp_speech_eval.vad import detect_speech_region
 from jp_speech_eval.feedback_renderer import render_user_facing_result
+
+
+BACKGROUND_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="debug-ui-bg")
 
 
 def _json_response(handler: SimpleHTTPRequestHandler, payload: Dict[str, Any], status: int = 200) -> None:
@@ -148,6 +153,10 @@ def _mode_labels() -> Dict[str, str]:
     }
 
 
+def _kanade_reference_url(job_id: str) -> str:
+    return f"/api/kanade/reference.wav?job_id={job_id}"
+
+
 class DebugUiHandler(SimpleHTTPRequestHandler):
     server_version = "JpSpeechEvalDebugUI/1.0"
 
@@ -186,6 +195,12 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             return
         if self.path.startswith("/api/latest-reference.wav"):
             self._serve_wav_file(self.server.latest_reference_wav)  # type: ignore[attr-defined]
+            return
+        if self.path.startswith("/api/kanade/status"):
+            self._kanade_status()
+            return
+        if self.path.startswith("/api/kanade/reference.wav"):
+            self._kanade_reference_wav()
             return
         if self.path == "/api/sample.wav":
             self._serve_wav_file(self.server.sample_wav)  # type: ignore[attr-defined]
@@ -430,14 +445,30 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 tts_voice=self.server.tts_voice,  # type: ignore[attr-defined]
                 tts_speed=self.server.tts_speed,  # type: ignore[attr-defined]
             )
+            kanade_job: Dict[str, Any] | None = None
+            response_mode = "asr_confirmed_weak_reference"
             if confirmed_mode == "kanade_asr_voice_reference":
-                result = evaluate_kanade_asr_confirmed_voice_reference(wav_path, **kwargs)
+                result = evaluate_asr_confirmed_weak_reference(wav_path, **kwargs)
+                mode = str(result.get("details", {}).get("mode") or "asr_confirmed_weak_reference")
+                response_mode = "kanade_asr_confirmed_voice_reference"
+                result["details"]["kanade"] = {
+                    "status": "pending",
+                    "message": "Kanade voice-like reference is generated in the background and does not affect scoring.",
+                    "playback_only": True,
+                    "exclude_from_pronunciation_score": True,
+                }
+                kanade_job = self._submit_kanade_job(wav_path, user_confirmed_text, kwargs)
+                result["details"]["kanade"].update({
+                    "job_id": kanade_job["job_id"],
+                    "status_url": f"/api/kanade/status?job_id={kanade_job['job_id']}",
+                })
             else:
                 result = evaluate_asr_confirmed_weak_reference(wav_path, **kwargs)
+                mode = str(result.get("details", {}).get("mode") or "asr_confirmed_weak_reference")
+                response_mode = mode
             generated_prefix = Path(result.get("cache_prefix", ""))
             reference = _reference_payload(generated_prefix)
-            mode = str(result.get("details", {}).get("mode") or "asr_confirmed_weak_reference")
-            voice_prefix_raw = str(result.get("details", {}).get("voice_reference_cache_prefix") or "")
+            voice_prefix_raw = str((kanade_job or {}).get("voice_reference_cache_prefix") or result.get("details", {}).get("voice_reference_cache_prefix") or "")
             self.server.latest_reference_wav = (  # type: ignore[attr-defined]
                 Path(voice_prefix_raw).with_suffix(".ref.wav")
                 if voice_prefix_raw
@@ -450,16 +481,82 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             unified_payload.pop("raw_metrics", None)
             _json_response(self, {
                 "ok": True,
-                "mode": mode,
+                "mode": response_mode,
                 "wav_path": str(wav_path.relative_to(ROOT)) if wav_path.is_relative_to(ROOT) else str(wav_path),
                 "reference": reference,
-                "reference_audio_url": f"/api/latest-reference.wav?mode=asr_confirmed_weak_reference&text={hashlib.sha1(user_confirmed_text.encode('utf-8')).hexdigest()[:12]}",
+                "reference_audio_url": (
+                    _kanade_reference_url(kanade_job["job_id"])
+                    if kanade_job
+                    else f"/api/latest-reference.wav?mode=asr_confirmed_weak_reference&text={hashlib.sha1(user_confirmed_text.encode('utf-8')).hexdigest()[:12]}"
+                ),
+                "kanade": (kanade_job if kanade_job else None),
                 "result": result,
                 "unified": unified_payload,
                 "user_facing": render_user_facing_result(result, mode=mode),
             })
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
+
+    def _submit_kanade_job(self, wav_path: Path, user_confirmed_text: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        job_id = uuid.uuid4().hex[:12]
+        job = {
+            "job_id": job_id,
+            "status": "pending",
+            "playback_only": True,
+            "exclude_from_pronunciation_score": True,
+            "message": "Kanade voice-like reference is generated in the background and does not affect scoring.",
+        }
+        self.server.kanade_jobs[job_id] = job  # type: ignore[attr-defined]
+
+        def _run() -> None:
+            try:
+                result = evaluate_kanade_asr_confirmed_voice_reference(wav_path, **kwargs)
+                voice_prefix_raw = str(result.get("details", {}).get("voice_reference_cache_prefix") or "")
+                wav = Path(voice_prefix_raw).with_suffix(".ref.wav") if voice_prefix_raw else None
+                if not wav or not wav.exists():
+                    raise FileNotFoundError("Kanade reference wav was not generated")
+                job.update({
+                    "status": "ready",
+                    "reference_audio_url": _kanade_reference_url(job_id),
+                    "voice_reference_cache_prefix": voice_prefix_raw,
+                    "audio_path": str(wav),
+                    "message": "Kanade voice-like reference is ready for playback.",
+                })
+            except Exception as exc:
+                job.update({
+                    "status": "failed",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "message": "Kanade voice-like reference failed, but scoring result is unaffected.",
+                })
+
+        BACKGROUND_POOL.submit(_run)
+        return dict(job)
+
+    def _kanade_status(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+
+        query = parse_qs(urlparse(self.path).query)
+        job_id = query.get("job_id", [""])[0]
+        job = self.server.kanade_jobs.get(job_id)  # type: ignore[attr-defined]
+        if not job:
+            _error_response(self, "Kanade job not found", status=404)
+            return
+        _json_response(self, {"ok": True, "kanade": job})
+
+    def _kanade_reference_wav(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+
+        query = parse_qs(urlparse(self.path).query)
+        job_id = query.get("job_id", [""])[0]
+        job = self.server.kanade_jobs.get(job_id)  # type: ignore[attr-defined]
+        if not job:
+            _error_response(self, "Kanade job not found", status=404)
+            return
+        if job.get("status") != "ready":
+            _json_response(self, {"ok": False, "kanade": job}, status=202)
+            return
+        wav = Path(str(job.get("audio_path") or ""))
+        self._serve_wav_file(wav)
 
     def _compare_sample(self) -> None:
         modes = [
@@ -508,6 +605,10 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
 
     def _reference_wav(self) -> None:
         try:
+            cached_wav = self.server.cache_prefix.with_suffix(".ref.wav")  # type: ignore[attr-defined]
+            if cached_wav.exists():
+                self._serve_wav_file(cached_wav)
+                return
             import soundfile as sf
 
             cache = load_sentence_cache(self.server.cache_prefix)  # type: ignore[attr-defined]
@@ -603,6 +704,7 @@ def main() -> None:
     server.feature_csv = (ROOT / args.feature_csv).resolve() if not Path(args.feature_csv).is_absolute() else Path(args.feature_csv)
     server.available_modes = available_modes
     server.asr_confirmation_sessions = {}
+    server.kanade_jobs = {}
     server.retain_uploads = not args.public_demo
     server.enable_logs = not args.public_demo
     server.server_label = "Public demo" if args.public_demo else "Local debug"

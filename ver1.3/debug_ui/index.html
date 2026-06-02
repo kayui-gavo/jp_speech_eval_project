@@ -944,7 +944,8 @@
       recordStatusKey: "ready",
       liveHintKey: "waiting",
       busyKey: null,
-      pendingAsrConfirmation: null
+      pendingAsrConfirmation: null,
+      kanadePollTimer: null
     };
 
     const scoreKeys = [
@@ -1020,6 +1021,9 @@
         asrReferenceWithMethod: "ASR 参考音（{method}）",
         asrScoringVoicePlayback: "ASR 评分参考 + 声线播放",
         voicePlaybackScoringAsrTts: "播放用声线参考；评分仍用 ASR TTS",
+        kanadePending: "声线参考音生成中，评分结果不受影响",
+        kanadeReady: "声线参考音已生成",
+        kanadeFailed: "声线参考音生成失败，但评分结果不受影响",
         voicePseudoReference: "声线伪参考",
         kanadeReferenceWithMethod: "Kanade 参考音（{method}）",
         transcriptAssistedDiagnosis: "转写辅助诊断",
@@ -1218,6 +1222,9 @@
         asrReferenceWithMethod: "ASR 參考音（{method}）",
         asrScoringVoicePlayback: "ASR 評分參考 + 聲線播放",
         voicePlaybackScoringAsrTts: "播放用聲線參考；評分仍用 ASR TTS",
+        kanadePending: "聲線參考音產生中，評分結果不受影響",
+        kanadeReady: "聲線參考音已產生",
+        kanadeFailed: "聲線參考音產生失敗，但評分結果不受影響",
         voicePseudoReference: "聲線偽參考",
         kanadeReferenceWithMethod: "Kanade 參考音（{method}）",
         transcriptAssistedDiagnosis: "轉寫輔助診斷",
@@ -1416,6 +1423,9 @@
         asrReferenceWithMethod: "ASR 参照音声（{method}）",
         asrScoringVoicePlayback: "ASR 評価参照 + 声質再生",
         voicePlaybackScoringAsrTts: "再生は声質参照、評価は ASR TTS",
+        kanadePending: "声質参照音声を生成中です。評価結果には影響しません",
+        kanadeReady: "声質参照音声を生成しました",
+        kanadeFailed: "声質参照音声の生成に失敗しました。評価結果には影響しません",
         voicePseudoReference: "声質疑似参照",
         kanadeReferenceWithMethod: "Kanade 参照音声（{method}）",
         transcriptAssistedDiagnosis: "書き起こし補助診断",
@@ -1614,6 +1624,9 @@
         asrReferenceWithMethod: "ASR reference ({method})",
         asrScoringVoicePlayback: "ASR scoring reference + voice playback",
         voicePlaybackScoringAsrTts: "Voice playback only; scoring still uses ASR TTS",
+        kanadePending: "Voice-like reference is being generated; scoring is unaffected",
+        kanadeReady: "Voice-like reference is ready",
+        kanadeFailed: "Voice-like reference failed; scoring is unaffected",
         voicePseudoReference: "Voice-conditioned pseudo-reference",
         kanadeReferenceWithMethod: "Kanade reference ({method})",
         transcriptAssistedDiagnosis: "Transcript-assisted diagnosis",
@@ -2370,15 +2383,49 @@
       drawPitchComparison(null);
     }
 
+    function clearKanadePolling() {
+      if (state.kanadePollTimer) {
+        clearTimeout(state.kanadePollTimer);
+        state.kanadePollTimer = null;
+      }
+    }
+
+    async function pollKanadeStatus(jobId, attempt = 0) {
+      if (!jobId || attempt > 20) return;
+      try {
+        const payload = await fetch(`/api/kanade/status?job_id=${encodeURIComponent(jobId)}`).then((r) => r.json());
+        const kanade = payload.kanade || {};
+        if (kanade.status === "ready" && kanade.reference_audio_url) {
+          $("referenceLabel").textContent = t("kanadeReady");
+          $("referenceAudio").src = kanade.reference_audio_url;
+          $("referenceAudio").load();
+          return;
+        }
+        if (kanade.status === "failed") {
+          $("referenceLabel").textContent = t("kanadeFailed");
+          $("referenceAudio").removeAttribute("src");
+          $("referenceAudio").load();
+          return;
+        }
+      } catch (_) {
+        // Keep the scoring result visible even if the optional playback poll fails.
+      }
+      state.kanadePollTimer = setTimeout(() => pollKanadeStatus(jobId, attempt + 1), 1500);
+    }
+
     function renderDynamicReference(payload) {
       const result = payload.result || {};
       const mode = result.details?.mode || payload.mode || currentMode();
+      clearKanadePolling();
       if (payload.reference) {
         state.activeReference = payload.reference;
       } else if (payload.mode === "acoustic" || mode.includes("acoustic") || mode === "transcript_assisted_light") {
         state.activeReference = null;
       }
-      if (payload.reference_audio_url) {
+      const kanade = payload.kanade || result.details?.kanade || null;
+      const hasKanadePlayback = Boolean(kanade);
+      const kanadePending = kanade && kanade.status === "pending";
+      if (payload.reference_audio_url && !kanadePending) {
         $("referenceAudio").src = payload.reference_audio_url;
         $("referenceAudio").load();
       }
@@ -2388,10 +2435,21 @@
         const method = payload.reference?.ref_boundary_method || "generated";
         $("referenceLabel").textContent = t("asrReferenceWithMethod", { method });
         $("cacheLabel").textContent = asrText;
-      } else if (mode === "kanade_asr_voice_reference" || mode === "kanade_asr_confirmed_voice_reference") {
+      } else if (hasKanadePlayback || mode === "kanade_asr_voice_reference" || mode === "kanade_asr_confirmed_voice_reference") {
         const asrText = result.details?.user_confirmed_text || result.details?.asr?.text || result.target_text || t("asrTranscript");
         $("cachePath").textContent = t("asrScoringVoicePlayback");
-        $("referenceLabel").textContent = t("voicePlaybackScoringAsrTts");
+        if (kanadePending) {
+          $("referenceLabel").textContent = t("kanadePending");
+          $("referenceAudio").removeAttribute("src");
+          $("referenceAudio").load();
+          pollKanadeStatus(kanade.job_id);
+        } else if (kanade?.status === "failed") {
+          $("referenceLabel").textContent = t("kanadeFailed");
+          $("referenceAudio").removeAttribute("src");
+          $("referenceAudio").load();
+        } else {
+          $("referenceLabel").textContent = t("voicePlaybackScoringAsrTts");
+        }
         $("cacheLabel").textContent = asrText;
       } else if (mode === "kanade_voice_reference") {
         const method = payload.reference?.ref_boundary_method || "generated";

@@ -82,6 +82,22 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn("SpeechEvaluationClient", text)
         self.assertIn("user_facing", text)
 
+    def test_hosted_demo_fast_start_contract(self) -> None:
+        repo_root = ROOT.parent
+        start = (repo_root / "deploy" / "start_full_demo.sh").read_text(encoding="utf-8")
+        publish = (repo_root / "deploy" / "publish_hf_space.sh").read_text(encoding="utf-8")
+        self.assertIn('ENABLE_AIVIS="${ENABLE_AIVIS:-0}"', start)
+        self.assertIn('PREWARM_REFERENCES="${PREWARM_REFERENCES:-1}"', start)
+        self.assertNotIn("deadline = time.time() + 900", start)
+        self.assertIn("--exclude 'JANON/'", publish)
+        self.assertIn("--exclude 'JVS/'", publish)
+
+    def test_kanade_async_status_endpoints_are_registered(self) -> None:
+        ui_source = (ROOT / "scripts" / "debug_ui.py").read_text(encoding="utf-8")
+        self.assertIn("/api/kanade/status", ui_source)
+        self.assertIn("/api/kanade/reference.wav", ui_source)
+        self.assertIn("ThreadPoolExecutor", ui_source)
+
 
 if __name__ == "__main__":
     unittest.main()
