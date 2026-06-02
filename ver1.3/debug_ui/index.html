@@ -788,10 +788,9 @@
           <div class="mode-row">
             <span data-i18n="evaluationMode">评价模式</span>
             <select id="evalMode">
-              <option value="reference">固定句参考评价</option>
-              <option value="asr_pseudo_reference">ASR 生成参考</option>
-              <option value="transcript_assisted_light">转写辅助轻量评价</option>
-              <option value="acoustic">录音质量/声学诊断</option>
+              <option value="reference">固定句跟读练习</option>
+              <option value="asr_pseudo_reference">自由说一句：确认文本</option>
+              <option value="kanade_asr_voice_reference">自由说一句：声线参考</option>
             </select>
             <span class="pill" id="modeHint">需要目标句</span>
           </div>
@@ -1112,12 +1111,12 @@
           tone_score: "表达"
         },
         modeLabels: {
-          reference: "固定句参考评价",
-          asr_pseudo_reference: "自由说话：ASR 确认参考",
+          reference: "固定句跟读练习",
+          asr_pseudo_reference: "自由说一句：确认文本",
           transcript_assisted_light: "自由说话：轻量转写诊断",
           acoustic: "录音质量/声学诊断",
           kanade_voice_reference: "实验：固定句声线参考",
-          kanade_asr_voice_reference: "自由说话：ASR + Kanade 声线参考",
+          kanade_asr_voice_reference: "自由说一句：声线参考",
           kanade_asr_confirmed_voice_reference: "自由说话：ASR 确认 + Kanade"
         },
         statusLabels: {
@@ -1310,12 +1309,12 @@
           tone_score: "表達"
         },
         modeLabels: {
-          reference: "固定句參考評價",
-          asr_pseudo_reference: "自由說話：ASR 確認參考",
+          reference: "固定句跟讀練習",
+          asr_pseudo_reference: "自由說一句：確認文字",
           transcript_assisted_light: "自由說話：輕量轉寫診斷",
           acoustic: "錄音品質/聲學診斷",
           kanade_voice_reference: "實驗：固定句聲線參考",
-          kanade_asr_voice_reference: "自由說話：ASR + Kanade 聲線參考",
+          kanade_asr_voice_reference: "自由說一句：聲線參考",
           kanade_asr_confirmed_voice_reference: "自由說話：ASR 確認 + Kanade"
         },
         statusLabels: {
@@ -1508,12 +1507,12 @@
           tone_score: "表現"
         },
         modeLabels: {
-          reference: "固定文参照評価",
-          asr_pseudo_reference: "自由発話：ASR 確認参照",
+          reference: "固定文の音読練習",
+          asr_pseudo_reference: "自由に一言：文を確認",
           transcript_assisted_light: "自由発話：軽量書き起こし診断",
           acoustic: "録音品質/音響診断",
           kanade_voice_reference: "実験：固定文の声質参照",
-          kanade_asr_voice_reference: "自由発話：ASR + Kanade 声質参照",
+          kanade_asr_voice_reference: "自由に一言：声質参照",
           kanade_asr_confirmed_voice_reference: "自由発話：ASR 確認 + Kanade"
         },
         statusLabels: {
@@ -1706,12 +1705,12 @@
           tone_score: "Expression"
         },
         modeLabels: {
-          reference: "Fixed-sentence reference scoring",
-          asr_pseudo_reference: "Free speech: confirmed ASR reference",
+          reference: "Fixed sentence practice",
+          asr_pseudo_reference: "Say one sentence: confirm text",
           transcript_assisted_light: "Free speech: light transcript diagnosis",
           acoustic: "Recording/acoustic diagnosis",
           kanade_voice_reference: "Experimental: fixed-sentence voice reference",
-          kanade_asr_voice_reference: "Free speech: ASR + Kanade voice reference",
+          kanade_asr_voice_reference: "Say one sentence: voice reference",
           kanade_asr_confirmed_voice_reference: "Free speech: confirmed ASR + Kanade"
         },
         statusLabels: {
@@ -1752,12 +1751,12 @@
     };
 
     const modeCatalog = {
-      reference: { group: "core", hint: "modeHintReference", tone: "good", tags: ["最适合正式评分", "需要目标句", "有参考音"] },
-      asr_pseudo_reference: { group: "free", hint: "modeHintAsr", tone: "warn", tags: ["自由说话", "依赖 ASR", "会生成伪参考"] },
+      reference: { group: "core", hint: "modeHintReference", tone: "good", tags: ["主练习入口", "需要目标句", "有参考音"] },
+      asr_pseudo_reference: { group: "free", hint: "modeHintAsr", tone: "warn", tags: ["自由说话", "确认文本", "弱参考反馈"] },
       transcript_assisted_light: { group: "free", hint: "modeHintLight", tone: "warn", tags: ["自由说话", "轻量", "不生成参考音"] },
       acoustic: { group: "diagnostic", hint: "modeHintAcoustic", tone: "", tags: ["录音质量", "声学代理分", "不判断内容"] },
       kanade_voice_reference: { group: "experimental", hint: "modeHintKanade", tone: "bad", tags: ["实验", "声线参考", "不作正式评分依据"] },
-      kanade_asr_voice_reference: { group: "free", hint: "modeHintKanadeAsr", tone: "warn", tags: ["自由说话", "ASR + Kanade", "声线播放"] }
+      kanade_asr_voice_reference: { group: "free", hint: "modeHintKanadeAsr", tone: "warn", tags: ["自由说话", "确认文本", "声线参考"] }
     };
 
     const modeText = {
@@ -2192,7 +2191,7 @@
       const selected = select.value || state.config?.eval_mode || "reference";
       const modes = Array.isArray(state.config?.available_modes) && state.config.available_modes.length
         ? state.config.available_modes
-        : ["reference", "asr_pseudo_reference", "transcript_assisted_light", "acoustic"];
+        : ["reference", "asr_pseudo_reference", "kanade_asr_voice_reference"];
       const groups = ["core", "free", "diagnostic", "experimental"];
       select.innerHTML = groups.map((group) => {
         const groupModes = modes.filter((mode) => (modeCatalog[mode]?.group || "diagnostic") === group);

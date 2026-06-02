@@ -118,21 +118,19 @@ def _field_value(form: cgi.FieldStorage, name: str, default: str) -> str:
 CORE_MODES = [
     "reference",
     "asr_pseudo_reference",
-    "transcript_assisted_light",
-    "acoustic",
+    "kanade_asr_voice_reference",
 ]
 
 PUBLIC_DEMO_MODES = [
     "reference",
     "asr_pseudo_reference",
     "kanade_asr_voice_reference",
-    "transcript_assisted_light",
-    "acoustic",
 ]
 
 EXPERIMENTAL_MODES = [
     "kanade_voice_reference",
-    "kanade_asr_voice_reference",
+    "transcript_assisted_light",
+    "acoustic",
 ]
 
 ALL_MODES = CORE_MODES + EXPERIMENTAL_MODES
