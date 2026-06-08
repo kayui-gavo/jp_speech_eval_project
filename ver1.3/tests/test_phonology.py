@@ -28,14 +28,16 @@ class PhonologyTest(unittest.TestCase):
         sensei = classify_mora_sequence(split_mora("センセイ"))
         self.assertEqual(sensei[-1].mora_type, "vowel_lengthening_candidate")
 
-    def test_weak_long_vowel_candidate_is_light_penalty(self) -> None:
+    def test_weak_long_vowel_candidate_is_debug_only_no_penalty(self) -> None:
         moras = split_mora("アリガトウ")
         boundaries = [(0.00, 0.20), (0.20, 0.40), (0.40, 0.60), (0.60, 0.80), (0.80, 0.86)]
         score, feedback, details = score_pronunciation_rhythm(moras, boundaries)
         self.assertLess(score, 100)
-        self.assertTrue(any("长音感" in item for item in feedback))
+        self.assertFalse(any("长音感" in item for item in feedback))
+        self.assertEqual(details["special_mora_penalty"], 0.0)
         self.assertEqual(details["special_mora_diagnostics"][0]["strength"], "weak")
-        self.assertLess(details["special_mora_diagnostics"][0]["penalty"], 10.0)
+        self.assertEqual(details["special_mora_diagnostics"][0]["penalty"], 0.0)
+        self.assertEqual(details["special_mora_diagnostics"][0]["penalty_reason"], "weak_lengthening_candidate_debug_only")
 
     def test_mora_evidence_logs_weak_and_strong_counts(self) -> None:
         moras = split_mora("ラーメンアリガトウ")

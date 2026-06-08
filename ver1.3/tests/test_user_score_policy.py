@@ -30,9 +30,16 @@ def _result(**overrides):
 
 def test_bad_pronunciation_cannot_be_lifted_to_high_display_score():
     policy = apply_user_score_policy(_result(pronunciation_score=55, prosody_score=98, fluency_score=98))
-    assert policy["display_score"] <= 68
+    assert policy["display_score"] <= 65
     assert policy["pronunciation_clarity_score"] <= 55
+    assert policy["display_score"] <= policy["pronunciation_clarity_score"] + 5
     assert policy["main_message_key"] == "clear_recording_but_pronunciation_needs_practice"
+
+
+def test_pronunciation_under_70_cannot_be_lifted_above_75():
+    policy = apply_user_score_policy(_result(pronunciation_score=66, prosody_score=100, fluency_score=100))
+    assert policy["display_score"] <= 75
+    assert policy["display_score"] <= policy["pronunciation_clarity_score"] + 5
 
 
 def test_fallback_alignment_caps_display_and_pronunciation_clarity():

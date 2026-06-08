@@ -217,6 +217,25 @@ def _is_retry_message(message: str) -> bool:
     return any(term.lower() in lower for term in retry_terms)
 
 
+def _is_pitch_or_prosody_message(message: str) -> bool:
+    terms = (
+        "音高",
+        "語調",
+        "语调",
+        "韵律",
+        "韻律",
+        "抑揚",
+        "アクセント",
+        "イントネーション",
+        "pitch",
+        "prosody",
+        "intonation",
+        "accent",
+    )
+    lower = message.lower()
+    return any(term.lower() in lower for term in terms)
+
+
 def render_user_facing_result(
     result: Mapping[str, Any],
     *,
@@ -283,7 +302,7 @@ def render_user_facing_result(
             break
         if gate.practice_check_result != "retry" and _is_retry_message(item):
             continue
-        if not gate.allow_pitch_feedback and ("音高" in item or "語調" in item or "语调" in item):
+        if not gate.allow_pitch_feedback and _is_pitch_or_prosody_message(item):
             continue
         if item not in messages:
             messages.append(item)

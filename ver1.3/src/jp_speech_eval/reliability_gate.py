@@ -45,6 +45,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     recording_score = float(recording.get("score", 1.0) or 1.0)
     content_status = str(content.get("status") or "unknown")
     alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
+    is_fixed_reference = policy.mode in {"reference", "reference_based", "reference_fixed_sentence", "fixed_reference"}
 
     messages: List[str] = []
     reasons: List[str] = []
@@ -52,7 +53,9 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     practice = "ok"
     allow_detail = True
     allow_special = policy.allow_special_mora_feedback
-    allow_pitch = policy.allow_pitch_feedback
+    allow_pitch = policy.allow_pitch_feedback and is_fixed_reference and not policy.weak_reference and not policy.demo_only
+    if not is_fixed_reference:
+        reasons.append("pitch_not_fixed_reference")
 
     if recording_score < 0.55 or "recording_quality" in str(reliability.get("warnings", [])):
         return ReliabilityGate(
@@ -91,6 +94,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         if alignment_mode.endswith("fallback_equal"):
             allow_detail = False
             allow_special = False
+            allow_pitch = False
             blocked.extend(["special_mora", "pronunciation"])
             messages.append("今回は音声の位置合わせが不安定なため、細かい拍ごとの発音判定は表示しません。")
             reasons.append("fallback_alignment")

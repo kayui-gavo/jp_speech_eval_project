@@ -163,7 +163,7 @@ def apply_user_score_policy(
         score_caps["special_mora_soft_penalty"] = -penalty
 
     display = 0.70 * pronunciation + 0.20 * rhythm + 0.10 * fluency
-    display = min(display, pronunciation + 8.0)
+    display = min(display, pronunciation + 5.0)
     pronunciation_clarity = pronunciation
 
     if pronunciation < 50:
@@ -171,13 +171,13 @@ def apply_user_score_policy(
         warnings.append("pronunciation_under_50_display_cap")
         score_caps["pronunciation_under_50_display_cap"] = 60
     elif pronunciation < 60:
-        display = _cap(display, 68.0)
+        display = _cap(display, 65.0)
         warnings.append("pronunciation_under_60_display_cap")
-        score_caps["pronunciation_under_60_display_cap"] = 68
+        score_caps["pronunciation_under_60_display_cap"] = 65
     elif pronunciation < 70:
-        display = _cap(display, 78.0)
+        display = _cap(display, 75.0)
         warnings.append("pronunciation_under_70_display_cap")
-        score_caps["pronunciation_under_70_display_cap"] = 78
+        score_caps["pronunciation_under_70_display_cap"] = 75
 
     if alignment_mode.endswith("fallback_equal") or "fallback" in alignment_mode:
         pronunciation_clarity = None

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import unittest
 import json
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from scripts.audit_fixed_reference_scoring import write_markdown_summary
 from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
 from jp_speech_eval.eval_modes import evaluate_asr_confirmed_weak_reference, evaluate_mode
 from jp_speech_eval.eval_modes import _known_pregenerated_reference_cache
@@ -128,6 +130,31 @@ class ProductGuardrailsTest(unittest.TestCase):
         rendered = render_user_facing_result(result)
         self.assertFalse(rendered["debug"]["scoring_policy"]["allow_pitch_feedback"])
         self.assertFalse(any("音高" in msg for msg in rendered["user_messages"]))
+
+    def test_pitch_or_prosody_feedback_is_hidden_when_f0_evidence_is_low(self) -> None:
+        result = _result(
+            feedback=["イントネーションはよくできています。", "pitch is close to the reference."],
+            details={"reliability": {"level": "medium", "overall": 0.8, "alignment": 0.8, "f0_coverage": 0.2}},
+        )
+        rendered = render_user_facing_result(result)
+        joined = "\n".join(rendered["user_messages"])
+        self.assertFalse(rendered["debug"]["reliability_gate"]["allow_pitch_feedback"])
+        self.assertNotIn("イントネーション", joined)
+        self.assertNotIn("pitch", joined.lower())
+
+    def test_fallback_alignment_suppresses_pitch_even_when_raw_prosody_is_high(self) -> None:
+        result = _result(
+            alignment_mode="cached_dtw_fallback_equal",
+            prosody_score=99,
+            feedback=["韵律很好，アクセントも自然です。"],
+        )
+        rendered = render_user_facing_result(result)
+        joined = "\n".join(rendered["user_messages"])
+        self.assertIsNone(rendered["display_score"])
+        self.assertFalse(rendered["debug"]["reliability_gate"]["allow_pitch_feedback"])
+        self.assertEqual(rendered["debug"]["prosody_score"], 99)
+        self.assertNotIn("韵律", joined)
+        self.assertNotIn("アクセント", joined)
 
     def test_asr_raw_result_cannot_score(self) -> None:
         with self.assertRaises(ValueError):
@@ -534,6 +561,36 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertEqual(by_id["ramen_kudasai"]["verified_level"], "human_checked")
         self.assertEqual(by_id["coffee_kudasai"]["verified_level"], "auto_pyopenjtalk")
         self.assertTrue(by_id["coffee_kudasai"]["moras"])
+
+    def test_fixed_reference_audit_summary_flags_negative_pitch_or_score(self) -> None:
+        rows = [
+            {
+                "sample_id": "english_1",
+                "audio_type": "english",
+                "reference_type": "pseudo_reference",
+                "expected_behavior": "no_score",
+                "score_available": True,
+                "display_score": 88,
+                "pronunciation_score": 80,
+                "raw_prosody_score": 95,
+                "pitch_feedback_allowed": True,
+                "alignment_gate": "ok",
+                "content_gate": "pass",
+                "recording_gate": "ok",
+                "pronunciation_evidence_gate": "ok",
+                "special_mora_user_facing_count": 0,
+                "special_mora_suppressed": False,
+                "warning_codes": "",
+                "suppressed_reasons": "",
+                "user_message_type": "",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "summary.md"
+            write_markdown_summary(path, rows)
+            text = path.read_text(encoding="utf-8")
+        self.assertIn("Negative controls with user-facing score or pitch", text)
+        self.assertIn("english_1", text)
 
     def test_demo_smoke_test_script_generates_expected_rows(self) -> None:
         from scripts.run_demo_flow_smoke_tests import run

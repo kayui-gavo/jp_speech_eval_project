@@ -22,6 +22,7 @@ DEFAULT_SCORING_CONFIG: Dict[str, Any] = {
     },
     "pronunciation": {
         "special_mora_short_ratio": 0.45,
+        "clear_special_mora_short_ratio": 0.38,
         "special_mora_penalty": 10.0,
         "weak_long_vowel_short_ratio": 0.55,
         "weak_long_vowel_penalty": 4.0,
