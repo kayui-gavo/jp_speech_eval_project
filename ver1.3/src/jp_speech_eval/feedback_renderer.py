@@ -176,6 +176,8 @@ def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -
         return "debug_only"
     if policy.weak_reference and "confirmed" not in policy.mode:
         return "debug_only"
+    if not gate.allow_pronunciation_detail:
+        return "debug_only"
     if gate.reliability == "low":
         return "debug_only"
     if focus and focus.get("category") not in {"demo", "weak_reference"}:

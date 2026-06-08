@@ -37,10 +37,29 @@ def test_bad_pronunciation_cannot_be_lifted_to_high_display_score():
 
 def test_fallback_alignment_caps_display_and_pronunciation_clarity():
     policy = apply_user_score_policy(_result(alignment_mode="cached_dtw_fallback_equal"))
-    assert policy["display_score"] <= 70
-    assert policy["pronunciation_clarity_score"] <= 65
+    assert policy["display_score"] is None
+    assert policy["pronunciation_clarity_score"] is None
     assert "alignment_fallback_cap" in policy["score_policy_warnings"]
+    assert "alignment_fallback_no_display_score" in policy["score_policy_warnings"]
     assert policy["detail_feedback_allowed"] is False
+    assert policy["scoring_gate"]["alignment_ok"] is False
+    assert policy["scoring_gate"]["score_available"] is False
+
+
+def test_low_alignment_hides_display_and_pronunciation_clarity():
+    policy = apply_user_score_policy(_result(details={"reliability": {"level": "medium", "overall": 0.7, "alignment": 0.3}}))
+    assert policy["display_score"] is None
+    assert policy["pronunciation_clarity_score"] is None
+    assert "low_alignment_no_display_score" in policy["score_policy_warnings"]
+    assert policy["detail_feedback_allowed"] is False
+
+
+def test_bad_recording_hides_display_score():
+    policy = apply_user_score_policy(_result(details={"recording_quality": {"score": 0.4}}))
+    assert policy["display_score"] is None
+    assert policy["pronunciation_clarity_score"] is None
+    assert "recording_quality_no_display_score" in policy["score_policy_warnings"]
+    assert policy["scoring_gate"]["recording_ok"] is False
 
 
 def test_content_failed_hides_pronunciation_score():
@@ -48,6 +67,23 @@ def test_content_failed_hides_pronunciation_score():
     assert policy["display_score"] is None
     assert policy["pronunciation_clarity_score"] is None
     assert policy["confidence_label"] == "low"
+    assert policy["scoring_gate"]["target_match_ok"] is False
+
+
+def test_fluency_and_prosody_cannot_lift_failed_content_case():
+    policy = apply_user_score_policy(
+        _result(
+            pronunciation_score=95,
+            prosody_score=100,
+            fluency_score=100,
+            details={
+                "content_match": {"status": "fail"},
+                "fluency": {"rhythm_timing_score": 100, "delivery_fluency_score": 100},
+            },
+        )
+    )
+    assert policy["display_score"] is None
+    assert policy["pronunciation_clarity_score"] is None
 
 
 def test_weak_reference_hides_display_score_and_confidence_limited():

@@ -17,7 +17,7 @@ DEFAULT_USER_FACING_MESSAGES: Dict[str, str] = {
     "notice.weak_reference": "認識された文をもとにした参考判定です。厳密な発音評価ではありません。",
     "notice.kanade": "これはあなたの声に近い参考音です。声の似ている度合いは採点していません。",
     "special_mora.mild_long": "より自然にするなら，「{mora}」を少し長めに意識するとよいです。",
-    "score_policy.alignment_limited_score_cap": "今回は音声の細かい位置合わせが不安定なため，表示スコアは控えめにしています。",
+    "score_policy.alignment_limited_score_cap": "今回は音声の細かい位置合わせが不安定なため，詳しい発音スコアは表示しません。",
     "score_policy.clear_recording_but_pronunciation_needs_practice": "録音ははっきりしています。ただし，発音の明瞭さにはまだ改善の余地があります。まずは参考音声をゆっくり聞きながら練習してみましょう。",
     "score_policy.content_match_failed_no_pronunciation_score": "目標文との一致が不足しているため，今回は発音スコアを表示しません。",
     "score_policy.demo_only_no_pronunciation_score": "このモードは参考音声のデモです。発音の正しさは採点していません。",

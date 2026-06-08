@@ -54,12 +54,12 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     allow_special = policy.allow_special_mora_feedback
     allow_pitch = policy.allow_pitch_feedback
 
-    if recording_score < 0.35 or "recording_quality" in str(reliability.get("warnings", [])):
+    if recording_score < 0.55 or "recording_quality" in str(reliability.get("warnings", [])):
         return ReliabilityGate(
             reliability="unscorable",
             practice_check_result="retry",
             blocked_categories=["content", "special_mora", "pitch", "pronunciation"],
-            messages=["録音が聞き取りにくいため、もう一度録音してください。"],
+            messages=["録音が小さい、または聞き取りにくいため、今回は詳しい評価を出せません。マイクに少し近づいて、もう一度録音してください。"],
             reasons=["recording_quality_bad"],
             allow_special_mora_feedback=False,
             allow_pitch_feedback=False,
@@ -92,7 +92,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
             allow_detail = False
             allow_special = False
             blocked.extend(["special_mora", "pronunciation"])
-            messages.append("細かい拍ごとの判定は控えめに見てください。全体の聞こえ方を中心に確認します。")
+            messages.append("今回は音声の位置合わせが不安定なため、細かい拍ごとの発音判定は表示しません。")
             reasons.append("fallback_alignment")
         else:
             messages.append("今回は一部の判定だけ参考にしてください。")

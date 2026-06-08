@@ -178,6 +178,13 @@ class ProductGuardrailsTest(unittest.TestCase):
         rows = score_special_mora_timing(result)
         self.assertTrue(all(row.status == "uncertain" for row in rows if row.type in {"long_vowel", "moraic_nasal"}))
 
+    def test_equal_fallback_hides_user_facing_score(self) -> None:
+        rendered = render_user_facing_result(_result(alignment_mode="cached_dtw_fallback_equal"))
+        self.assertIsNone(rendered["display_score"])
+        self.assertIsNone(rendered["pronunciation_clarity_score"])
+        self.assertIn("alignment_fallback_no_display_score", rendered["score_policy_warnings"])
+        self.assertFalse(rendered["detail_feedback_allowed"])
+
     def test_runtime_missing_threshold_metadata_is_debug_uncertain(self) -> None:
         import tempfile
         from pathlib import Path
@@ -498,6 +505,9 @@ class ProductGuardrailsTest(unittest.TestCase):
         rendered = render_user_facing_result(_result(details={"recording_quality": {"score": 0.1}}))
         self.assertEqual(rendered["status"], "retry")
         self.assertEqual(rendered["practice_score"]["label"], "録音を確認")
+        self.assertIsNone(rendered["display_score"])
+        self.assertIsNone(rendered["pronunciation_clarity_score"])
+        self.assertIn("recording_quality_bad", rendered["suppressed_reasons"])
 
     def test_kanade_mode_is_debug_only_playback_notice(self) -> None:
         rendered = render_user_facing_result(

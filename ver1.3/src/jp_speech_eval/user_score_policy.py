@@ -68,6 +68,16 @@ def apply_user_score_policy(
     warnings: List[str] = []
     score_caps: Dict[str, Any] = {}
     detail_feedback_allowed = True
+    score_available = True
+    gate_state: Dict[str, Any] = {
+        "recording_ok": True,
+        "target_match_ok": True,
+        "alignment_ok": True,
+        "pronunciation_evidence_ok": True,
+        "score_available": True,
+        "user_message_type": "",
+        "reasons": [],
+    }
 
     pronunciation = _score(raw_result.get("pronunciation_score"))
     rhythm = _score(fluency_details.get("rhythm_timing_score", raw_result.get("prosody_score")))
@@ -91,6 +101,12 @@ def apply_user_score_policy(
 
     if demo_only:
         warnings.append("demo_only_no_pronunciation_score")
+        gate_state.update({
+            "pronunciation_evidence_ok": False,
+            "score_available": False,
+            "user_message_type": "demo_only",
+            "reasons": ["demo_only_no_pronunciation_score"],
+        })
         return {
             "display_score": None,
             "pronunciation_clarity_score": None,
@@ -100,6 +116,8 @@ def apply_user_score_policy(
             "main_message_key": "demo_only_no_pronunciation_score",
             "score_policy_warnings": warnings,
             "score_caps": score_caps,
+            "score_available": False,
+            "scoring_gate": gate_state,
             "detail_feedback_allowed": False,
             "inputs": {
                 "mode": mode,
@@ -112,6 +130,13 @@ def apply_user_score_policy(
 
     if content_status in {"fail", "failed", "content_mismatch"}:
         warnings.append("content_match_failed_no_pronunciation_score")
+        gate_state.update({
+            "target_match_ok": False,
+            "pronunciation_evidence_ok": False,
+            "score_available": False,
+            "user_message_type": "content_mismatch",
+            "reasons": ["content_match_failed_no_pronunciation_score"],
+        })
         return {
             "display_score": None,
             "pronunciation_clarity_score": None,
@@ -121,6 +146,8 @@ def apply_user_score_policy(
             "main_message_key": "content_match_failed_no_pronunciation_score",
             "score_policy_warnings": warnings,
             "score_caps": score_caps,
+            "score_available": False,
+            "scoring_gate": gate_state,
             "detail_feedback_allowed": False,
             "inputs": {
                 "mode": mode,
@@ -153,24 +180,38 @@ def apply_user_score_policy(
         score_caps["pronunciation_under_70_display_cap"] = 78
 
     if alignment_mode.endswith("fallback_equal") or "fallback" in alignment_mode:
-        pronunciation_clarity = _cap(pronunciation_clarity, 65.0) or 0.0
-        display = _cap(display, 70.0)
+        pronunciation_clarity = None
+        display = None
         detail_feedback_allowed = False
+        score_available = False
         warnings.append("alignment_fallback_cap")
-        score_caps["fallback_pronunciation_cap"] = 65
-        score_caps["fallback_display_cap"] = 70
+        warnings.append("alignment_fallback_no_display_score")
+        score_caps["fallback_pronunciation_score"] = None
+        score_caps["fallback_display_score"] = None
         confidence_label = _confidence_at_most(confidence_label, "medium")
+        gate_state["alignment_ok"] = False
+        gate_state["pronunciation_evidence_ok"] = False
+        gate_state["score_available"] = False
+        gate_state["user_message_type"] = "alignment_limited"
+        gate_state["reasons"].append("alignment_fallback_no_display_score")
 
     if reliability_level == "low" or alignment_confidence < 0.45:
-        pronunciation_clarity = _cap(pronunciation_clarity, 70.0) or 0.0
-        display = _cap(display, 75.0)
+        pronunciation_clarity = None
+        display = None
         detail_feedback_allowed = False
+        score_available = False
         warnings.append("low_alignment_cap")
-        score_caps["low_alignment_pronunciation_cap"] = 70
-        score_caps["low_alignment_display_cap"] = 75
+        warnings.append("low_alignment_no_display_score")
+        score_caps["low_alignment_pronunciation_score"] = None
+        score_caps["low_alignment_display_score"] = None
         confidence_label = _confidence_at_most(confidence_label, "low")
+        gate_state["alignment_ok"] = False
+        gate_state["pronunciation_evidence_ok"] = False
+        gate_state["score_available"] = False
+        gate_state["user_message_type"] = "alignment_low"
+        gate_state["reasons"].append("low_alignment_no_display_score")
 
-    if content_status in {"marginal", "partial"}:
+    if score_available and content_status in {"marginal", "partial"}:
         pronunciation_clarity = _cap(pronunciation_clarity, 70.0) or 0.0
         display = _cap(display, 75.0)
         warnings.append("content_marginal_cap")
@@ -188,16 +229,29 @@ def apply_user_score_policy(
         display = None
         pronunciation_clarity = _cap(pronunciation_clarity, 80.0) or 0.0
         detail_feedback_allowed = False
+        score_available = False
         confidence_label = _confidence_at_most(confidence_label, "medium")
         warnings.append("weak_reference_no_display_score")
         score_caps["weak_reference_display_score"] = None
         score_caps["weak_reference_pronunciation_cap"] = 80
+        gate_state["pronunciation_evidence_ok"] = False
+        gate_state["score_available"] = False
+        gate_state["user_message_type"] = "weak_reference"
+        gate_state["reasons"].append("weak_reference_no_display_score")
 
     if recording_score < 0.55:
-        display = _cap(display, 70.0)
+        display = None
+        pronunciation_clarity = None
+        detail_feedback_allowed = False
+        score_available = False
         confidence_label = _confidence_at_most(confidence_label, "low")
-        warnings.append("recording_quality_cap")
-        score_caps["recording_quality_display_cap"] = 70
+        warnings.append("recording_quality_no_display_score")
+        score_caps["recording_quality_display_score"] = None
+        gate_state["recording_ok"] = False
+        gate_state["pronunciation_evidence_ok"] = False
+        gate_state["score_available"] = False
+        gate_state["user_message_type"] = "recording_bad"
+        gate_state["reasons"].append("recording_quality_no_display_score")
 
     practice_completion: Optional[float]
     if content_status in {"pass", "unknown"}:
@@ -215,7 +269,7 @@ def apply_user_score_policy(
         main_message_key = "alignment_limited_score_cap"
     if "short_sentence_cap" in warnings and not main_message_key:
         main_message_key = "short_sentence_overall_only"
-    if recording_score >= 0.75 and pronunciation_clarity < 70:
+    if recording_score >= 0.75 and pronunciation_clarity is not None and pronunciation_clarity < 70:
         main_message_key = "clear_recording_but_pronunciation_needs_practice"
 
     return {
@@ -227,6 +281,8 @@ def apply_user_score_policy(
         "main_message_key": main_message_key,
         "score_policy_warnings": warnings,
         "score_caps": score_caps,
+        "score_available": score_available,
+        "scoring_gate": gate_state,
         "detail_feedback_allowed": detail_feedback_allowed,
         "inputs": {
             "mode": mode,
