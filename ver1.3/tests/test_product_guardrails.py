@@ -3,9 +3,10 @@ from __future__ import annotations
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
-from jp_speech_eval.eval_modes import evaluate_mode
+from jp_speech_eval.eval_modes import evaluate_asr_confirmed_weak_reference, evaluate_mode
 from jp_speech_eval.eval_modes import _known_pregenerated_reference_cache
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.user_facing_policy import load_user_facing_messages
@@ -417,11 +418,37 @@ class ProductGuardrailsTest(unittest.TestCase):
             },
         )
         rendered = render_user_facing_result(result, mode="asr_pseudo_reference")
-        self.assertLessEqual(rendered["display_score"], 80)
-        self.assertIn("weak_reference_cap", rendered["score_policy_warnings"])
+        self.assertIsNone(rendered["display_score"])
+        self.assertIn("weak_reference_no_display_score", rendered["score_policy_warnings"])
         self.assertTrue(rendered["debug"]["weak_reference"])
         self.assertEqual(rendered["status"], "debug_only")
         self.assertIsNone(rendered["practice_score"]["value"])
+
+    def test_confirmed_weak_reference_downgrades_tts_pitch_proxy(self) -> None:
+        fake_cache = Mock()
+        fake_cache.meta.sr = 16000
+        fake_eval = Mock()
+        fake_eval.to_dict.return_value = _result(
+            total_score=96,
+            pronunciation_score=92,
+            prosody_score=99,
+            details={"prosody": {"contour_corr": 0.99, "transition_agreement": 0.99}},
+        )
+        with patch("jp_speech_eval.eval_modes.load_sentence_cache", return_value=fake_cache), \
+             patch("jp_speech_eval.eval_modes._known_pregenerated_reference_cache", return_value=Path("cache/fake_ref")), \
+             patch("jp_speech_eval.eval_modes.evaluate_utterance", return_value=fake_eval):
+            result = evaluate_asr_confirmed_weak_reference(
+                "user.wav",
+                user_confirmed_text="ラーメンをください",
+                base_cache_path="cache/base",
+            )
+        self.assertEqual(result["details"]["mode"], "asr_confirmed_weak_reference")
+        self.assertTrue(result["details"]["weak_reference"])
+        self.assertLessEqual(result["prosody_score"], 35)
+        self.assertLessEqual(result["total_score"], 60)
+        self.assertFalse(result["details"]["prosody"]["user_facing_available"])
+        self.assertFalse(result["details"]["prosody"]["pitch_correctness_available"])
+        self.assertEqual(result["details"]["prosody"]["raw_prosody_score_before_downgrade"], 99)
 
     def test_missing_split_fluency_is_not_treated_as_zero(self) -> None:
         result = _result(

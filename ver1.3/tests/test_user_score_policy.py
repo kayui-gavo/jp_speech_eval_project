@@ -50,14 +50,14 @@ def test_content_failed_hides_pronunciation_score():
     assert policy["confidence_label"] == "low"
 
 
-def test_weak_reference_is_capped_and_confidence_limited():
+def test_weak_reference_hides_display_score_and_confidence_limited():
     policy = apply_user_score_policy(
         _result(details={"weak_reference": True}),
         mode="asr_confirmed_weak_reference",
     )
-    assert policy["display_score"] <= 80
+    assert policy["display_score"] is None
     assert policy["confidence_label"] in {"low", "medium"}
-    assert "weak_reference_cap" in policy["score_policy_warnings"]
+    assert "weak_reference_no_display_score" in policy["score_policy_warnings"]
 
 
 def test_short_sentence_caps_detail_display():

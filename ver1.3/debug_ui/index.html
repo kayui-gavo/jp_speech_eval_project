@@ -2564,7 +2564,8 @@
     function renderScores(result, userFacing = null) {
       const hideTotal = userFacing?.display_total_score === false;
       const cards = [];
-      const total = Number(userFacing?.display_score ?? result.total_score);
+      const hasUserFacingDisplay = userFacing && userFacing.display_score !== undefined && userFacing.display_score !== null;
+      const total = Number(hasUserFacingDisplay ? userFacing.display_score : (userFacing ? NaN : result.total_score));
       if (Number.isFinite(total) && result.details?.mode !== "reference_free_acoustic") {
         cards.push(`<div class="score total"><span>${t("overallPerformance")}</span><strong>${total}</strong><span>/ 100 · ${t("notStrictScore")}</span></div>`);
       } else if (userFacing) {

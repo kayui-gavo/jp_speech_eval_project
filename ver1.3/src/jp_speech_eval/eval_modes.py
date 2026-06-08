@@ -127,6 +127,26 @@ def _reject_dynamic_reference_result(
     return result
 
 
+def _downgrade_weak_reference_pitch(result: Dict[str, Any], *, reason: str) -> None:
+    """Prevent ASR-generated weak references from exposing pitch correctness.
+
+    A confirmed ASR transcript is useful for practice playback, but its TTS
+    reference is not a stable accent/prosody ground truth. Keep the acoustic
+    debug fields for inspection while making the public score explicitly
+    conservative.
+    """
+    details = result.setdefault("details", {})
+    prosody = details.setdefault("prosody", {})
+    prosody["user_facing_available"] = False
+    prosody["pitch_correctness_available"] = False
+    prosody["downgrade_reason"] = reason
+    prosody["raw_prosody_score_before_downgrade"] = result.get("prosody_score")
+    details["pitch_feedback_allowed"] = False
+    details["prosody_scoring_note"] = "weak_reference_tts_pitch_is_not_ground_truth"
+    result["prosody_score"] = min(int(result.get("prosody_score", 0) or 0), 35)
+    result["total_score"] = min(int(result.get("total_score", 0) or 0), 60)
+
+
 def _build_dynamic_tts_cache(
     text: str,
     *,
@@ -248,6 +268,7 @@ def evaluate_asr_confirmed_weak_reference(
         else "tts_pseudo_reference"
     )
     result["details"]["reference_cache_prefix"] = str(generated_prefix)
+    _downgrade_weak_reference_pitch(result, reason="asr_confirmed_tts_pseudo_reference")
     return result
 
 
@@ -351,6 +372,7 @@ def evaluate_kanade_asr_confirmed_voice_reference(
     result["details"]["scoring_reference_cache_prefix"] = str(scoring_prefix)
     result["details"]["demo_only"] = True
     result["details"]["exclude_from_pronunciation_score"] = True
+    _downgrade_weak_reference_pitch(result, reason="kanade_asr_playback_only")
     return result
 
 

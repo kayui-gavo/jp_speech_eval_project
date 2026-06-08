@@ -72,6 +72,12 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertNotIn("transcript_assisted_light", debug_ui.CORE_MODES)
         self.assertNotIn("acoustic", debug_ui.PUBLIC_DEMO_MODES)
 
+    def test_demo_ui_does_not_fallback_to_raw_total_when_user_score_is_hidden(self) -> None:
+        ui = (ROOT / "debug_ui" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("hasUserFacingDisplay", ui)
+        self.assertIn("(userFacing ? NaN : result.total_score)", ui)
+        self.assertNotIn("userFacing?.display_score ?? result.total_score", ui)
+
     def test_package_api_docs_and_example_exist(self) -> None:
         doc = ROOT / "docs" / "python_package_api.md"
         example = ROOT / "examples" / "package_api_quickstart.py"

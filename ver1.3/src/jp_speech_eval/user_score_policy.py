@@ -185,10 +185,13 @@ def apply_user_score_policy(
         score_caps["short_sentence_display_cap"] = 80
 
     if weak_reference:
-        display = _cap(display, 80.0)
+        display = None
+        pronunciation_clarity = _cap(pronunciation_clarity, 80.0) or 0.0
+        detail_feedback_allowed = False
         confidence_label = _confidence_at_most(confidence_label, "medium")
-        warnings.append("weak_reference_cap")
-        score_caps["weak_reference_display_cap"] = 80
+        warnings.append("weak_reference_no_display_score")
+        score_caps["weak_reference_display_score"] = None
+        score_caps["weak_reference_pronunciation_cap"] = 80
 
     if recording_score < 0.55:
         display = _cap(display, 70.0)
