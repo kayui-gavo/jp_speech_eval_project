@@ -62,7 +62,31 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertTrue(response.ok)
         self.assertIn("user_facing", response.to_dict())
         self.assertIn("practice_score", response.user_facing)
+        self.assertIn("score_dimensions", response.user_facing)
         self.assertFalse(response.user_facing["display_total_score"])
+
+    def test_user_facing_score_dimensions_have_product_labels(self) -> None:
+        client = SpeechEvaluationClient(SpeechEvalConfig(cache_path="cache/ramen_kudasai"))
+        with patch("jp_speech_eval.api.evaluate_mode", return_value=_raw_result()):
+            response = client.evaluate(EvaluationRequest(audio_path="user.wav", mode="reference"))
+        dims = response.user_facing["score_dimensions"]
+        labels = [item["label"] for item in dims]
+        self.assertEqual(labels, ["発音の明瞭さ", "拍のリズム", "読み方のなめらかさ", "高低アクセント"])
+        self.assertEqual([item["key"] for item in dims], ["pronunciation_clarity", "mora_rhythm", "delivery_fluency", "pitch_accent"])
+        self.assertNotIn("韻律", labels)
+        self.assertNotIn("音調", labels)
+
+    def test_pitch_guard_blocks_pitch_accent_dimension_value_but_keeps_debug_prosody(self) -> None:
+        raw = _raw_result()
+        raw["details"]["verified_level"] = "auto_pyopenjtalk"
+        raw["details"]["pitch_target_source"] = "auto_pyopenjtalk"
+        client = SpeechEvaluationClient(SpeechEvalConfig(cache_path="cache/ramen_kudasai"))
+        with patch("jp_speech_eval.api.evaluate_mode", return_value=raw):
+            response = client.evaluate(EvaluationRequest(audio_path="user.wav", mode="reference"))
+        dims = {item["key"]: item for item in response.user_facing["score_dimensions"]}
+        self.assertFalse(dims["pitch_accent"]["available"])
+        self.assertIsNone(dims["pitch_accent"]["value"])
+        self.assertEqual(response.raw_result["prosody_score"], 80)
 
     def test_demo_ui_default_modes_hide_diagnostic_tools(self) -> None:
         import scripts.debug_ui as debug_ui
@@ -75,6 +99,10 @@ class PackageAndUiContractTest(unittest.TestCase):
     def test_demo_ui_does_not_fallback_to_raw_total_when_user_score_is_hidden(self) -> None:
         ui = (ROOT / "debug_ui" / "index.html").read_text(encoding="utf-8")
         self.assertIn("hasUserFacingDisplay", ui)
+        self.assertIn("score_dimensions", ui)
+        self.assertIn("高低アクセント", ui)
+        self.assertNotIn('prosody_score: "韻律"', ui)
+        self.assertNotIn('prosody_score: "韵律"', ui)
         self.assertIn("(userFacing ? NaN : result.total_score)", ui)
         self.assertNotIn("userFacing?.display_score ?? result.total_score", ui)
 

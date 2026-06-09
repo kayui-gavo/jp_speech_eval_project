@@ -313,12 +313,77 @@ def _warning_counts(rows: List[Mapping[str, Any]], field: str) -> str:
     return ", ".join(f"{key}:{value}" for key, value in counts.most_common()) or "-"
 
 
-def write_markdown_summary(path: str | Path, rows: List[Dict[str, Any]]) -> None:
+def _ids(rows: Iterable[Mapping[str, Any]]) -> str:
+    data = [str(row.get("sample_id") or "") for row in rows if str(row.get("sample_id") or "")]
+    return ", ".join(data) if data else "-"
+
+
+def _count_by(rows: Iterable[Mapping[str, Any]], field: str) -> str:
+    return _join_counts(row.get(field) for row in rows)
+
+
+def write_markdown_summary(path: str | Path, rows: List[Dict[str, Any]], *, manifest_path: str | Path | None = None) -> None:
     grouped: Dict[tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
     for row in rows:
         grouped[_group_key(row)].append(row)
 
     lines: List[str] = ["# Fixed-reference Scoring Audit Summary", ""]
+    lines.extend([
+        "## Experiment Overview",
+        "",
+        f"- manifest_path: `{manifest_path or ''}`",
+        f"- total_samples: {len(rows)}",
+        f"- expected_behavior_counts: {_count_by(rows, 'expected_behavior')}",
+        f"- audio_type_counts: {_count_by(rows, 'audio_type')}",
+        f"- reference_type_counts: {_count_by(rows, 'reference_type')}",
+        "",
+        "## Main Diagnostic Questions",
+        "",
+    ])
+
+    negative_rows = [
+        row for row in rows
+        if str(row.get("expected_behavior") or "") in NEGATIVE_EXPECTED
+        or str(row.get("audio_type") or "") in NEGATIVE_AUDIO_TYPES
+    ]
+    weak_rows = [
+        row for row in rows
+        if str(row.get("expected_behavior") or "") == "weak_reference_should_not_score"
+        or "weak_reference" in str(row.get("reference_type") or "")
+    ]
+    fallback_rows = [
+        row for row in rows
+        if str(row.get("expected_behavior") or "") == "alignment_bad_should_not_score"
+        or str(row.get("audio_type") or "") == "fallback_alignment_case"
+        or str(row.get("alignment_gate") or "") == "blocked"
+    ]
+    native_rows = [row for row in rows if str(row.get("expected_behavior") or "") == "native_should_score_high"]
+    bad_learner_rows = [row for row in rows if str(row.get("expected_behavior") or "") == "bad_learner_should_not_score_high"]
+    negative_score = [row for row in negative_rows if _is_true(row.get("score_available")) or _float_or_none(row.get("display_score")) is not None]
+    negative_pitch = [row for row in negative_rows if _is_true(row.get("pitch_feedback_allowed"))]
+    weak_score = [row for row in weak_rows if _float_or_none(row.get("display_score")) is not None]
+    weak_pitch = [row for row in weak_rows if _is_true(row.get("pitch_feedback_allowed"))]
+    fallback_pitch = [row for row in fallback_rows if _is_true(row.get("pitch_feedback_allowed"))]
+    native_rejected = [row for row in native_rows if not _is_true(row.get("score_available")) or _float_or_none(row.get("display_score")) is None]
+    native_low = [row for row in native_rows if (_float_or_none(row.get("display_score")) or 100.0) < 75.0]
+    bad_high = [row for row in bad_learner_rows if (_float_or_none(row.get("display_score")) or 0.0) >= 80.0]
+    native_special = [row for row in native_rows if float(row.get("special_mora_user_facing_count") or 0) > 0]
+    native_cap = [row for row in native_rows if (_float_or_none(row.get("display_cap_reduction")) or 0.0) >= 10.0]
+
+    question_rows = [
+        ("Are negative controls blocked?", not negative_score and not negative_pitch, _ids(negative_score + negative_pitch)),
+        ("Are weak-reference samples blocked?", not weak_score and not weak_pitch, _ids(weak_score + weak_pitch)),
+        ("Are fallback alignment samples blocked from pitch feedback?", not fallback_pitch, _ids(fallback_pitch)),
+        ("Are native samples rejected too often?", len(native_rejected) == 0, _ids(native_rejected)),
+        ("Are native scores too low?", len(native_low) == 0, _ids(native_low)),
+        ("Are bad learner samples still suspiciously high?", len(bad_high) == 0, _ids(bad_high)),
+        ("Is special mora warning shown for native?", len(native_special) == 0, _ids(native_special)),
+        ("Is display cap frequently applied to native?", len(native_cap) == 0, _ids(native_cap)),
+    ]
+    for question, passed, sample_ids in question_rows:
+        lines.append(f"- {question} {'OK' if passed else 'CHECK'}; affected_sample_id={sample_ids}")
+
+    lines.extend(["", "## Group Summary", ""])
     lines.append("| audio_type | reference_type | expected | n | score_available | display mean/median/p10/p90 | pron mean/median | raw prosody mean/median | pitch allowed | pitch leakage | cap rate | avg cap reduction | fallback | content fail | pron evidence fail | special shown | special suppressed |")
     lines.append("|---|---|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for key, group in sorted(grouped.items()):
@@ -428,6 +493,28 @@ def write_markdown_summary(path: str | Path, rows: List[Dict[str, Any]]) -> None
             f"{row.get('sample_id')}({row.get('display_cap_reduction')})" for row in large_caps
         ))
 
+    lines.extend(["", "## Suspicious Sample List", ""])
+    suspicious_lists = [
+        ("negative_controls_with_display_score", negative_score),
+        ("negative_controls_with_pitch_feedback_allowed", negative_pitch),
+        ("weak_reference_with_display_score", weak_score),
+        ("fallback_with_pitch_feedback_allowed", fallback_pitch),
+        ("bad_learner_display_score_gte_80", bad_high),
+        ("native_display_score_lt_75", native_low),
+        ("native_rejected_by_gate", native_rejected),
+        ("native_with_special_mora_user_facing_warning", native_special),
+        ("native_with_large_display_cap_reduction", native_cap),
+    ]
+    for label, data in suspicious_lists:
+        lines.append(f"- {label}: {_ids(data)}")
+
+    lines.extend(["", "## Decision Hints", ""])
+    lines.append("- If negative controls still show scores or pitch feedback, fix gates or message leakage first.")
+    lines.append("- If native samples are often rejected, check reference audio, alignment, VAD, and sampling rate before changing score mapping.")
+    lines.append("- If native score availability is acceptable but display scores are low, inspect score mapping and display cap behavior next.")
+    lines.append("- If bad learner samples remain 80+, calibrate pronunciation_score in the next round after gate behavior is confirmed.")
+    lines.append("- This audit does not auto-tune thresholds.")
+
     lines.extend(["", "## Warning Code Counts", ""])
     lines.append(f"- score_policy_warnings: {_warning_counts(rows, 'warning_codes')}")
     lines.append(f"- suppressed_reasons: {_warning_counts(rows, 'suppressed_reasons')}")
@@ -463,7 +550,7 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
     print(f"Wrote {out}")
-    write_markdown_summary(args.summary_out, rows)
+    write_markdown_summary(args.summary_out, rows, manifest_path=args.manifest)
     print(f"Wrote {args.summary_out}")
     false_high = [
         row for row in rows

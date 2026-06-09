@@ -169,6 +169,56 @@ def _policy_message(message_key: str) -> str:
     return user_message(f"score_policy.{message_key}") if message_key else ""
 
 
+def _score_dimension(key: str, label: str, value: Any, *, available: bool, source_field: str) -> Dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "value": int(round(_as_score(value))) if available and value is not None and value != "" else None,
+        "available": bool(available and value is not None and value != ""),
+        "source_field": source_field,
+    }
+
+
+def _score_dimensions(result: Mapping[str, Any], gate: Any, user_score: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
+    fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
+    prosody = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
+    rhythm = fluency.get("rhythm_timing_score", result.get("fluency_score"))
+    delivery = fluency.get("delivery_fluency_score", result.get("fluency_score"))
+    pitch_value = prosody.get("pitch_accent_score", result.get("prosody_score"))
+    detail_allowed = bool(user_score.get("detail_feedback_allowed", True)) and gate.practice_check_result != "retry"
+    return [
+        _score_dimension(
+            "pronunciation_clarity",
+            "発音の明瞭さ",
+            user_score.get("pronunciation_clarity_score"),
+            available=user_score.get("pronunciation_clarity_score") is not None,
+            source_field="pronunciation_clarity_score",
+        ),
+        _score_dimension(
+            "mora_rhythm",
+            "拍のリズム",
+            rhythm,
+            available=detail_allowed,
+            source_field="rhythm_timing_score",
+        ),
+        _score_dimension(
+            "delivery_fluency",
+            "読み方のなめらかさ",
+            delivery,
+            available=detail_allowed,
+            source_field="delivery_fluency_score",
+        ),
+        _score_dimension(
+            "pitch_accent",
+            "高低アクセント",
+            pitch_value,
+            available=detail_allowed and bool(gate.allow_pitch_feedback),
+            source_field="pitch_accent_score",
+        ),
+    ]
+
+
 def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -> str:
     if gate.practice_check_result == "retry":
         return "retry"
@@ -351,6 +401,7 @@ def render_user_facing_result(
         confidence_label=str(user_score.get("confidence_label") or gate.reliability),
         score_policy_warnings=list(user_score.get("score_policy_warnings") or []),
         score_caps=dict(user_score.get("score_caps") or {}),
+        score_dimensions=_score_dimensions(result, gate, user_score),
         detail_feedback_allowed=bool(user_score.get("detail_feedback_allowed", True)),
         user_messages=messages[:2],
         focus_feedback=focus,

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import unittest
+import csv
 import json
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts.audit_fixed_reference_scoring import write_markdown_summary
+from scripts.build_fixed_reference_audit_manifest import build_manifest
 from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
 from jp_speech_eval.eval_modes import evaluate_asr_confirmed_weak_reference, evaluate_mode
 from jp_speech_eval.eval_modes import _known_pregenerated_reference_cache
@@ -676,6 +678,76 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertIn("WARN_bad_learner_suspicious_high_rate", text)
         self.assertIn("reduction_gte_10", text)
         self.assertIn("bad_high", text)
+
+    def test_fixed_reference_audit_summary_has_experiment_overview_and_suspicious_lists(self) -> None:
+        rows = [
+            {
+                "sample_id": "wrong_1",
+                "audio_type": "wrong_japanese_sentence",
+                "reference_type": "tts_reference",
+                "expected_behavior": "content_mismatch_should_not_score",
+                "score_available": True,
+                "display_score": 82,
+                "display_score_before_cap": 88,
+                "display_score_after_cap": 82,
+                "display_cap_applied": True,
+                "display_cap_reason": "pronunciation_margin_cap",
+                "display_cap_reduction": 6,
+                "pronunciation_score": 77,
+                "raw_prosody_score": 90,
+                "pitch_feedback_allowed": True,
+                "pitch_text_leakage_warning": False,
+                "pitch_text_leakage_terms": "",
+                "alignment_gate": "ok",
+                "content_gate": "pass",
+                "recording_gate": "ok",
+                "pronunciation_evidence_gate": "ok",
+                "special_mora_user_facing_count": 0,
+                "special_mora_suppressed": False,
+                "special_mora_evidence_level": "",
+                "special_mora_suppression_reason": "",
+                "rhythm_timing_penalty_reason": "",
+                "warning_codes": "",
+                "suppressed_reasons": "",
+                "user_message_type": "",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "summary.md"
+            write_markdown_summary(path, rows, manifest_path="data/audit/fixed_reference_manifest_v0.csv")
+            text = path.read_text(encoding="utf-8")
+        self.assertIn("Experiment Overview", text)
+        self.assertIn("Main Diagnostic Questions", text)
+        self.assertIn("Suspicious Sample List", text)
+        self.assertIn("negative_controls_with_display_score: wrong_1", text)
+        self.assertIn("negative_controls_with_pitch_feedback_allowed: wrong_1", text)
+        self.assertIn("Decision Hints", text)
+
+    def test_fixed_reference_manifest_template_has_expected_behavior_column(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "audit" / "fixed_reference_manifest_template.csv"
+        rows = list(csv.DictReader(path.open(encoding="utf-8")))
+        self.assertTrue(rows)
+        self.assertIn("expected_behavior", rows[0])
+        expected = {row["expected_behavior"] for row in rows}
+        self.assertIn("native_should_score_high", expected)
+        self.assertIn("bad_learner_should_not_score_high", expected)
+        self.assertIn("content_mismatch_should_not_score", expected)
+
+    def test_build_fixed_reference_audit_manifest_maps_group_to_expected_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "manual.csv"
+            source.write_text(
+                "sample_id,audio_path,target_text,group,notes\n"
+                "bad_1,audio/bad.wav,ラーメンをください,janon_learner_bad,bad learner\n"
+                "eng_1,audio/eng.wav,ラーメンをください,english_or_chinese_speech,negative\n",
+                encoding="utf-8",
+            )
+            out = Path(tmp) / "manifest.csv"
+            build_manifest(source, out)
+            rows = list(csv.DictReader(out.open(encoding="utf-8")))
+        self.assertEqual(rows[0]["audio_type"], "janon_learner_bad")
+        self.assertEqual(rows[0]["expected_behavior"], "bad_learner_should_not_score_high")
+        self.assertEqual(rows[1]["expected_behavior"], "content_mismatch_should_not_score")
 
     def test_demo_smoke_test_script_generates_expected_rows(self) -> None:
         from scripts.run_demo_flow_smoke_tests import run

@@ -65,6 +65,7 @@ class UserFacingResult:
     confidence_label: str
     score_policy_warnings: List[str]
     score_caps: Dict[str, Any]
+    score_dimensions: List[Dict[str, Any]]
     detail_feedback_allowed: bool
     user_messages: List[str]
     focus_feedback: Optional[Dict[str, Any]]
