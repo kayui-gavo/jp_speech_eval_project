@@ -515,6 +515,57 @@ def write_markdown_summary(path: str | Path, rows: List[Dict[str, Any]], *, mani
     lines.append("- If bad learner samples remain 80+, calibrate pronunciation_score in the next round after gate behavior is confirmed.")
     lines.append("- This audit does not auto-tune thresholds.")
 
+    lines.extend(["", "## Recommended Next Action", ""])
+    recommended: List[str] = []
+    if negative_score or negative_pitch:
+        recommended.append(
+            "- Fix reliability/content gates or user-message leakage first. "
+            "Do not tune pronunciation_score yet. "
+            f"affected_sample_id={_ids(negative_score + negative_pitch)}"
+        )
+    if weak_score or weak_pitch:
+        recommended.append(
+            "- Fix weak-reference suppression before interpreting weak-reference scores. "
+            f"affected_sample_id={_ids(weak_score + weak_pitch)}"
+        )
+    if fallback_pitch:
+        recommended.append(
+            "- Fix fallback-alignment pitch guard before showing any pitch/accent feedback. "
+            f"affected_sample_id={_ids(fallback_pitch)}"
+        )
+    native_score_available_rate = _rate(_is_true(row.get("score_available")) and _float_or_none(row.get("display_score")) is not None for row in native_rows)
+    if native_rows and native_score_available_rate < 0.90:
+        recommended.append(
+            "- Native score availability is low. Check reference audio, VAD, sample rate, kana/mora parsing, "
+            "and alignment thresholds before changing score mapping. "
+            f"score_available_rate={native_score_available_rate}; affected_sample_id={_ids(native_rejected)}"
+        )
+    if native_rows and native_score_available_rate >= 0.90 and native_low:
+        recommended.append(
+            "- Native score availability is acceptable but some native scores are low. Inspect score mapping, "
+            "display cap behavior, and special-mora penalties. "
+            f"affected_sample_id={_ids(native_low)}"
+        )
+    if bad_high:
+        recommended.append(
+            "- Bad learner samples still reach 80+. Next sprint should calibrate pronunciation_score mapping "
+            "and content-acoustic mismatch penalties after gates are confirmed. "
+            f"affected_sample_id={_ids(bad_high)}"
+        )
+    if native_special:
+        recommended.append(
+            "- Native samples show special-mora user-facing warnings. Keep special-mora feedback in shadow/debug "
+            f"until manual review confirms the threshold. affected_sample_id={_ids(native_special)}"
+        )
+    if native_cap:
+        recommended.append(
+            "- Native samples receive large display caps. Inspect whether pronunciation_score is systematically low "
+            f"or whether cap policy is too strict. affected_sample_id={_ids(native_cap)}"
+        )
+    if not recommended:
+        recommended.append("- No blocking automatic action detected. Fill a larger v0 manifest before tuning thresholds.")
+    lines.extend(recommended)
+
     lines.extend(["", "## Warning Code Counts", ""])
     lines.append(f"- score_policy_warnings: {_warning_counts(rows, 'warning_codes')}")
     lines.append(f"- suppressed_reasons: {_warning_counts(rows, 'suppressed_reasons')}")

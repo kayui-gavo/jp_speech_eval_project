@@ -1,0 +1,5 @@
+sample_id,audio_path,target_text,audio_type,reference_type,expected_behavior,notes
+smoke_reference_demo,data/ramen.wav,ラーメンをください,self_recording_clear,tts_reference,clear_learner_should_score,smoke only; checks manifest/audit plumbing and is not a real experiment result
+smoke_weak_reference_demo,data/ramen.wav,ラーメンをください,weak_reference,weak_reference,weak_reference_should_not_score,smoke only; checks weak-reference labels and is not a real experiment result
+smoke_pitch_unverified_demo,data/ramen.wav,コーヒーをください,pitch_unverified,tts_reference,pitch_unverified_should_suppress_pitch,smoke only; checks unverified-pitch labels and is not a real experiment result
+smoke_content_mismatch_demo,data/ramen.wav,コーヒーをください,wrong_japanese_sentence,tts_reference,content_mismatch_should_not_score,smoke only; checks negative-control labels and is not a real experiment result

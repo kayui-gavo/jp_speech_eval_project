@@ -3,12 +3,20 @@ from __future__ import annotations
 import unittest
 import csv
 import json
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts.audit_fixed_reference_scoring import write_markdown_summary
-from scripts.build_fixed_reference_audit_manifest import build_manifest
+from scripts.build_fixed_reference_audit_manifest import (
+    ALLOWED_EXPECTED_BEHAVIORS,
+    FIELDNAMES as AUDIT_MANIFEST_FIELDNAMES,
+    build_manifest,
+    normalize_row,
+    validate_rows,
+)
 from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
 from jp_speech_eval.eval_modes import evaluate_asr_confirmed_weak_reference, evaluate_mode
 from jp_speech_eval.eval_modes import _known_pregenerated_reference_cache
@@ -604,6 +612,8 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertIn("Failures and Warnings", text)
         self.assertIn("FAIL_negative_user_facing_score", text)
         self.assertIn("WARN_pitch_text_leakage", text)
+        self.assertIn("Recommended Next Action", text)
+        self.assertIn("Do not tune pronunciation_score yet", text)
         self.assertIn("english_1", text)
 
     def test_fixed_reference_audit_summary_flags_native_and_bad_learner_groups(self) -> None:
@@ -722,16 +732,53 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertIn("negative_controls_with_display_score: wrong_1", text)
         self.assertIn("negative_controls_with_pitch_feedback_allowed: wrong_1", text)
         self.assertIn("Decision Hints", text)
+        self.assertIn("Recommended Next Action", text)
 
     def test_fixed_reference_manifest_template_has_expected_behavior_column(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "audit" / "fixed_reference_manifest_template.csv"
         rows = list(csv.DictReader(path.open(encoding="utf-8")))
         self.assertTrue(rows)
-        self.assertIn("expected_behavior", rows[0])
+        self.assertEqual(list(rows[0].keys()), AUDIT_MANIFEST_FIELDNAMES)
         expected = {row["expected_behavior"] for row in rows}
         self.assertIn("native_should_score_high", expected)
         self.assertIn("bad_learner_should_not_score_high", expected)
         self.assertIn("content_mismatch_should_not_score", expected)
+        self.assertTrue(all("placeholder" in row["notes"] for row in rows))
+
+    def test_fixed_reference_manifest_allowed_expected_behaviors_are_recognized(self) -> None:
+        rows = []
+        for expected in sorted(ALLOWED_EXPECTED_BEHAVIORS):
+            rows.append({
+                "sample_id": expected,
+                "audio_path": "data/ramen.wav",
+                "target_text": "ラーメンをください",
+                "audio_type": "self_recording_clear",
+                "reference_type": "tts_reference",
+                "expected_behavior": expected,
+                "notes": "",
+            })
+        report = validate_rows(rows, strict=True)
+        self.assertTrue(report.ok)
+        self.assertEqual(report.unknown_expected_behavior_count, 0)
+        self.assertEqual(report.missing_audio_path_count, 0)
+
+    def test_fixed_reference_manifest_unknown_expected_behavior_warns_or_strict_fails(self) -> None:
+        row = {
+            "sample_id": "unknown_case",
+            "audio_path": "data/ramen.wav",
+            "target_text": "ラーメンをください",
+            "audio_type": "self_recording_clear",
+            "reference_type": "tts_reference",
+            "expected_behavior": "unknown_behavior",
+            "notes": "",
+        }
+        loose = validate_rows([row], strict=False)
+        strict = validate_rows([row], strict=True)
+        self.assertTrue(loose.ok)
+        self.assertTrue(loose.warnings)
+        self.assertFalse(strict.ok)
+        self.assertTrue(strict.errors)
+        self.assertEqual(strict.unknown_expected_behavior_count, 1)
 
     def test_build_fixed_reference_audit_manifest_maps_group_to_expected_behavior(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -748,6 +795,136 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertEqual(rows[0]["audio_type"], "janon_learner_bad")
         self.assertEqual(rows[0]["expected_behavior"], "bad_learner_should_not_score_high")
         self.assertEqual(rows[1]["expected_behavior"], "content_mismatch_should_not_score")
+
+    def test_fixed_reference_manifest_normalizes_legacy_group_rows(self) -> None:
+        row = normalize_row({
+            "sample_id": "native_1",
+            "audio_path": "data/ramen.wav",
+            "target_text": "ラーメンをください",
+            "group": "jvs_native_clear",
+        })
+        self.assertEqual(row["audio_type"], "jvs_native_clear")
+        self.assertEqual(row["reference_type"], "human_reference")
+        self.assertEqual(row["expected_behavior"], "native_should_score_high")
+
+    def test_build_manifest_dry_run_prints_counts_and_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "manual.csv"
+            out = Path(tmp) / "manifest.csv"
+            source.write_text(
+                "sample_id,audio_path,target_text,group,notes\n"
+                "native_1,data/ramen.wav,ラーメンをください,jvs_native_clear,native\n"
+                "bad_1,data/ramen.wav,ラーメンをください,janon_learner_bad,bad\n",
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/build_fixed_reference_audit_manifest.py",
+                    "--input",
+                    str(source),
+                    "--out",
+                    str(out),
+                    "--dry-run",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("total rows: 2", proc.stdout)
+        self.assertIn("expected_behavior counts", proc.stdout)
+        self.assertIn("audio_type counts", proc.stdout)
+        self.assertFalse(out.exists())
+
+    def test_build_manifest_strict_fails_on_missing_audio_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "manual.csv"
+            source.write_text(
+                "sample_id,audio_path,target_text,audio_type,reference_type,expected_behavior,notes\n"
+                "missing_1,missing/audio.wav,ラーメンをください,self_recording_clear,tts_reference,clear_learner_should_score,missing\n",
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/build_fixed_reference_audit_manifest.py",
+                    "--input",
+                    str(source),
+                    "--dry-run",
+                    "--strict",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("audio_path does not exist", proc.stdout)
+
+    def test_run_fixed_reference_audit_v0_script_prompts_when_manifest_is_missing(self) -> None:
+        proc = subprocess.run(
+            ["bash", "scripts/run_fixed_reference_audit_v0.sh", "/tmp/jp_speech_eval_missing_manifest_v0.csv"],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("Missing manifest", proc.stderr)
+        self.assertIn("fixed_reference_manifest_template.csv", proc.stderr)
+
+    def test_fixed_reference_smoke_manifest_is_valid_for_pipeline_only(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "audit" / "fixed_reference_manifest_smoke.csv"
+        rows = list(csv.DictReader(path.open(encoding="utf-8")))
+        self.assertGreaterEqual(len(rows), 3)
+        self.assertTrue(all("smoke only" in row["notes"] for row in rows))
+        report = validate_rows(rows, strict=True)
+        self.assertTrue(report.ok)
+        self.assertEqual(report.missing_audio_path_count, 0)
+
+    def test_fixed_reference_audit_summary_does_not_modify_scoring_config(self) -> None:
+        config = Path(__file__).resolve().parents[1] / "configs" / "scoring_config.json"
+        before = config.read_text(encoding="utf-8")
+        rows = [
+            {
+                "sample_id": "ok_1",
+                "audio_type": "self_recording_clear",
+                "reference_type": "tts_reference",
+                "expected_behavior": "clear_learner_should_score",
+                "score_available": True,
+                "display_score": 82,
+                "display_score_before_cap": 82,
+                "display_score_after_cap": 82,
+                "display_cap_applied": False,
+                "display_cap_reason": "",
+                "display_cap_reduction": 0,
+                "pronunciation_score": 82,
+                "raw_prosody_score": 80,
+                "pitch_feedback_allowed": False,
+                "pitch_text_leakage_warning": False,
+                "alignment_gate": "ok",
+                "content_gate": "pass",
+                "recording_gate": "ok",
+                "pronunciation_evidence_gate": "ok",
+                "special_mora_user_facing_count": 0,
+                "special_mora_suppressed": False,
+                "special_mora_evidence_level": "",
+                "special_mora_suppression_reason": "",
+                "rhythm_timing_penalty_reason": "",
+                "warning_codes": "",
+                "suppressed_reasons": "",
+                "user_message_type": "",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            write_markdown_summary(Path(tmp) / "summary.md", rows)
+        after = config.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
 
     def test_demo_smoke_test_script_generates_expected_rows(self) -> None:
         from scripts.run_demo_flow_smoke_tests import run
