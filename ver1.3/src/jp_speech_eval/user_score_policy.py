@@ -26,6 +26,20 @@ def _cap(value: Optional[float], maximum: float) -> Optional[float]:
     return min(value, maximum)
 
 
+def _cap_with_reason(
+    value: Optional[float],
+    maximum: float,
+    reason: str,
+    reasons: List[str],
+) -> Optional[float]:
+    if value is None:
+        return None
+    capped = min(value, maximum)
+    if capped < value:
+        reasons.append(reason)
+    return capped
+
+
 def _round_score(value: Optional[float]) -> Optional[int]:
     if value is None:
         return None
@@ -67,6 +81,8 @@ def apply_user_score_policy(
 
     warnings: List[str] = []
     score_caps: Dict[str, Any] = {}
+    display_cap_reasons: List[str] = []
+    display_score_before_cap: Optional[float] = None
     detail_feedback_allowed = True
     score_available = True
     gate_state: Dict[str, Any] = {
@@ -109,6 +125,10 @@ def apply_user_score_policy(
         })
         return {
             "display_score": None,
+            "display_score_before_cap": None,
+            "display_score_after_cap": None,
+            "display_cap_applied": False,
+            "display_cap_reason": "",
             "pronunciation_clarity_score": None,
             "rhythm_fluency_score": _round_score((rhythm + fluency) / 2.0),
             "practice_completion_score": None,
@@ -139,6 +159,10 @@ def apply_user_score_policy(
         })
         return {
             "display_score": None,
+            "display_score_before_cap": None,
+            "display_score_after_cap": None,
+            "display_cap_applied": False,
+            "display_cap_reason": "",
             "pronunciation_clarity_score": None,
             "rhythm_fluency_score": None,
             "practice_completion_score": None,
@@ -163,19 +187,20 @@ def apply_user_score_policy(
         score_caps["special_mora_soft_penalty"] = -penalty
 
     display = 0.70 * pronunciation + 0.20 * rhythm + 0.10 * fluency
-    display = min(display, pronunciation + 5.0)
+    display_score_before_cap = display
+    display = _cap_with_reason(display, pronunciation + 5.0, "pronunciation_margin_cap", display_cap_reasons)
     pronunciation_clarity = pronunciation
 
     if pronunciation < 50:
-        display = _cap(display, 60.0)
+        display = _cap_with_reason(display, 60.0, "pronunciation_under_50_display_cap", display_cap_reasons)
         warnings.append("pronunciation_under_50_display_cap")
         score_caps["pronunciation_under_50_display_cap"] = 60
     elif pronunciation < 60:
-        display = _cap(display, 65.0)
+        display = _cap_with_reason(display, 65.0, "pronunciation_under_60_display_cap", display_cap_reasons)
         warnings.append("pronunciation_under_60_display_cap")
         score_caps["pronunciation_under_60_display_cap"] = 65
     elif pronunciation < 70:
-        display = _cap(display, 75.0)
+        display = _cap_with_reason(display, 75.0, "pronunciation_under_70_display_cap", display_cap_reasons)
         warnings.append("pronunciation_under_70_display_cap")
         score_caps["pronunciation_under_70_display_cap"] = 75
 
@@ -188,6 +213,7 @@ def apply_user_score_policy(
         warnings.append("alignment_fallback_no_display_score")
         score_caps["fallback_pronunciation_score"] = None
         score_caps["fallback_display_score"] = None
+        display_cap_reasons.append("alignment_fallback_no_display_score")
         confidence_label = _confidence_at_most(confidence_label, "medium")
         gate_state["alignment_ok"] = False
         gate_state["pronunciation_evidence_ok"] = False
@@ -204,6 +230,7 @@ def apply_user_score_policy(
         warnings.append("low_alignment_no_display_score")
         score_caps["low_alignment_pronunciation_score"] = None
         score_caps["low_alignment_display_score"] = None
+        display_cap_reasons.append("low_alignment_no_display_score")
         confidence_label = _confidence_at_most(confidence_label, "low")
         gate_state["alignment_ok"] = False
         gate_state["pronunciation_evidence_ok"] = False
@@ -213,14 +240,14 @@ def apply_user_score_policy(
 
     if score_available and content_status in {"marginal", "partial"}:
         pronunciation_clarity = _cap(pronunciation_clarity, 70.0) or 0.0
-        display = _cap(display, 75.0)
+        display = _cap_with_reason(display, 75.0, "content_marginal_display_cap", display_cap_reasons)
         warnings.append("content_marginal_cap")
         score_caps["content_marginal_pronunciation_cap"] = 70
         score_caps["content_marginal_display_cap"] = 75
         confidence_label = _confidence_at_most(confidence_label, "medium")
 
     if mora_count <= 4:
-        display = _cap(display, 80.0)
+        display = _cap_with_reason(display, 80.0, "short_sentence_display_cap", display_cap_reasons)
         detail_feedback_allowed = False
         warnings.append("short_sentence_cap")
         score_caps["short_sentence_display_cap"] = 80
@@ -234,6 +261,7 @@ def apply_user_score_policy(
         warnings.append("weak_reference_no_display_score")
         score_caps["weak_reference_display_score"] = None
         score_caps["weak_reference_pronunciation_cap"] = 80
+        display_cap_reasons.append("weak_reference_no_display_score")
         gate_state["pronunciation_evidence_ok"] = False
         gate_state["score_available"] = False
         gate_state["user_message_type"] = "weak_reference"
@@ -247,6 +275,7 @@ def apply_user_score_policy(
         confidence_label = _confidence_at_most(confidence_label, "low")
         warnings.append("recording_quality_no_display_score")
         score_caps["recording_quality_display_score"] = None
+        display_cap_reasons.append("recording_quality_no_display_score")
         gate_state["recording_ok"] = False
         gate_state["pronunciation_evidence_ok"] = False
         gate_state["score_available"] = False
@@ -274,6 +303,10 @@ def apply_user_score_policy(
 
     return {
         "display_score": _round_score(display),
+        "display_score_before_cap": _round_score(display_score_before_cap),
+        "display_score_after_cap": _round_score(display),
+        "display_cap_applied": bool(display_cap_reasons),
+        "display_cap_reason": ";".join(display_cap_reasons),
         "pronunciation_clarity_score": _round_score(pronunciation_clarity),
         "rhythm_fluency_score": _round_score((rhythm + fluency) / 2.0),
         "practice_completion_score": _round_score(practice_completion),

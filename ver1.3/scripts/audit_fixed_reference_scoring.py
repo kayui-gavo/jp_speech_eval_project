@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import statistics
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
+
+os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "jp_speech_eval_matplotlib"))
 
 from jp_speech_eval.eval_modes import evaluate_mode
 from jp_speech_eval.feedback_renderer import render_user_facing_result
@@ -23,6 +27,11 @@ FIELDNAMES = [
     "pronunciation_evidence_gate",
     "score_available",
     "display_score",
+    "display_score_before_cap",
+    "display_score_after_cap",
+    "display_cap_applied",
+    "display_cap_reason",
+    "display_cap_reduction",
     "pronunciation_score",
     "raw_total_score",
     "raw_prosody_score",
@@ -31,6 +40,8 @@ FIELDNAMES = [
     "f0_coverage",
     "pitch_feedback_allowed",
     "pitch_suppression_reason",
+    "pitch_text_leakage_warning",
+    "pitch_text_leakage_terms",
     "special_mora_user_facing_count",
     "special_mora_evidence_level",
     "special_mora_suppression_reason",
@@ -112,6 +123,48 @@ def _first_nonempty(items: Iterable[Any]) -> str:
     return ""
 
 
+PITCH_LEAKAGE_TERMS = (
+    "音高",
+    "語調",
+    "韻律",
+    "アクセント",
+    "イントネーション",
+    "ピッチ",
+    "pitch",
+    "prosody",
+    "intonation",
+    "accent",
+)
+
+
+NEGATIVE_EXPECTED = {
+    "content_mismatch_should_not_score",
+    "recording_bad_should_not_score",
+    "alignment_bad_should_not_score",
+}
+
+
+NEGATIVE_AUDIO_TYPES = {
+    "wrong_target",
+    "wrong_sentence",
+    "content_mismatch",
+    "nonsense",
+    "random_speech",
+    "english",
+    "bad_recording",
+}
+
+
+def _pitch_leakage_terms(message: str) -> List[str]:
+    lower = message.lower()
+    return [term for term in PITCH_LEAKAGE_TERMS if term.lower() in lower]
+
+
+def _join_counts(values: Iterable[Any]) -> str:
+    counts = Counter(str(v or "").strip() for v in values if str(v or "").strip())
+    return ", ".join(f"{key}:{value}" for key, value in counts.most_common()) or "-"
+
+
 def _row_for_case(case: Mapping[str, str], *, cache_path: str | Path) -> Dict[str, Any]:
     sample_id = case.get("sample_id") or Path(str(case.get("audio_path", ""))).stem
     try:
@@ -148,6 +201,15 @@ def _row_for_case(case: Mapping[str, str], *, cache_path: str | Path) -> Dict[st
         ]
         user_score_policy = debug.get("user_score_policy") if isinstance(debug.get("user_score_policy"), Mapping) else {}
         scoring_gate = user_score_policy.get("scoring_gate", {}) if isinstance(user_score_policy, Mapping) else {}
+        message = " / ".join(str(item) for item in user_facing.get("user_messages") or [])
+        leakage_terms = _pitch_leakage_terms(message) if not pitch_allowed else []
+        before_cap = user_score_policy.get("display_score_before_cap")
+        after_cap = user_score_policy.get("display_score_after_cap")
+        before_cap_num = _float_or_none(before_cap)
+        after_cap_num = _float_or_none(after_cap)
+        cap_reduction = ""
+        if before_cap_num is not None and after_cap_num is not None:
+            cap_reduction = round(max(0.0, before_cap_num - after_cap_num), 2)
         return {
             "sample_id": sample_id,
             "target_text": case.get("target_text") or result.get("target_text") or "",
@@ -160,6 +222,11 @@ def _row_for_case(case: Mapping[str, str], *, cache_path: str | Path) -> Dict[st
             "pronunciation_evidence_gate": "ok" if scoring_gate.get("pronunciation_evidence_ok", True) else "blocked",
             "score_available": scoring_gate.get("score_available", user_facing.get("display_score") is not None),
             "display_score": user_facing.get("display_score"),
+            "display_score_before_cap": before_cap,
+            "display_score_after_cap": after_cap,
+            "display_cap_applied": user_score_policy.get("display_cap_applied", False),
+            "display_cap_reason": user_score_policy.get("display_cap_reason", ""),
+            "display_cap_reduction": cap_reduction,
             "pronunciation_score": user_facing.get("pronunciation_clarity_score"),
             "raw_total_score": result.get("total_score"),
             "raw_prosody_score": result.get("prosody_score"),
@@ -168,6 +235,8 @@ def _row_for_case(case: Mapping[str, str], *, cache_path: str | Path) -> Dict[st
             "f0_coverage": debug.get("f0_voiced_coverage"),
             "pitch_feedback_allowed": pitch_allowed,
             "pitch_suppression_reason": "" if pitch_allowed else _first_nonempty(pitch_reasons or suppressed_reasons),
+            "pitch_text_leakage_warning": bool(leakage_terms),
+            "pitch_text_leakage_terms": ";".join(leakage_terms),
             "special_mora_user_facing_count": user_facing_special,
             "special_mora_evidence_level": _first_nonempty(special_evidence),
             "special_mora_suppression_reason": _first_nonempty(special_suppression),
@@ -176,7 +245,7 @@ def _row_for_case(case: Mapping[str, str], *, cache_path: str | Path) -> Dict[st
             "warning_codes": ";".join(warning_codes),
             "suppressed_reasons": ";".join(suppressed_reasons),
             "user_message_type": scoring_gate.get("user_message_type", ""),
-            "user_facing_message": " / ".join(str(item) for item in user_facing.get("user_messages") or []),
+            "user_facing_message": message,
             "status": user_facing.get("status"),
             "error": "",
         }
@@ -193,6 +262,11 @@ def _row_for_case(case: Mapping[str, str], *, cache_path: str | Path) -> Dict[st
             "pronunciation_evidence_gate": "",
             "score_available": "",
             "display_score": "",
+            "display_score_before_cap": "",
+            "display_score_after_cap": "",
+            "display_cap_applied": "",
+            "display_cap_reason": "",
+            "display_cap_reduction": "",
             "pronunciation_score": "",
             "raw_total_score": "",
             "raw_prosody_score": "",
@@ -201,6 +275,8 @@ def _row_for_case(case: Mapping[str, str], *, cache_path: str | Path) -> Dict[st
             "f0_coverage": "",
             "pitch_feedback_allowed": "",
             "pitch_suppression_reason": "",
+            "pitch_text_leakage_warning": "",
+            "pitch_text_leakage_terms": "",
             "special_mora_user_facing_count": "",
             "special_mora_evidence_level": "",
             "special_mora_suppression_reason": "",
@@ -243,12 +319,14 @@ def write_markdown_summary(path: str | Path, rows: List[Dict[str, Any]]) -> None
         grouped[_group_key(row)].append(row)
 
     lines: List[str] = ["# Fixed-reference Scoring Audit Summary", ""]
-    lines.append("| audio_type | reference_type | expected | n | score_available | display mean/median/p10/p90 | pron mean/median | raw prosody mean/median | pitch allowed | pitch suppressed | fallback | low align | content fail | recording fail | pron evidence fail | special shown | special suppressed |")
+    lines.append("| audio_type | reference_type | expected | n | score_available | display mean/median/p10/p90 | pron mean/median | raw prosody mean/median | pitch allowed | pitch leakage | cap rate | avg cap reduction | fallback | content fail | pron evidence fail | special shown | special suppressed |")
     lines.append("|---|---|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for key, group in sorted(grouped.items()):
         display = _summary_stats(row.get("display_score") for row in group)
         pron = _summary_stats(row.get("pronunciation_score") for row in group)
         prosody = _summary_stats(row.get("raw_prosody_score") for row in group)
+        cap_reductions = [_float_or_none(row.get("display_cap_reduction")) or 0.0 for row in group]
+        avg_cap_reduction = round(float(statistics.mean(cap_reductions)), 2) if cap_reductions else 0.0
         n = len(group)
         lines.append(
             "| "
@@ -262,11 +340,11 @@ def write_markdown_summary(path: str | Path, rows: List[Dict[str, Any]]) -> None
                 f"{pron['mean']}/{pron['median']}",
                 f"{prosody['mean']}/{prosody['median']}",
                 str(_rate(_is_true(row.get("pitch_feedback_allowed")) for row in group)),
-                str(_rate(not _is_true(row.get("pitch_feedback_allowed")) for row in group)),
+                str(_rate(_is_true(row.get("pitch_text_leakage_warning")) for row in group)),
+                str(_rate(_is_true(row.get("display_cap_applied")) for row in group)),
+                str(avg_cap_reduction),
                 str(_rate(str(row.get("alignment_gate")) == "blocked" for row in group)),
-                str(_rate("low_alignment" in str(row.get("warning_codes")) for row in group)),
                 str(_rate(str(row.get("content_gate")) == "fail" for row in group)),
-                str(_rate(str(row.get("recording_gate")) == "blocked" for row in group)),
                 str(_rate(str(row.get("pronunciation_evidence_gate")) == "blocked" for row in group)),
                 str(_rate(float(row.get("special_mora_user_facing_count") or 0) > 0 for row in group)),
                 str(_rate(_is_true(row.get("special_mora_suppressed")) for row in group)),
@@ -274,35 +352,89 @@ def write_markdown_summary(path: str | Path, rows: List[Dict[str, Any]]) -> None
             + " |"
         )
 
-    negative = {"wrong_target", "nonsense", "english", "bad_recording"}
-    failures = [
-        row for row in rows
-        if str(row.get("audio_type")) in negative
-        and (_is_true(row.get("pitch_feedback_allowed")) or _float_or_none(row.get("display_score")) is not None)
-    ]
-    suspicious = [
-        row for row in rows
-        if str(row.get("audio_type")) in {"bad_learner", "clear_bad", "learner_bad"}
-        and (_float_or_none(row.get("display_score")) or 0.0) >= 80.0
-    ]
-    lines.extend(["", "## Failure Checks", ""])
-    if failures:
-        lines.append("### Negative controls with user-facing score or pitch")
-        for row in failures:
-            lines.append(f"- {row.get('sample_id')}: display={row.get('display_score')} pitch={row.get('pitch_feedback_allowed')} warnings={row.get('warning_codes')}")
+    findings: List[str] = []
+    for key, group in sorted(grouped.items()):
+        expected = key[2]
+        display = _summary_stats(row.get("display_score") for row in group)
+        score_available_rate = _rate(_is_true(row.get("score_available")) for row in group)
+        if expected == "native_should_score_high":
+            if score_available_rate < 0.90:
+                findings.append(f"- WARN_native_score_available_rate: group={key}, rate={score_available_rate}")
+            if display["median"] != "" and float(display["median"]) < 85:
+                findings.append(f"- WARN_native_median_display_low: group={key}, median={display['median']}")
+            if display["p10"] != "" and float(display["p10"]) < 75:
+                findings.append(f"- WARN_native_p10_display_low: group={key}, p10={display['p10']}")
+        if expected == "bad_learner_should_not_score_high":
+            high = [row for row in group if (_float_or_none(row.get("display_score")) or 0.0) >= 80.0]
+            high_rate = _rate(row in high for row in group)
+            if high_rate > 0.10:
+                ids = ", ".join(str(row.get("sample_id")) for row in high)
+                findings.append(f"- WARN_bad_learner_suspicious_high_rate: group={key}, rate={high_rate}, samples={ids}")
+        if expected == "pitch_unverified_should_suppress_pitch":
+            bad = [row for row in group if _is_true(row.get("pitch_feedback_allowed"))]
+            for row in bad:
+                findings.append(f"- FAIL_pitch_unverified_allowed: group={key}, sample_id={row.get('sample_id')}")
+
+    for row in rows:
+        expected = str(row.get("expected_behavior") or "")
+        audio_type = str(row.get("audio_type") or "")
+        display_present = _float_or_none(row.get("display_score")) is not None
+        score_available = _is_true(row.get("score_available"))
+        pitch_allowed = _is_true(row.get("pitch_feedback_allowed"))
+        weak = expected == "weak_reference_should_not_score" or "weak_reference" in str(row.get("reference_type") or "")
+        negative = expected in NEGATIVE_EXPECTED or audio_type in NEGATIVE_AUDIO_TYPES
+        if negative and (score_available or display_present):
+            findings.append(
+                f"- FAIL_negative_user_facing_score: group={_group_key(row)}, sample_id={row.get('sample_id')}, "
+                f"score_available={row.get('score_available')}, display={row.get('display_score')}"
+            )
+        if negative and pitch_allowed:
+            findings.append(f"- FAIL_negative_pitch_allowed: group={_group_key(row)}, sample_id={row.get('sample_id')}")
+        if weak and display_present:
+            findings.append(f"- FAIL_weak_reference_display_score: group={_group_key(row)}, sample_id={row.get('sample_id')}, display={row.get('display_score')}")
+        if weak and pitch_allowed:
+            findings.append(f"- FAIL_weak_reference_pitch_allowed: group={_group_key(row)}, sample_id={row.get('sample_id')}")
+        if str(row.get("alignment_gate")) == "blocked" and pitch_allowed:
+            findings.append(f"- FAIL_fallback_alignment_pitch_allowed: group={_group_key(row)}, sample_id={row.get('sample_id')}")
+        if _is_true(row.get("pitch_text_leakage_warning")):
+            findings.append(
+                f"- WARN_pitch_text_leakage: sample_id={row.get('sample_id')}, terms={row.get('pitch_text_leakage_terms')}"
+            )
+        if expected == "native_should_score_high" and float(row.get("special_mora_user_facing_count") or 0) > 0:
+            findings.append(f"- WARN_special_mora_native_user_facing: sample_id={row.get('sample_id')}")
+        low_evidence_special = str(row.get("special_mora_evidence_level") or "") in {"low", "uncertain"}
+        if low_evidence_special and "special_mora" in str(row.get("display_cap_reason") or ""):
+            findings.append(f"- FAIL_low_evidence_special_mora_deducted_display: sample_id={row.get('sample_id')}")
+
+    lines.extend(["", "## Failures and Warnings", ""])
+    if findings:
+        lines.extend(findings)
     else:
-        lines.append("- Negative controls: pass. No user-facing score/pitch feedback found.")
-    if suspicious:
-        lines.append("### Suspicious high scores")
-        for row in suspicious:
-            lines.append(f"- {row.get('sample_id')}: display={row.get('display_score')} pron={row.get('pronunciation_score')} warnings={row.get('warning_codes')}")
-    else:
-        lines.append("- Suspicious high scores: none found for marked bad learner groups.")
+        lines.append("- No automatic failures or warnings detected.")
+
+    leakage = [row for row in rows if _is_true(row.get("pitch_text_leakage_warning"))]
+    large_caps = [row for row in rows if (_float_or_none(row.get("display_cap_reduction")) or 0.0) >= 10.0]
+    lines.extend(["", "## Pitch Text Leakage", ""])
+    lines.append(f"- pitch_text_leakage_count: {len(leakage)}")
+    if leakage:
+        lines.append("- affected_sample_id: " + ", ".join(str(row.get("sample_id")) for row in leakage))
+
+    lines.extend(["", "## Display Cap Reductions", ""])
+    lines.append(f"- display_cap_applied_rate: {_rate(_is_true(row.get('display_cap_applied')) for row in rows)}")
+    reductions = [_float_or_none(row.get("display_cap_reduction")) or 0.0 for row in rows]
+    lines.append(f"- average_cap_reduction: {round(float(statistics.mean(reductions)), 2) if reductions else 0.0}")
+    if large_caps:
+        lines.append("- reduction_gte_10: " + ", ".join(
+            f"{row.get('sample_id')}({row.get('display_cap_reduction')})" for row in large_caps
+        ))
 
     lines.extend(["", "## Warning Code Counts", ""])
     lines.append(f"- score_policy_warnings: {_warning_counts(rows, 'warning_codes')}")
     lines.append(f"- suppressed_reasons: {_warning_counts(rows, 'suppressed_reasons')}")
     lines.append(f"- user_message_type: {_warning_counts(rows, 'user_message_type')}")
+    lines.append(f"- special_mora_evidence_level: {_join_counts(row.get('special_mora_evidence_level') for row in rows)}")
+    lines.append(f"- special_mora_suppression_reason: {_join_counts(row.get('special_mora_suppression_reason') for row in rows)}")
+    lines.append(f"- rhythm_timing_penalty_reason: {_join_counts(row.get('rhythm_timing_penalty_reason') for row in rows)}")
 
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)

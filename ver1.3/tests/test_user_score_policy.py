@@ -33,6 +33,9 @@ def test_bad_pronunciation_cannot_be_lifted_to_high_display_score():
     assert policy["display_score"] <= 65
     assert policy["pronunciation_clarity_score"] <= 55
     assert policy["display_score"] <= policy["pronunciation_clarity_score"] + 5
+    assert policy["display_score_before_cap"] > policy["display_score_after_cap"]
+    assert policy["display_cap_applied"] is True
+    assert "pronunciation_margin_cap" in policy["display_cap_reason"]
     assert policy["main_message_key"] == "clear_recording_but_pronunciation_needs_practice"
 
 
@@ -99,6 +102,9 @@ def test_weak_reference_hides_display_score_and_confidence_limited():
         mode="asr_confirmed_weak_reference",
     )
     assert policy["display_score"] is None
+    assert policy["display_score_after_cap"] is None
+    assert policy["display_cap_applied"] is True
+    assert "weak_reference_no_display_score" in policy["display_cap_reason"]
     assert policy["confidence_label"] in {"low", "medium"}
     assert "weak_reference_no_display_score" in policy["score_policy_warnings"]
 
@@ -117,3 +123,10 @@ def test_special_mora_user_hint_is_only_a_soft_penalty():
     )
     assert policy["pronunciation_clarity_score"] == 80
     assert "special_mora_soft_penalty" in policy["score_policy_warnings"]
+
+
+def test_missing_special_mora_decisions_do_not_zero_display_score():
+    policy = apply_user_score_policy(_result(pronunciation_score=88, prosody_score=86, fluency_score=87), special_mora_decisions=[])
+    assert policy["display_score"] is not None
+    assert policy["display_score"] >= 85
+    assert "special_mora_soft_penalty" not in policy["score_policy_warnings"]

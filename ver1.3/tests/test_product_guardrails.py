@@ -568,18 +568,28 @@ class ProductGuardrailsTest(unittest.TestCase):
                 "sample_id": "english_1",
                 "audio_type": "english",
                 "reference_type": "pseudo_reference",
-                "expected_behavior": "no_score",
+                "expected_behavior": "content_mismatch_should_not_score",
                 "score_available": True,
                 "display_score": 88,
+                "display_score_before_cap": 94,
+                "display_score_after_cap": 88,
+                "display_cap_applied": True,
+                "display_cap_reason": "pronunciation_margin_cap",
+                "display_cap_reduction": 6,
                 "pronunciation_score": 80,
                 "raw_prosody_score": 95,
                 "pitch_feedback_allowed": True,
+                "pitch_text_leakage_warning": True,
+                "pitch_text_leakage_terms": "pitch;accent",
                 "alignment_gate": "ok",
                 "content_gate": "pass",
                 "recording_gate": "ok",
                 "pronunciation_evidence_gate": "ok",
                 "special_mora_user_facing_count": 0,
                 "special_mora_suppressed": False,
+                "special_mora_evidence_level": "",
+                "special_mora_suppression_reason": "",
+                "rhythm_timing_penalty_reason": "",
                 "warning_codes": "",
                 "suppressed_reasons": "",
                 "user_message_type": "",
@@ -589,8 +599,83 @@ class ProductGuardrailsTest(unittest.TestCase):
             path = Path(tmp) / "summary.md"
             write_markdown_summary(path, rows)
             text = path.read_text(encoding="utf-8")
-        self.assertIn("Negative controls with user-facing score or pitch", text)
+        self.assertIn("Failures and Warnings", text)
+        self.assertIn("FAIL_negative_user_facing_score", text)
+        self.assertIn("WARN_pitch_text_leakage", text)
         self.assertIn("english_1", text)
+
+    def test_fixed_reference_audit_summary_flags_native_and_bad_learner_groups(self) -> None:
+        rows = [
+            {
+                "sample_id": "native_low",
+                "audio_type": "native",
+                "reference_type": "human",
+                "expected_behavior": "native_should_score_high",
+                "score_available": True,
+                "display_score": 72,
+                "display_score_before_cap": 72,
+                "display_score_after_cap": 72,
+                "display_cap_applied": False,
+                "display_cap_reason": "",
+                "display_cap_reduction": 0,
+                "pronunciation_score": 72,
+                "raw_prosody_score": 70,
+                "pitch_feedback_allowed": False,
+                "pitch_text_leakage_warning": False,
+                "pitch_text_leakage_terms": "",
+                "alignment_gate": "ok",
+                "content_gate": "pass",
+                "recording_gate": "ok",
+                "pronunciation_evidence_gate": "ok",
+                "special_mora_user_facing_count": 1,
+                "special_mora_suppressed": False,
+                "special_mora_evidence_level": "high",
+                "special_mora_suppression_reason": "",
+                "rhythm_timing_penalty_reason": "",
+                "warning_codes": "",
+                "suppressed_reasons": "",
+                "user_message_type": "",
+            },
+            {
+                "sample_id": "bad_high",
+                "audio_type": "learner_bad",
+                "reference_type": "pseudo_reference",
+                "expected_behavior": "bad_learner_should_not_score_high",
+                "score_available": True,
+                "display_score": 86,
+                "display_score_before_cap": 96,
+                "display_score_after_cap": 86,
+                "display_cap_applied": True,
+                "display_cap_reason": "pronunciation_margin_cap",
+                "display_cap_reduction": 10,
+                "pronunciation_score": 81,
+                "raw_prosody_score": 99,
+                "pitch_feedback_allowed": False,
+                "pitch_text_leakage_warning": False,
+                "pitch_text_leakage_terms": "",
+                "alignment_gate": "ok",
+                "content_gate": "pass",
+                "recording_gate": "ok",
+                "pronunciation_evidence_gate": "ok",
+                "special_mora_user_facing_count": 0,
+                "special_mora_suppressed": True,
+                "special_mora_evidence_level": "low",
+                "special_mora_suppression_reason": "low_evidence",
+                "rhythm_timing_penalty_reason": "",
+                "warning_codes": "",
+                "suppressed_reasons": "",
+                "user_message_type": "",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "summary.md"
+            write_markdown_summary(path, rows)
+            text = path.read_text(encoding="utf-8")
+        self.assertIn("WARN_native_median_display_low", text)
+        self.assertIn("WARN_special_mora_native_user_facing", text)
+        self.assertIn("WARN_bad_learner_suspicious_high_rate", text)
+        self.assertIn("reduction_gte_10", text)
+        self.assertIn("bad_high", text)
 
     def test_demo_smoke_test_script_generates_expected_rows(self) -> None:
         from scripts.run_demo_flow_smoke_tests import run
