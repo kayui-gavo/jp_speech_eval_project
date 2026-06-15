@@ -103,9 +103,13 @@ def _display_score(
     prosody = _as_score(result.get("prosody_score"))
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
+    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     fluency_details = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     pronunciation_details = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
     prosody_details = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
+    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
+    if alignment_mode.endswith("fallback_equal") or "fallback" in alignment_mode:
+        return None
     content_score = 100.0 if str(content.get("status") or "unknown") in {"pass", "unknown"} else 35.0
     scores = {
         "content_score": content_score,
