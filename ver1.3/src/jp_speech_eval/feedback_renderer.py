@@ -33,10 +33,15 @@ def _debug_payload(
     prosody = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
+    content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
+    raw_prosody_score = result.get("prosody_score")
+    visible_prosody_score = raw_prosody_score if gate.allow_pitch_feedback else None
     return {
         "debug_total_score": result.get("total_score"),
         "pronunciation_score": result.get("pronunciation_score"),
-        "prosody_score": result.get("prosody_score"),
+        "prosody_score": raw_prosody_score,
+        "visible_prosody_score": visible_prosody_score,
+        "prosody_score_visible": visible_prosody_score is not None,
         "fluency_score": result.get("fluency_score"),
         "rhythm_timing_score": fluency.get("rhythm_timing_score"),
         "delivery_fluency_score": fluency.get("delivery_fluency_score"),
@@ -56,11 +61,27 @@ def _debug_payload(
         "scoring_policy": policy.to_dict(),
         "reliability_gate": gate.to_dict(),
         "alignment": alignment,
+        "content_match_visibility": {
+            "status": content.get("status"),
+            "method": content.get("method"),
+            "note": content.get("note"),
+            "asr_provider": content.get("asr_provider"),
+            "transcript": content.get("transcript"),
+            "transcript_kana": content.get("transcript_kana"),
+            "target_kana": content.get("target_kana"),
+            "kana_similarity": content.get("kana_similarity"),
+            "content_mismatch_veto": "content_mismatch_veto" in list(gate.reasons or []),
+            "hidden_reasons": list(gate.reasons or []),
+        },
         "prosody_debug": {
             "contour_corr": prosody.get("contour_corr"),
             "transition_agreement": prosody.get("transition_agreement"),
             "pitch_target_source": prosody.get("pitch_target_source"),
             "pitch_target_consistency": prosody.get("pitch_target_consistency"),
+            "raw_prosody_score": raw_prosody_score,
+            "visible_prosody_score": visible_prosody_score,
+            "visible": visible_prosody_score is not None,
+            "hidden_reason": "pitch_blocked" if visible_prosody_score is None else None,
         },
     }
 

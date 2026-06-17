@@ -147,6 +147,66 @@ class ProductGuardrailsTest(unittest.TestCase):
         result = _result(moras=["バ", "グ"], mora_table=[{"start_sec": 0.0, "end_sec": 0.2}, {"start_sec": 0.2, "end_sec": 0.4}])
         rendered = render_user_facing_result(result)
         self.assertIn("pitch", rendered["debug"]["reliability_gate"]["blocked_categories"])
+        self.assertIsNone(rendered["debug"]["visible_prosody_score"])
+
+    def test_content_veto_does_not_require_extra_asr_evidence_for_normal_pass(self) -> None:
+        rendered = render_user_facing_result(_result(details={
+            "content_match": {
+                "status": "pass",
+                "method": "mfcc_dtw_reference_gate",
+                "note": "acoustic_pass_asr_skipped_by_policy",
+                "asr_provider": "none",
+            }
+        }))
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertNotIn("content_mismatch_veto", rendered["suppressed_reasons"])
+
+    def test_latin_dominant_asr_transcript_vetoes_user_visible_score(self) -> None:
+        rendered = render_user_facing_result(_result(details={
+            "content_match": {
+                "status": "pass",
+                "method": "asr_kana_match+mfcc_dtw_reference_gate",
+                "asr_provider": "whisper",
+                "transcript": "please give me ramen",
+                "transcript_kana": "プリーズギブミーラーメン",
+                "target_kana": "ラーメンヲクダサイ",
+                "kana_similarity": 0.2,
+            }
+        }))
+        self.assertEqual(rendered["status"], "retry")
+        self.assertIsNone(rendered["display_score"])
+        self.assertIsNone(rendered["practice_score"]["value"])
+        self.assertIn("content_mismatch_veto", rendered["suppressed_reasons"])
+        self.assertIn("latin_dominant_transcript", rendered["suppressed_reasons"])
+        self.assertTrue(rendered["debug"]["content_match_visibility"]["content_mismatch_veto"])
+
+    def test_low_asr_kana_similarity_vetoes_wrong_japanese_sentence(self) -> None:
+        rendered = render_user_facing_result(_result(details={
+            "content_match": {
+                "status": "pass",
+                "method": "asr_kana_match+mfcc_dtw_reference_gate",
+                "asr_provider": "whisper",
+                "transcript": "すしをください",
+                "transcript_kana": "スシヲクダサイ",
+                "target_kana": "ラーメンヲクダサイ",
+                "kana_similarity": 0.25,
+            }
+        }))
+        self.assertEqual(rendered["status"], "retry")
+        self.assertIsNone(rendered["display_score"])
+        self.assertIn("low_asr_kana_similarity", rendered["suppressed_reasons"])
+
+    def test_asr_uncertain_without_explicit_mismatch_does_not_veto(self) -> None:
+        rendered = render_user_facing_result(_result(details={
+            "content_match": {
+                "status": "uncertain",
+                "method": "mfcc_dtw_reference_gate",
+                "asr_provider": "none",
+                "note": "asr_unavailable_fallback_to_acoustic_gate",
+            }
+        }))
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertNotIn("content_mismatch_veto", rendered["suppressed_reasons"])
 
     def test_low_alignment_makes_special_mora_uncertain(self) -> None:
         result = _result(details={"mora_evidence": [{"judgement_available": False, "boundary_confidence": 0.1, "energy_coverage": 0.1} for _ in range(9)]})
@@ -169,6 +229,22 @@ class ProductGuardrailsTest(unittest.TestCase):
         result = _result(alignment_mode="cached_dtw_fallback_equal")
         rows = score_special_mora_timing(result)
         self.assertTrue(all(row.status == "uncertain" for row in rows if row.type in {"long_vowel", "moraic_nasal"}))
+        rendered = render_user_facing_result(result)
+        self.assertIsNone(rendered["display_score"])
+        self.assertIsNone(rendered["debug"]["visible_prosody_score"])
+        self.assertFalse(rendered["debug"]["prosody_debug"]["visible"])
+        self.assertIn("fallback_alignment", rendered["suppressed_reasons"])
+
+    def test_low_f0_coverage_hides_visible_prosody_without_hiding_other_practice_score(self) -> None:
+        rendered = render_user_facing_result(_result(
+            prosody_score=98,
+            details={"reliability": {"level": "high", "overall": 0.82, "alignment": 0.9, "f0_coverage": 0.2}},
+        ))
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertEqual(rendered["debug"]["prosody_score"], 98)
+        self.assertIsNone(rendered["debug"]["visible_prosody_score"])
+        self.assertFalse(rendered["debug"]["prosody_score_visible"])
+        self.assertIn("low_f0_coverage", rendered["suppressed_reasons"])
 
     def test_runtime_missing_threshold_metadata_is_debug_uncertain(self) -> None:
         import tempfile

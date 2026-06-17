@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping
 
@@ -28,6 +29,69 @@ def _pick(mapping: Mapping[str, Any], *path: str, default: Any = None) -> Any:
             return default
         cur = cur[key]
     return cur
+
+
+_LATIN_RE = re.compile(r"[A-Za-z]")
+_JA_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆〤ー]")
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _latin_dominant(text: str) -> bool:
+    chars = [ch for ch in str(text or "") if ch.isalnum() or _JA_RE.match(ch)]
+    if not chars:
+        return False
+    latin = sum(1 for ch in chars if _LATIN_RE.match(ch))
+    japanese = sum(1 for ch in chars if _JA_RE.match(ch))
+    return latin / max(len(chars), 1) >= 0.60 and japanese / max(len(chars), 1) < 0.25
+
+
+def _content_mismatch_veto(content: Mapping[str, Any]) -> str | None:
+    """Return a conservative user-facing veto reason for explicit bad content.
+
+    This is a negative veto, not a positive verification requirement. Missing
+    ASR/confidence evidence should keep the existing acoustic/reference behavior.
+    """
+
+    transcript = str(content.get("transcript") or "")
+    transcript_kana = str(content.get("transcript_kana") or "")
+    target_kana = str(content.get("target_kana") or "")
+    provider = str(content.get("asr_provider") or "none")
+    language = str(
+        content.get("language")
+        or content.get("detected_language")
+        or content.get("asr_language")
+        or ""
+    ).strip().lower()
+    language_conf = _float_or_none(
+        content.get("language_confidence")
+        or content.get("asr_language_confidence")
+        or content.get("confidence")
+        or content.get("asr_confidence")
+    )
+    if language and language not in {"ja", "jp", "jpn", "japanese", "ja-jp"}:
+        if language_conf is None or language_conf >= 0.55:
+            return "non_japanese_asr_language"
+
+    if provider != "none" and transcript and _latin_dominant(transcript):
+        return "latin_dominant_transcript"
+
+    similarity = _float_or_none(content.get("kana_similarity"))
+    has_asr_text = bool(transcript or transcript_kana)
+    if (
+        has_asr_text
+        and target_kana
+        and transcript_kana
+        and similarity is not None
+        and similarity < 0.35
+    ):
+        return "low_asr_kana_similarity"
+    return None
 
 
 def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) -> ReliabilityGate:
@@ -78,6 +142,19 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
             allow_pronunciation_detail=False,
         )
 
+    mismatch_reason = _content_mismatch_veto(content) if policy.allow_content_match_score else None
+    if mismatch_reason:
+        return ReliabilityGate(
+            reliability="unscorable",
+            practice_check_result="retry",
+            blocked_categories=["content", "special_mora", "pitch", "pronunciation"],
+            messages=["目標文と違う内容に聞こえます。もう一度読んでください。"],
+            reasons=["content_mismatch_veto", mismatch_reason],
+            allow_special_mora_feedback=False,
+            allow_pitch_feedback=False,
+            allow_pronunciation_detail=False,
+        )
+
     if level == "low" or overall < 0.40 or alignment_score < 0.35:
         practice = "retry"
         allow_detail = False
@@ -91,6 +168,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         if alignment_mode.endswith("fallback_equal"):
             allow_detail = False
             allow_special = False
+            allow_pitch = False
             blocked.extend(["special_mora", "pronunciation"])
             messages.append("細かい拍ごとの判定は控えめに見てください。全体の聞こえ方を中心に確認します。")
             reasons.append("fallback_alignment")
