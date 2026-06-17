@@ -2522,16 +2522,24 @@
     function renderScores(result, userFacing = null) {
       const hideTotal = userFacing?.display_total_score === false;
       const cards = [];
-      const total = Number(userFacing?.display_score ?? result.total_score);
+      const rawTotal = userFacing ? userFacing.display_score : result.total_score;
+      const total = Number(rawTotal);
       if (Number.isFinite(total) && result.details?.mode !== "reference_free_acoustic") {
         cards.push(`<div class="score total"><span>${t("overallPerformance")}</span><strong>${total}</strong><span>/ 100 · ${t("notStrictScore")}</span></div>`);
       }
+      const gate = userFacing?.debug?.reliability_gate || {};
+      const blocked = gate.blocked_categories || [];
+      const hiddenReasons = userFacing?.suppressed_reasons || gate.reasons || [];
+      const hideFormalDimensions = hiddenReasons.includes("content_mismatch_veto") || hiddenReasons.includes("fallback_alignment");
       if (userFacing) {
         const status = userFacing.practice_check_result || "needs_attention";
         const reliability = userFacing.reliability || "unknown";
         cards.push(`<div class="score"><span>${t("practiceResult")}</span><strong>${practiceResultLabel(status)}</strong><span>${t("reliabilitySimple")}：${reliabilityDisplay(reliability)}</span></div>`);
       }
-      const keys = hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys;
+      const keys = (hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys)
+        .filter((key) => !(hideFormalDimensions && key !== "total_score"))
+        .filter((key) => !(blocked.includes("pitch") && key === "prosody_score"))
+        .filter((key) => !(blocked.includes("pronunciation") && key === "pronunciation_score"));
       cards.push(...keys.map((key) => {
         const label = tGroup("scoreLabels", key);
         const value = result[key] ?? 0;
