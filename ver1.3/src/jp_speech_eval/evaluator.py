@@ -21,6 +21,7 @@ from .content_match import estimate_content_match
 from .feedback_policy import FeedbackDecision, choose_feedback
 from .mora_evidence import build_mora_evidence
 from .recording_quality import assess_recording_quality
+from .prosody_reference_cache import select_prosody_reference_target
 from .scoring import (
     score_fluency,
     score_pronunciation_rhythm,
@@ -393,11 +394,17 @@ def evaluate_utterance(
         y_speech=y_speech,
         sr=audio.sr,
     )
-    ref_f0_mora = (
+    runtime_ref_f0_mora = (
         median_f0_by_mora(cache.ref_f0_times, cache.ref_f0, cache.meta.ref_mora_boundaries)
         if cache
         else None
     )
+    prosody_reference_target = select_prosody_reference_target(
+        cache,
+        fallback_reference_f0=runtime_ref_f0_mora,
+        text_pitch_target_source=text_info.pitch_target_source,
+    )
+    ref_f0_mora = prosody_reference_target.reference_f0_by_mora
     pause_info = detect_pauses(
         y_speech,
         audio.sr,
@@ -412,10 +419,18 @@ def evaluate_utterance(
         f0_by_mora=f0_mora,
         reference_f0_by_mora=ref_f0_mora,
         pitch_target_source=text_info.pitch_target_source,
+        reference_f0_target_source=(
+            prosody_reference_target.pitch_target_source
+            if ref_f0_mora is not None
+            else None
+        ),
         is_question=text_info.is_question,
         accent_phrases=text_info.accent_phrases,
         config=config,
     )
+    prosody_details["pitch_target_source"] = prosody_reference_target.pitch_target_source
+    prosody_details["pitch_target_reliability"] = prosody_reference_target.pitch_target_reliability
+    prosody_details["prosody_reference_target"] = prosody_reference_target.to_dict()
     fluency_score, fluency_fb, fluency_details = score_fluency(
         mora_count=len(text_info.moras),
         duration=active_duration,
@@ -533,6 +548,7 @@ def evaluate_utterance(
         "final_intonation_match": prosody_details.get("final_intonation_match"),
         "hl_match_rate": prosody_details.get("hl_match_rate", prosody_details.get("hl_match")),
         "pitch_target_source": prosody_details.get("pitch_target_source", text_info.pitch_target_source),
+        "pitch_target_reliability": prosody_details.get("pitch_target_reliability"),
         "hl_target_source": prosody_details.get("hl_target_source", text_info.pitch_target_source),
         "pitch_target_consistency": prosody_details.get("pitch_target_consistency", "unknown"),
     }
@@ -592,6 +608,13 @@ def evaluate_utterance(
             "score_adjustments": score_adjustments,
             "accent_phrases": text_info.accent_phrases,
             "reference_source": cache.meta.reference_source if cache else None,
+            "pitch_target_source": prosody_reference_target.pitch_target_source,
+            "pitch_target_reliability": prosody_reference_target.pitch_target_reliability,
+            "verified_level": "human_checked"
+            if prosody_reference_target.pitch_target_reliability == "reliable"
+            and prosody_reference_target.pitch_target_source in {"reference_audio_f0_cache", "reference_audio_f0_runtime"}
+            else None,
+            "prosody_reference_target": prosody_reference_target.to_dict(),
             "reference_id": cache.meta.reference_id if cache else None,
             "reference_provider": cache.meta.reference_provider if cache else None,
             "reference_model": cache.meta.reference_model if cache else None,

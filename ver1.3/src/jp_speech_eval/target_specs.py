@@ -98,6 +98,8 @@ def verified_level_from_source(source: str) -> str:
     label = str(source or "").lower()
     if label in {"human_checked", "human", "manual", "manual_checked"}:
         return "human_checked"
+    if label in {"reference_audio_f0_cache", "reference_audio_f0_runtime"}:
+        return "human_checked"
     if label in {"ojad_checked", "ojad_verified", "ojad+manual", "ojad_manual"}:
         return "ojad_checked"
     return "auto_pyopenjtalk"

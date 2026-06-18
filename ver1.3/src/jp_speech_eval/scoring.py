@@ -372,6 +372,7 @@ def score_prosody(
     f0_by_mora: List[float],
     reference_f0_by_mora: Optional[List[float]] = None,
     pitch_target_source: str = "heuristic",
+    reference_f0_target_source: Optional[str] = None,
     is_question: bool = False,
     accent_phrases: Optional[List[Dict[str, Any]]] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -389,7 +390,13 @@ def score_prosody(
             1.0 if p == "H" else -1.0 if p == "L" else float("nan")
             for p in target_pattern
         ], dtype=float)
-    primary_pitch_target_source = "tts_reference" if ref_arr.size else pitch_target_source
+    primary_pitch_target_source = (
+        reference_f0_target_source
+        if ref_arr.size and reference_f0_target_source
+        else "tts_reference"
+        if ref_arr.size
+        else pitch_target_source
+    )
     hl_target_source = pitch_target_source
     if ref_z.size < z.size:
         ref_z = np.pad(ref_z, (0, z.size - ref_z.size), constant_values=np.nan)

@@ -77,6 +77,7 @@ def _debug_payload(
             "contour_corr": prosody.get("contour_corr"),
             "transition_agreement": prosody.get("transition_agreement"),
             "pitch_target_source": prosody.get("pitch_target_source"),
+            "pitch_target_reliability": prosody.get("pitch_target_reliability") or details.get("pitch_target_reliability"),
             "pitch_target_consistency": prosody.get("pitch_target_consistency"),
             "raw_prosody_score": raw_prosody_score,
             "visible_prosody_score": visible_prosody_score,

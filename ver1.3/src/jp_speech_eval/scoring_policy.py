@@ -33,6 +33,11 @@ def policy_from_result(result: Mapping[str, Any], *, mode: str | None = None) ->
         or (result.get("prosody_metrics") or {}).get("pitch_target_source")
         or "auto_pyopenjtalk"
     )
+    pitch_target_reliability = str(
+        details.get("pitch_target_reliability")
+        or (details.get("prosody") or {}).get("pitch_target_reliability", "")
+        or ""
+    )
     verified_level = str(details.get("verified_level") or verified_level_from_source(target_source))
     weak_reference = bool(details.get("weak_reference")) or mode_name in {
         "asr_confirmed_weak_reference",
@@ -48,6 +53,11 @@ def policy_from_result(result: Mapping[str, Any], *, mode: str | None = None) ->
             or mode_name == "asr_confirmed_weak_reference"
         )
     )
+    if (
+        pitch_target_reliability in {"weak", "heuristic", "unreliable", "invalid"}
+        and mode_name != "asr_confirmed_weak_reference"
+    ):
+        allow_pitch = False
     allow_pron = "limited" if weak_reference or demo_only else "standard"
     return ScoringPolicy(
         mode=mode_name,
