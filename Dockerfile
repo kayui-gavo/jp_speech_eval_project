@@ -23,6 +23,7 @@ RUN apt-get update \
 
 COPY ver1.3/requirements.txt /app/ver1.3/requirements.txt
 RUN python -m pip install --upgrade pip setuptools wheel uv \
+    && python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0" \
     && python -m pip install -r /app/ver1.3/requirements.txt
 
 # Install the same isolated Python 3.12 Kanade worker used by the local setup.
