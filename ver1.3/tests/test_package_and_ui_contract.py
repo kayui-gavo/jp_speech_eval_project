@@ -107,8 +107,8 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn('hiddenReasons.includes("fallback_alignment")', html)
         self.assertIn('hiddenReasons.includes("low_f0_coverage")', html)
         self.assertIn("const debug = userFacing?.debug || {};", html)
+        self.assertIn("debug.special_mora_score ?? debug.rhythm_timing_score", html)
         self.assertIn("debug.visible_prosody_score ?? debug.prosody_score", html)
-        self.assertIn("debug.expression_proxy_score", html)
         self.assertNotIn('result[key] ?? 0', html)
 
 

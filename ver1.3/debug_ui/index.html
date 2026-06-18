@@ -950,9 +950,9 @@
     const scoreKeys = [
       "total_score",
       "pronunciation_score",
-      "prosody_score",
       "fluency_score",
-      "tone_score"
+      "rhythm_score",
+      "pitch_score"
     ];
 
     const locales = {
@@ -1109,10 +1109,10 @@
         noMajorLimit: "没有明显工程限制",
         scoreLabels: {
           total_score: "总分",
-          pronunciation_score: "发音",
-          prosody_score: "韵律",
+          pronunciation_score: "清晰度",
           fluency_score: "流畅度",
-          tone_score: "表达"
+          rhythm_score: "韵律（特殊拍）",
+          pitch_score: "音调（F0高低）"
         },
         modeLabels: {
           reference: "固定句跟读练习",
@@ -1311,10 +1311,10 @@
         noMajorLimit: "沒有明顯工程限制",
         scoreLabels: {
           total_score: "總分",
-          pronunciation_score: "發音",
-          prosody_score: "韻律",
+          pronunciation_score: "清晰度",
           fluency_score: "流暢度",
-          tone_score: "表達"
+          rhythm_score: "韻律（特殊拍）",
+          pitch_score: "音調（F0高低）"
         },
         modeLabels: {
           reference: "固定句跟讀",
@@ -1513,10 +1513,10 @@
         noMajorLimit: "大きな制限はありません",
         scoreLabels: {
           total_score: "総合",
-          pronunciation_score: "発音",
-          prosody_score: "韻律",
+          pronunciation_score: "明瞭度",
           fluency_score: "流暢さ",
-          tone_score: "表現"
+          rhythm_score: "リズム（特殊拍）",
+          pitch_score: "アクセント（F0高低）"
         },
         modeLabels: {
           reference: "固定文の音読練習",
@@ -1715,10 +1715,10 @@
         noMajorLimit: "No major engineering limit",
         scoreLabels: {
           total_score: "Total",
-          pronunciation_score: "Pronunciation",
-          prosody_score: "Prosody",
+          pronunciation_score: "Clarity",
           fluency_score: "Fluency",
-          tone_score: "Expression"
+          rhythm_score: "Rhythm / special mora",
+          pitch_score: "Pitch / F0"
         },
         modeLabels: {
           reference: "Fixed sentence practice",
@@ -2551,13 +2551,13 @@
         || hiddenReasons.includes("fallback_alignment");
       const dimensionScores = {
         pronunciation_score: userFacing ? debug.pronunciation_score : result.pronunciation_score,
-        prosody_score: hidePitchDimension
+        fluency_score: userFacing ? debug.fluency_score : result.fluency_score,
+        rhythm_score: userFacing
+          ? (debug.special_mora_score ?? debug.rhythm_timing_score)
+          : result.details?.fluency?.rhythm_timing_score,
+        pitch_score: hidePitchDimension
           ? null
           : (userFacing ? (debug.visible_prosody_score ?? debug.prosody_score) : result.prosody_score),
-        fluency_score: userFacing ? debug.fluency_score : result.fluency_score,
-        tone_score: hidePitchDimension
-          ? null
-          : (userFacing ? debug.expression_proxy_score : result.tone_score),
       };
       const keys = (hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys)
         .filter((key) => !(hideFormalDimensions && key !== "total_score"))
