@@ -2530,7 +2530,8 @@
       const gate = userFacing?.debug?.reliability_gate || {};
       const blocked = gate.blocked_categories || [];
       const hiddenReasons = userFacing?.suppressed_reasons || gate.reasons || [];
-      const hideFormalDimensions = hiddenReasons.includes("content_mismatch_veto") || hiddenReasons.includes("fallback_alignment");
+      const scoreSuppressed = Boolean(userFacing && userFacing.display_score == null);
+      const hideFormalDimensions = scoreSuppressed || hiddenReasons.includes("content_mismatch_veto") || hiddenReasons.includes("fallback_alignment");
       if (userFacing) {
         const status = userFacing.practice_check_result || "needs_attention";
         const reliability = userFacing.reliability || "unknown";

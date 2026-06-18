@@ -101,6 +101,8 @@ class PackageAndUiContractTest(unittest.TestCase):
     def test_debug_ui_does_not_fallback_to_raw_scores_when_user_facing_hides_them(self) -> None:
         html = (ROOT / "debug_ui" / "index.html").read_text(encoding="utf-8")
         self.assertIn("const rawTotal = userFacing ? userFacing.display_score : result.total_score;", html)
+        self.assertIn("const scoreSuppressed = Boolean(userFacing && userFacing.display_score == null);", html)
+        self.assertIn("const hideFormalDimensions = scoreSuppressed", html)
         self.assertIn('hiddenReasons.includes("content_mismatch_veto")', html)
         self.assertIn('hiddenReasons.includes("fallback_alignment")', html)
         self.assertIn('blocked.includes("pitch") && key === "prosody_score"', html)
