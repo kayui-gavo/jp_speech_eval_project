@@ -2531,6 +2531,7 @@
         cards.push(`<div class="score total"><span>${t("overallPerformance")}</span><strong>${total}</strong><span>/ 100 · ${t("notStrictScore")}</span></div>`);
       }
       const gate = userFacing?.debug?.reliability_gate || {};
+      const debug = userFacing?.debug || {};
       const blocked = gate.blocked_categories || [];
       const hiddenReasons = userFacing?.suppressed_reasons || gate.reasons || [];
       const scoreSuppressed = Boolean(userFacing && userFacing.display_score == null);
@@ -2548,13 +2549,22 @@
       const hidePronunciationDimension = scoreSuppressed
         || hiddenReasons.includes("content_mismatch_veto")
         || hiddenReasons.includes("fallback_alignment");
+      const dimensionScores = {
+        pronunciation_score: userFacing ? debug.pronunciation_score : result.pronunciation_score,
+        prosody_score: hidePitchDimension
+          ? null
+          : (userFacing ? (debug.visible_prosody_score ?? debug.prosody_score) : result.prosody_score),
+        fluency_score: userFacing ? debug.fluency_score : result.fluency_score,
+        tone_score: hidePitchDimension
+          ? null
+          : (userFacing ? debug.expression_proxy_score : result.tone_score),
+      };
       const keys = (hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys)
         .filter((key) => !(hideFormalDimensions && key !== "total_score"))
-        .filter((key) => !(hidePitchDimension && (key === "prosody_score" || key === "tone_score")))
         .filter((key) => !(hidePronunciationDimension && key === "pronunciation_score"));
       cards.push(...keys.map((key) => {
         const label = tGroup("scoreLabels", key);
-        const rawValue = result[key];
+        const rawValue = key === "total_score" ? result[key] : dimensionScores[key];
         const value = rawValue === null || rawValue === undefined || rawValue === "" ? "--" : rawValue;
         const className = key === "total_score" ? "score total" : "score";
         const suffix = value === "--" ? t("notAvailable") : "/ 100";
