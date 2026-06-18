@@ -100,7 +100,7 @@ CMD=("${PYTHON_BIN}" scripts/debug_ui.py
   --wav cache/ramen_kudasai.ref.wav
   --tts-backend "${TTS_BACKEND}"
   --public-demo
-  --available-modes reference,asr_pseudo_reference,kanade_asr_voice_reference)
+  --available-modes reference,asr_pseudo_reference)
 
 if [[ "${TTS_BACKEND}" == "aivis_http" ]]; then
   CMD+=(--tts-url "${AIVIS_URL}" --tts-speaker "${AIVIS_SPEAKER}")
