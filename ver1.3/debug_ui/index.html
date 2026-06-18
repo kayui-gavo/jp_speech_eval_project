@@ -981,6 +981,7 @@
         waitingForRecording: "等待录音",
         reliability: "本次结果可信度",
         noData: "暂无数据",
+        notAvailable: "不可用",
         speechRegion: "说话区间",
         speechRatio: "语音占比",
         pitchContour: "音高走势",
@@ -1182,6 +1183,7 @@
         waitingForRecording: "等待錄音",
         reliability: "本次結果可信度",
         noData: "暫無資料",
+        notAvailable: "不可用",
         speechRegion: "說話區間",
         speechRatio: "語音占比",
         pitchContour: "音高走勢",
@@ -1383,6 +1385,7 @@
         waitingForRecording: "録音待ち",
         reliability: "今回の結果の信頼度",
         noData: "データなし",
+        notAvailable: "利用不可",
         speechRegion: "発話区間",
         speechRatio: "発話率",
         pitchContour: "ピッチ推移",
@@ -1584,6 +1587,7 @@
         waitingForRecording: "Waiting for recording",
         reliability: "Result reliability",
         noData: "No data",
+        notAvailable: "unavailable",
         speechRegion: "Speech region",
         speechRatio: "Speech ratio",
         pitchContour: "Pitch contour",
@@ -2537,15 +2541,25 @@
         const reliability = userFacing.reliability || "unknown";
         cards.push(`<div class="score"><span>${t("practiceResult")}</span><strong>${practiceResultLabel(status)}</strong><span>${t("reliabilitySimple")}：${reliabilityDisplay(reliability)}</span></div>`);
       }
+      const hidePitchDimension = scoreSuppressed
+        || hiddenReasons.includes("content_mismatch_veto")
+        || hiddenReasons.includes("fallback_alignment")
+        || hiddenReasons.includes("low_f0_coverage")
+        || hiddenReasons.includes("short_utterance");
+      const hidePronunciationDimension = scoreSuppressed
+        || hiddenReasons.includes("content_mismatch_veto")
+        || hiddenReasons.includes("fallback_alignment");
       const keys = (hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys)
         .filter((key) => !(hideFormalDimensions && key !== "total_score"))
-        .filter((key) => !(blocked.includes("pitch") && key === "prosody_score"))
-        .filter((key) => !(blocked.includes("pronunciation") && key === "pronunciation_score"));
+        .filter((key) => !(hidePitchDimension && (key === "prosody_score" || key === "tone_score")))
+        .filter((key) => !(hidePronunciationDimension && key === "pronunciation_score"));
       cards.push(...keys.map((key) => {
         const label = tGroup("scoreLabels", key);
-        const value = result[key] ?? 0;
+        const rawValue = result[key];
+        const value = rawValue === null || rawValue === undefined || rawValue === "" ? "--" : rawValue;
         const className = key === "total_score" ? "score total" : "score";
-        return `<div class="${className}"><span>${label}</span><strong>${value}</strong><span>/ 100</span></div>`;
+        const suffix = value === "--" ? t("notAvailable") : "/ 100";
+        return `<div class="${className}"><span>${label}</span><strong>${value}</strong><span>${suffix}</span></div>`;
       }));
       $("scoreGrid").innerHTML = cards.join("");
     }

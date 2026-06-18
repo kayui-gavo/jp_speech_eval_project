@@ -42,9 +42,11 @@ def policy_from_result(result: Mapping[str, Any], *, mode: str | None = None) ->
     demo_only = bool(details.get("demo_only")) or mode_name.startswith("kanade")
     exclude = demo_only or bool(details.get("exclude_from_pronunciation_score"))
     allow_pitch = (
-        verified_level in PITCH_FEEDBACK_LEVELS
-        and not weak_reference
-        and not demo_only
+        not demo_only
+        and (
+            verified_level in PITCH_FEEDBACK_LEVELS
+            or mode_name == "asr_confirmed_weak_reference"
+        )
     )
     allow_pron = "limited" if weak_reference or demo_only else "standard"
     return ScoringPolicy(

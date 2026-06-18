@@ -105,7 +105,9 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn("const hideFormalDimensions = scoreSuppressed", html)
         self.assertIn('hiddenReasons.includes("content_mismatch_veto")', html)
         self.assertIn('hiddenReasons.includes("fallback_alignment")', html)
-        self.assertIn('blocked.includes("pitch") && key === "prosody_score"', html)
+        self.assertIn('hiddenReasons.includes("low_f0_coverage")', html)
+        self.assertIn('key === "prosody_score" || key === "tone_score"', html)
+        self.assertNotIn('result[key] ?? 0', html)
 
 
 if __name__ == "__main__":
