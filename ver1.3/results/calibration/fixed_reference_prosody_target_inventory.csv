@@ -1,0 +1,6 @@
+target_id,target_text,target_kana,reference_audio_path,manifest_reference_audio,manifest_verified_level,manifest_pitch_target_source,manifest_reference_audio_exists,has_cache_json,has_cache_npz,has_ref_wav,has_npz_f0,has_prosody_ref_sidecar,sidecar_reliable,sidecar_path,timing_source,reference_source,f0_coverage,can_be_strong_pitch_reference,reason_if_not,pitch_target_source,pitch_target_reliability
+coffee_kudasai,コーヒーをください,コーヒーヲクダサイ,,,auto_pyopenjtalk,auto_pyopenjtalk,,no,no,no,no,no,no,,,,,no,missing_sentence_cache,,
+eki_made_onegaishimasu,駅までお願いします,エキマデオネガイシマス,,,auto_pyopenjtalk,auto_pyopenjtalk,,no,no,no,no,no,no,,,,,no,missing_sentence_cache,,
+mou_ichido_onegaishimasu,もう一度お願いします,モウイチドオネガイシマス,,,auto_pyopenjtalk,auto_pyopenjtalk,,no,no,no,no,no,no,,,,,no,missing_sentence_cache,,
+ramen_kudasai,ラーメンをください,ラーメンヲクダサイ,/Users/ryukayuiii/Documents/jp_speech_eval_project/ver1.3/cache/ramen_kudasai.ref.wav,cache/ramen_kudasai/reference.wav,human_checked,human_checked,no,yes,yes,yes,yes,no,no,,equal_mora,pyopenjtalk_tts_pseudo_reference,1.0,no,manifest_reference_audio_missing;untrusted_reference_source;manifest_claims_human_checked_but_cache_not_verified,tts_reference_weak,weak
+sumimasen,すみません,スミマセン,,,auto_pyopenjtalk,auto_pyopenjtalk,,no,no,no,no,no,no,,,,,no,missing_sentence_cache,,
