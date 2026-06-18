@@ -790,7 +790,6 @@
             <select id="evalMode">
               <option value="reference">固定句跟读练习</option>
               <option value="asr_pseudo_reference">自由说一句：确认文本</option>
-              <option value="kanade_asr_voice_reference">自由说一句：声线参考</option>
             </select>
             <span class="pill" id="modeHint">需要目标句</span>
           </div>
@@ -1776,7 +1775,7 @@
       kanade_asr_voice_reference: { group: "free", hint: "modeHintKanadeAsr", tone: "warn", tags: ["自由说话", "确认文本", "声线参考"] }
     };
 
-    const publicUiModes = ["reference", "asr_pseudo_reference", "kanade_asr_voice_reference"];
+    const publicUiModes = ["reference", "asr_pseudo_reference"];
 
     const modeText = {
       "zh-CN": {
