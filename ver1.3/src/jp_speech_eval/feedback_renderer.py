@@ -31,15 +31,26 @@ def _debug_payload(
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
     pronunciation = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
     prosody = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
+    weak = details.get("weak_reference_native_likeness") if isinstance(details.get("weak_reference_native_likeness"), Mapping) else {}
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
     raw_prosody_score = result.get("prosody_score")
-    visible_prosody_score = raw_prosody_score if gate.allow_pitch_feedback else None
+    weak_prosody_score = weak.get("weak_prosody_naturalness_score") or result.get("weak_prosody_naturalness_score")
+    if policy.weak_reference:
+        visible_prosody_score = weak_prosody_score if gate.allow_pitch_feedback and weak_prosody_score is not None else None
+    else:
+        visible_prosody_score = raw_prosody_score if gate.allow_pitch_feedback else None
     return {
         "debug_total_score": result.get("total_score"),
         "pronunciation_score": result.get("pronunciation_score"),
         "prosody_score": raw_prosody_score,
+        "weak_pronunciation_naturalness_score": weak.get("weak_pronunciation_naturalness_score") or result.get("weak_pronunciation_naturalness_score"),
+        "weak_prosody_naturalness_score": weak_prosody_score,
+        "weak_rhythm_naturalness_score": weak.get("weak_rhythm_naturalness_score") or result.get("weak_rhythm_naturalness_score"),
+        "weak_overall_practice_score": weak.get("weak_overall_practice_score") or result.get("weak_overall_practice_score"),
+        "score_type": details.get("score_type") or result.get("score_type"),
+        "strict_reference_available": details.get("strict_reference_available") if "strict_reference_available" in details else result.get("strict_reference_available"),
         "visible_prosody_score": visible_prosody_score,
         "prosody_score_visible": visible_prosody_score is not None,
         "fluency_score": result.get("fluency_score"),
@@ -80,6 +91,9 @@ def _debug_payload(
             "pitch_target_reliability": prosody.get("pitch_target_reliability") or details.get("pitch_target_reliability"),
             "pitch_target_consistency": prosody.get("pitch_target_consistency"),
             "raw_prosody_score": raw_prosody_score,
+            "weak_prosody_naturalness_score": weak_prosody_score,
+            "score_type": details.get("score_type") or result.get("score_type"),
+            "strict_pitch_accent_correctness": False if policy.weak_reference else gate.allow_pitch_feedback,
             "visible_prosody_score": visible_prosody_score,
             "visible": visible_prosody_score is not None,
             "hidden_reason": "pitch_blocked" if visible_prosody_score is None else None,
@@ -143,6 +157,10 @@ def _display_score(
     if policy.demo_only:
         return None
     if policy.weak_reference:
+        weak_details = details.get("weak_reference_native_likeness") if isinstance(details.get("weak_reference_native_likeness"), Mapping) else {}
+        weak_overall = result.get("weak_overall_practice_score") or weak_details.get("weak_overall_practice_score")
+        if weak_overall is not None:
+            return int(round(_as_score(weak_overall)))
         display = _weighted_available(scores, {
             "content_score": 0.25,
             "mora_clarity_score": 0.30,

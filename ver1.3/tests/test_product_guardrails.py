@@ -105,11 +105,26 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
 
     def test_confirmed_weak_reference_keeps_practice_prosody_score_visible(self) -> None:
-        result = _result(details={"mode": "asr_confirmed_weak_reference", "weak_reference": True})
+        result = _result(
+            weak_prosody_naturalness_score=84,
+            weak_overall_practice_score=86,
+            score_type="weak_reference_native_likeness",
+            details={
+                "mode": "asr_confirmed_weak_reference",
+                "weak_reference": True,
+                "weak_reference_native_likeness": {
+                    "score_type": "weak_reference_native_likeness",
+                    "weak_prosody_naturalness_score": 84,
+                    "weak_overall_practice_score": 86,
+                    "strict_pitch_accent_correctness": False,
+                },
+            },
+        )
         rendered = render_user_facing_result(result, mode="asr_confirmed_weak_reference")
         self.assertIsNotNone(rendered["display_score"])
         self.assertTrue(rendered["debug"]["scoring_policy"]["allow_pitch_feedback"])
-        self.assertEqual(rendered["debug"]["visible_prosody_score"], result["prosody_score"])
+        self.assertEqual(rendered["debug"]["visible_prosody_score"], 84)
+        self.assertNotEqual(rendered["debug"]["visible_prosody_score"], result["prosody_score"])
         self.assertNotIn("pitch", rendered["debug"]["reliability_gate"]["blocked_categories"])
 
     def test_legacy_threshold_metadata_blocks_user_facing_even_with_flag(self) -> None:

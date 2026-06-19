@@ -26,6 +26,7 @@ from .scoring import (
     score_fluency,
     score_pronunciation_rhythm,
     score_prosody,
+    score_weak_reference_native_likeness,
     score_tone_simple,
 )
 from .sentence_cache import SentenceCache, load_sentence_cache
@@ -66,6 +67,12 @@ class EvaluationResult:
     prosody_metrics: Dict
     timing: Dict[str, float]
     cache_prefix: Optional[str] = None
+    weak_pronunciation_naturalness_score: Optional[int] = None
+    weak_prosody_naturalness_score: Optional[int] = None
+    weak_rhythm_naturalness_score: Optional[int] = None
+    weak_overall_practice_score: Optional[int] = None
+    score_type: Optional[str] = None
+    strict_reference_available: Optional[bool] = None
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -431,6 +438,16 @@ def evaluate_utterance(
     prosody_details["pitch_target_source"] = prosody_reference_target.pitch_target_source
     prosody_details["pitch_target_reliability"] = prosody_reference_target.pitch_target_reliability
     prosody_details["prosody_reference_target"] = prosody_reference_target.to_dict()
+    strict_reference_available = (
+        prosody_reference_target.pitch_target_source in {"reference_audio_f0_cache", "reference_audio_f0_runtime"}
+        and prosody_reference_target.pitch_target_reliability == "reliable"
+    )
+    weak_prosody_score, weak_prosody_fb, weak_prosody_details = score_weak_reference_native_likeness(
+        f0_by_mora=f0_mora,
+        boundaries=boundaries,
+        is_question=text_info.is_question,
+        config=config,
+    )
     fluency_score, fluency_fb, fluency_details = score_fluency(
         mora_count=len(text_info.moras),
         duration=active_duration,
@@ -500,13 +517,50 @@ def evaluate_utterance(
         fluency_score = 0
         tone_score = 0
         total_score = 0
+        weak_prosody_score = None
+        weak_prosody_details["available"] = False
+        weak_prosody_details["unavailable_reason"] = "content_mismatch"
         reliability["score_is_diagnostic"] = True
         reliability["level"] = "low"
         reliability["overall"] = min(float(reliability.get("overall", 0.0)), 0.25)
     elif content_match and content_match.status == "uncertain":
         total_score = min(int(total_score), 50)
+        weak_prosody_score = None
+        weak_prosody_details["available"] = False
+        weak_prosody_details["unavailable_reason"] = "content_uncertain"
         reliability["score_is_diagnostic"] = True
         reliability["level"] = "low"
+
+    weak_pronunciation_score: Optional[int] = pronunciation_score
+    weak_rhythm_score: Optional[int] = weak_prosody_details.get("weak_rhythm_naturalness_score")
+    if weak_rhythm_score is None:
+        weak_rhythm_score = int(round(
+            0.55 * float(fluency_details.get("rhythm_timing_score", fluency_score) or fluency_score)
+            + 0.45 * float(fluency_score)
+        ))
+    weak_scores = {
+        "weak_pronunciation_naturalness_score": weak_pronunciation_score,
+        "weak_prosody_naturalness_score": weak_prosody_score,
+        "weak_rhythm_naturalness_score": weak_rhythm_score,
+    }
+    weak_overall_values = [
+        (weak_pronunciation_score, 0.35),
+        (weak_prosody_score, 0.30),
+        (weak_rhythm_score, 0.35),
+    ]
+    weak_total = 0.0
+    weak_denom = 0.0
+    for value, weight in weak_overall_values:
+        if value is None:
+            continue
+        weak_total += float(value) * weight
+        weak_denom += weight
+    weak_overall_practice_score = int(round(weak_total / weak_denom)) if weak_denom > 0 else None
+    score_type = (
+        "strict_reference"
+        if strict_reference_available
+        else "weak_reference_native_likeness"
+    )
 
     observed_pitch = prosody_details.get("observed_pitch", ["?"] * len(text_info.moras))
     mora_table: List[MoraRow] = []
@@ -600,6 +654,15 @@ def evaluate_utterance(
             },
             "pronunciation": pron_details,
             "prosody": prosody_details,
+            "weak_reference_native_likeness": {
+                **weak_prosody_details,
+                **weak_scores,
+                "weak_overall_practice_score": weak_overall_practice_score,
+                "score_type": "weak_reference_native_likeness",
+                "strict_reference_available": False,
+                "feedback": weak_prosody_fb,
+                "policy_note": "practice_native_likeness_not_teacher_grade_pitch_accent_correctness",
+            },
             "prosody_metrics": prosody_metrics,
             "aggregate": {
                 "weights": aggregate_weights,
@@ -622,11 +685,19 @@ def evaluate_utterance(
             "reference_config_hash": cache.meta.reference_config_hash if cache else None,
             "fluency": fluency_details,
             "tone": tone_details,
+            "score_type": score_type,
+            "strict_reference_available": strict_reference_available,
         },
         mora_table=mora_table,
         prosody_metrics=prosody_metrics,
         timing=timing,
         cache_prefix=str(cache.prefix) if cache else None,
+        weak_pronunciation_naturalness_score=weak_pronunciation_score,
+        weak_prosody_naturalness_score=weak_prosody_score,
+        weak_rhythm_naturalness_score=weak_rhythm_score,
+        weak_overall_practice_score=weak_overall_practice_score,
+        score_type=score_type,
+        strict_reference_available=strict_reference_available,
     )
     if profile:
         print_timing(result)

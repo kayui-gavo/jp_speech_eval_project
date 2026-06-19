@@ -725,3 +725,152 @@ def score_tone_simple(
         "score_interpretation": "expression_proxy_not_full_emotion_recognition",
     }
     return clamp_score(score), feedback, details
+
+
+def score_weak_reference_native_likeness(
+    f0_by_mora: List[float],
+    boundaries: Optional[List[Tuple[float, float]]] = None,
+    *,
+    is_question: bool = False,
+    config: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[int], List[str], Dict[str, Any]]:
+    """Weak-reference pitch/prosody naturalness for arbitrary confirmed text.
+
+    This is intentionally not a pitch-accent correctness score. It does not
+    compare against OpenJTalk/OJAD H/L as ground truth. It only checks whether
+    the utterance has enough voiced F0 evidence and whether the observed
+    mora-level F0 movement looks broadly speech-like rather than flat, wildly
+    shuffled, or under-evidenced.
+    """
+    f0 = np.asarray(f0_by_mora, dtype=float)
+    mora_count = int(f0.size)
+    valid = np.isfinite(f0) & (f0 > 0)
+    valid_count = int(np.sum(valid))
+    coverage = valid_count / max(mora_count, 1)
+    if mora_count == 0 or valid_count < max(3, int(np.ceil(0.50 * max(mora_count, 1)))):
+        return None, ["这次录音里的音高信息不够清楚，音高变化只作参考。"], {
+            "score_type": "weak_reference_native_likeness",
+            "available": False,
+            "unavailable_reason": "insufficient_valid_mora_f0",
+            "f0_coverage": round(float(coverage), 4),
+            "voiced_mora_count": valid_count,
+            "valid_f0_mora_count": valid_count,
+            "mora_count": mora_count,
+            "strict_pitch_accent_correctness": False,
+            "uses_openjtalk_as_strict_reference": False,
+        }
+
+    logf0 = np.full_like(f0, np.nan, dtype=float)
+    logf0[valid] = np.log(f0[valid])
+    z = log_f0_normalize(f0)
+    valid_values = logf0[valid]
+    f0_range_log = float(np.percentile(valid_values, 90) - np.percentile(valid_values, 10))
+    finite_z = z[np.isfinite(z)]
+
+    diffs: List[float] = []
+    for a, b in zip(z[:-1], z[1:]):
+        if np.isfinite(a) and np.isfinite(b):
+            diffs.append(float(b - a))
+    abs_diffs = np.abs(np.asarray(diffs, dtype=float)) if diffs else np.asarray([], dtype=float)
+    mean_abs_movement = float(np.mean(abs_diffs)) if abs_diffs.size else 0.0
+    p90_movement = float(np.percentile(abs_diffs, 90)) if abs_diffs.size else 0.0
+    sign_changes = 0.0
+    if len(diffs) >= 2:
+        signs = np.sign(np.asarray(diffs, dtype=float))
+        active = np.abs(np.asarray(diffs, dtype=float)) >= 0.18
+        pairs = [
+            signs[i] != 0 and signs[i + 1] != 0 and active[i] and active[i + 1] and signs[i] != signs[i + 1]
+            for i in range(len(signs) - 1)
+        ]
+        sign_changes = float(np.mean(pairs)) if pairs else 0.0
+    jerk = np.diff(np.asarray(diffs, dtype=float)) if len(diffs) >= 2 else np.asarray([], dtype=float)
+    mean_abs_jerk = float(np.mean(np.abs(jerk))) if jerk.size else 0.0
+
+    # Native-like spontaneous Japanese should have some movement, but not a
+    # shuffled contour with repeated sharp reversals. These broad bands were
+    # chosen for conservative practice feedback, not strict accent correctness.
+    coverage_score = min(1.0, coverage / 0.82)
+    range_low = min(1.0, f0_range_log / 0.22)
+    range_high_penalty = max(0.0, (f0_range_log - 0.95) / 0.55)
+    range_score = max(0.0, min(1.0, range_low - 0.35 * range_high_penalty))
+    movement_low = min(1.0, mean_abs_movement / 0.28)
+    movement_high_penalty = max(0.0, (mean_abs_movement - 0.95) / 0.75)
+    movement_score = max(0.0, min(1.0, movement_low - 0.35 * movement_high_penalty))
+    smoothness_score = max(0.0, min(1.0, 1.0 - 0.23 * mean_abs_jerk - 0.22 * sign_changes - 0.10 * max(0.0, p90_movement - 1.5)))
+    flatness_penalty = min(0.45, max(0.0, 0.22 - f0_range_log) * 1.4 + max(0.0, 0.18 - mean_abs_movement) * 0.9)
+    instability_penalty = min(
+        0.32,
+        max(0.0, mean_abs_movement - 0.75) * 0.50
+        + max(0.0, p90_movement - 1.45) * 0.18
+        + max(0.0, sign_changes - 0.45) * 0.16,
+    )
+
+    final_score = 0.86
+    if finite_z.size >= 3:
+        final_slope = float(finite_z[-1] - finite_z[max(0, finite_z.size - 3)])
+        if is_question:
+            final_score = 1.0 if final_slope >= -0.05 else 0.70
+        else:
+            final_score = 0.98 if final_slope <= 0.55 else 0.62
+
+    naturalness = (
+        0.20 * coverage_score
+        + 0.28 * range_score
+        + 0.18 * movement_score
+        + 0.26 * smoothness_score
+        + 0.08 * final_score
+        - flatness_penalty
+        - instability_penalty
+    )
+    naturalness = max(0.0, min(1.0, naturalness))
+    score = clamp_score(100.0 * naturalness)
+
+    feedback: List[str] = []
+    if range_score < 0.55 or movement_score < 0.55:
+        feedback.append("音高变化可能偏平，练习时可以让句子的起伏更清楚。")
+    if smoothness_score < 0.62:
+        feedback.append("音高变化有些不稳定，先用自然的句子起伏练习。")
+    if final_score < 0.75:
+        feedback.append("句末语调可能不够清楚。")
+    if not feedback:
+        feedback.append("音高变化整体比较自然。")
+    feedback.append("音高变化仅供参考，不等同于严格高低重音判定。")
+
+    rhythm_naturalness = None
+    if boundaries:
+        durations = np.asarray([max(0.0, e - s) for s, e in boundaries], dtype=float)
+        if durations.size:
+            avg = float(np.mean(durations))
+            cv = float(np.std(durations) / (avg + 1e-8))
+            rhythm_naturalness = clamp_score(100.0 * max(0.0, min(1.0, 1.0 - 0.85 * max(0.0, cv - 0.18))))
+
+    details = {
+        "score_type": "weak_reference_native_likeness",
+        "available": True,
+        "strict_reference_available": False,
+        "strict_pitch_accent_correctness": False,
+        "uses_openjtalk_as_strict_reference": False,
+        "f0_coverage": round(float(coverage), 4),
+        "voiced_mora_count": valid_count,
+        "valid_f0_mora_count": valid_count,
+        "mora_count": mora_count,
+        "utterance_f0_range_log": round(float(f0_range_log), 4),
+        "local_pitch_movement": round(float(mean_abs_movement), 4),
+        "p90_pitch_movement": round(float(p90_movement), 4),
+        "transition_smoothness": round(float(smoothness_score), 4),
+        "sign_change_rate": round(float(sign_changes), 4),
+        "mean_abs_jerk": round(float(mean_abs_jerk), 4),
+        "flatness_penalty": round(float(flatness_penalty), 4),
+        "instability_penalty": round(float(instability_penalty), 4),
+        "phrase_final_intonation_score": round(float(final_score), 4),
+        "component_scores": {
+            "coverage": round(float(coverage_score), 4),
+            "range": round(float(range_score), 4),
+            "movement": round(float(movement_score), 4),
+            "smoothness": round(float(smoothness_score), 4),
+            "final": round(float(final_score), 4),
+        },
+        "weak_rhythm_naturalness_score": rhythm_naturalness,
+        "interpretation": "native_likeness_practice_score_not_strict_pitch_accent_correctness",
+    }
+    return score, feedback[:4], details
