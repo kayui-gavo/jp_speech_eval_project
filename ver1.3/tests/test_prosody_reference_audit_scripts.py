@@ -8,6 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
@@ -23,8 +26,10 @@ from audit_cross_speaker_prosody_reference import (  # noqa: E402
 from audit_fixed_reference_prosody_targets import inventory_rows  # noqa: E402
 from build_test_jvs_prosody_reference_cache import build_test_jvs_cache  # noqa: E402
 from diagnose_wrong_drop_sensitivity import diagnose  # noqa: E402
+from import_verified_reference_audio import plan_import  # noqa: E402
 from jp_speech_eval.evaluator import evaluate_utterance  # noqa: E402
 from jp_speech_eval.prosody_reference_cache import prosody_reference_cache_path  # noqa: E402
+from validate_verified_reference_assets import validation_rows  # noqa: E402
 
 
 class ProsodyReferenceAuditScriptTests(unittest.TestCase):
@@ -71,6 +76,139 @@ class ProsodyReferenceAuditScriptTests(unittest.TestCase):
         self.assertIn("missing_sentence_cache", broken["reason_if_not"])
         self.assertIn("manifest_reference_audio_missing", broken["reason_if_not"])
 
+    def test_asset_validator_current_packaged_demo_has_zero_strong_references(self) -> None:
+        rows = validation_rows(
+            cache_dir=ROOT / "cache",
+            manifest_path=ROOT / "data" / "demo_fixed_targets.json",
+            root=ROOT,
+            min_f0_coverage=0.50,
+        )
+        self.assertEqual([row for row in rows if row["strong_pitch_reference"] == "yes"], [])
+        ramen = next(row for row in rows if row["target_id"] == "ramen_kudasai")
+        self.assertEqual(ramen["is_tts_or_pseudo"], "yes")
+        self.assertEqual(ramen["strong_pitch_reference"], "no")
+        self.assertIn("tts_or_pseudo_reference", ramen["blocking_reasons"])
+        self.assertIn("missing_prosody_sidecar", ramen["blocking_reasons"])
+
+    def test_asset_validator_marks_missing_human_checked_path_inconsistent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            manifest = tmp / "targets.json"
+            manifest.write_text(json.dumps([{
+                "target_id": "broken_target",
+                "target_text": "ラーメンをください",
+                "kana": "ラーメンヲクダサイ",
+                "reference_audio_path": "missing/native.wav",
+                "reference_source": "native_teacher_recorded_reference",
+                "verification_status": "verified",
+                "verified_by": "teacher_a",
+            }], ensure_ascii=False), encoding="utf-8")
+            rows = validation_rows(cache_dir=tmp / "cache", manifest_path=manifest, root=tmp, min_f0_coverage=0.50)
+        row = rows[0]
+        self.assertEqual(row["strong_pitch_reference"], "no")
+        self.assertIn("reference_audio_missing", row["blocking_reasons"])
+        self.assertIn("missing_sentence_cache", row["blocking_reasons"])
+
+    def _write_test_wav(self, path: Path, *, sr: int = 16000, duration: float = 1.0) -> None:
+        t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+        y = 0.2 * np.sin(2 * np.pi * 220 * t)
+        sf.write(path, y.astype(np.float32), sr)
+
+    def test_import_verified_reference_audio_dry_run_does_not_write_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            wav = tmp / "native.wav"
+            self._write_test_wav(wav)
+            manifest = tmp / "targets.json"
+            manifest.write_text(json.dumps([{
+                "target_id": "ramen_kudasai",
+                "target_text": "ラーメンをください",
+                "kana": "ラーメンヲクダサイ",
+            }], ensure_ascii=False), encoding="utf-8")
+            cache_dir = tmp / "cache"
+            plan = plan_import(
+                target_id="ramen_kudasai",
+                reference_audio_path=wav,
+                reference_source="native_teacher_recorded_reference",
+                speaker_id="teacher01",
+                take_id="take01",
+                verified_by="teacher_a",
+                manifest_path=manifest,
+                cache_dir=cache_dir,
+                root=tmp,
+            )
+        self.assertTrue(plan["can_commit"], plan["blocking_reasons"])
+        self.assertFalse((cache_dir / "ramen_kudasai.json").exists())
+        self.assertIn("external_audio_import_uses_equal_mora_timing_until_manual_or_lab_timing_is_added", plan["warning_reasons"])
+
+    def test_import_verified_reference_audio_rejects_tts_or_pseudo_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            wav = tmp / "native.wav"
+            self._write_test_wav(wav)
+            manifest = tmp / "targets.json"
+            manifest.write_text(json.dumps([{
+                "target_id": "ramen_kudasai",
+                "target_text": "ラーメンをください",
+                "kana": "ラーメンヲクダサイ",
+            }], ensure_ascii=False), encoding="utf-8")
+            plan = plan_import(
+                target_id="ramen_kudasai",
+                reference_audio_path=wav,
+                reference_source="pyopenjtalk_tts_pseudo_reference",
+                speaker_id="teacher01",
+                take_id="take01",
+                verified_by="teacher_a",
+                manifest_path=manifest,
+                cache_dir=tmp / "cache",
+                root=tmp,
+            )
+        self.assertFalse(plan["can_commit"])
+        self.assertIn("tts_or_pseudo_reference_source", plan["blocking_reasons"])
+
+    def test_import_verified_reference_audio_does_not_replace_existing_verified_without_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            existing = tmp / "existing.wav"
+            incoming = tmp / "incoming.wav"
+            self._write_test_wav(existing)
+            self._write_test_wav(incoming)
+            manifest = tmp / "targets.json"
+            manifest.write_text(json.dumps([{
+                "target_id": "ramen_kudasai",
+                "target_text": "ラーメンをください",
+                "kana": "ラーメンヲクダサイ",
+                "reference_audio_path": "existing.wav",
+                "reference_source": "native_teacher_recorded_reference",
+                "verification_status": "verified",
+                "verified_by": "teacher_a",
+            }], ensure_ascii=False), encoding="utf-8")
+            blocked = plan_import(
+                target_id="ramen_kudasai",
+                reference_audio_path=incoming,
+                reference_source="native_teacher_recorded_reference",
+                speaker_id="teacher02",
+                take_id="take02",
+                verified_by="teacher_b",
+                manifest_path=manifest,
+                cache_dir=tmp / "cache",
+                root=tmp,
+            )
+            allowed = plan_import(
+                target_id="ramen_kudasai",
+                reference_audio_path=incoming,
+                reference_source="native_teacher_recorded_reference",
+                speaker_id="teacher02",
+                take_id="take02",
+                verified_by="teacher_b",
+                manifest_path=manifest,
+                cache_dir=tmp / "cache",
+                root=tmp,
+                replace=True,
+            )
+        self.assertIn("existing_verified_reference_requires_replace", blocked["blocking_reasons"])
+        self.assertTrue(allowed["can_commit"], allowed["blocking_reasons"])
+
     def test_cross_speaker_sanity_artifact_keeps_native_above_counterfactuals(self) -> None:
         csv_path = ROOT / "results" / "calibration" / "cross_speaker_prosody_reference_sanity.csv"
         self.assertTrue(csv_path.exists(), "run scripts/audit_cross_speaker_prosody_reference.py first")
@@ -116,10 +254,14 @@ class ProsodyReferenceAuditScriptTests(unittest.TestCase):
     def test_reports_explicitly_keep_calibration_inactive(self) -> None:
         inventory_report = (ROOT / "reports" / "fixed_reference_prosody_target_inventory.md").read_text(encoding="utf-8")
         cross_report = (ROOT / "reports" / "cross_speaker_prosody_reference_sanity.md").read_text(encoding="utf-8")
+        asset_spec = (ROOT / "reports" / "verified_reference_audio_asset_spec.md").read_text(encoding="utf-8")
+        negative_protocol = (ROOT / "reports" / "pitch_negative_control_protocol.md").read_text(encoding="utf-8")
 
         self.assertIn("No packaged fixed-reference target currently has a verified reliable human/native reference F0 sidecar.", inventory_report)
         self.assertIn("This audit does not make calibration active.", cross_report)
         self.assertIn("Not ready.", cross_report)
+        self.assertIn("TTS/OpenJTalk/pseudo references must not become reliable automatically.", asset_spec)
+        self.assertIn("calibration_status: inactive", negative_protocol)
 
     def test_test_only_jvs_verified_sidecar_reaches_evaluator_path_when_jvs_available(self) -> None:
         jvs_root = ROOT.parent / "JVS"

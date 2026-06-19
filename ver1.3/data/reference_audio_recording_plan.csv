@@ -1,0 +1,7 @@
+target_id,target_text,target_kana,recommended_reference_speaker_count,minimum_take_count,required_audio_format,verification_needed,current_status,action_required
+ramen_kudasai,ラーメンをください,ラーメンヲクダサイ,2,3,"mono WAV, 16-bit PCM, 24 kHz preferred; 16 kHz accepted",native_or_teacher_verification,weak_tts_pseudo_reference,record human/native/teacher reference and add non-fallback mora timing sidecar
+coffee_kudasai,コーヒーをください,コーヒーヲクダサイ,2,3,"mono WAV, 16-bit PCM, 24 kHz preferred; 16 kHz accepted",native_or_teacher_verification,no_reference_audio,record human/native/teacher reference and build cache/sidecar
+sumimasen,すみません,スミマセン,2,3,"mono WAV, 16-bit PCM, 24 kHz preferred; 16 kHz accepted",native_or_teacher_verification,no_reference_audio,record human/native/teacher reference and build cache/sidecar
+mou_ichido_onegaishimasu,もう一度お願いします,モーイチドオネガイシマス,2,3,"mono WAV, 16-bit PCM, 24 kHz preferred; 16 kHz accepted",native_or_teacher_verification,no_reference_audio,record human/native/teacher reference and build cache/sidecar
+eki_made_onegaishimasu,駅までお願いします,エキマデオネガイシマス,2,3,"mono WAV, 16-bit PCM, 24 kHz preferred; 16 kHz accepted",native_or_teacher_verification,no_reference_audio,record human/native/teacher reference and build cache/sidecar
+

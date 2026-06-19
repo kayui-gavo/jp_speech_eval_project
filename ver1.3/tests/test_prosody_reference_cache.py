@@ -144,6 +144,17 @@ class ProsodyReferenceCacheTests(unittest.TestCase):
         self.assertFalse(payload["reliable"])
         self.assertIn("low_reference_f0_coverage", payload["quality_flags"])
 
+    def test_equal_mora_timing_marks_verified_reference_unreliable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            cache = _fake_cache(
+                Path(tmp_name),
+                reference_source="native_teacher_recorded_reference",
+                ref_boundary_method="external_equal_mora",
+            )
+            payload = build_prosody_reference_cache_payload(cache, verified_reference=True)
+        self.assertFalse(payload["reliable"])
+        self.assertIn("equal_mora_timing_approx", payload["quality_flags"])
+
     def test_sidecar_cache_wins_over_runtime_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_name:
             tmp = Path(tmp_name)

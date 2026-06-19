@@ -1,6 +1,6 @@
 # Fixed-reference prosody target inventory
 
-- generated_at: 2026-06-19T02:42:13+00:00
+- generated_at: 2026-06-19T02:56:06+00:00
 - targets: 5
 - strong_pitch_reference_targets: 0
 

@@ -1,6 +1,6 @@
 # Prosody wrong-drop sensitivity diagnostics
 
-- generated_at: 2026-06-19T02:42:16+00:00
+- generated_at: 2026-06-19T02:56:09+00:00
 - pairs: 12
 - scope: diagnostic only; no prosody weights or scoring formulas are changed.
 

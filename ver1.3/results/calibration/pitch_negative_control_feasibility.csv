@@ -1,0 +1,8 @@
+item,status,current_method,missing_for_waveform_level,next_action
+waveform_level_f0_manipulation,not_ready,none,"vocoder or timing-preserving resynthesis path","evaluate lightweight tooling before using for calibration"
+semi_audio_contour_injection,available,"JVS lab timing + injected mora-level F0","none for diagnostic use","keep as repeatable pre-calibration test"
+flat_pitch,available,"replace valid F0 with sentence median","waveform rendering if product audio examples are needed","use as negative control"
+random_shuffled_pitch,available,"shuffle valid mora F0 with fixed seed","waveform rendering if product audio examples are needed","use as negative control"
+wrong_accent_drop,partial,"alter local F0 around accent-drop candidates","verified drop targets and stronger drop-window manipulation","diagnose target extraction before weighting changes"
+low_f0_coverage,available,"mask most voiced mora F0 values","none for gate test","keep as unavailable evidence test"
+

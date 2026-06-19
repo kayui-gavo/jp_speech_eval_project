@@ -165,6 +165,7 @@ def build_prosody_reference_cache_payload(
         len(values) == cache.mora_count
         and coverage >= min_f0_coverage
         and "fallback_mora_timing" not in quality_flags
+        and "equal_mora_timing_approx" not in quality_flags
         and "untrusted_reference_source" not in quality_flags
     )
     reference_path = str(reference_audio_path) if reference_audio_path else None
@@ -262,6 +263,8 @@ def select_prosody_reference_target(
             and sidecar_trusted
             and len(values) == cache.mora_count
             and coverage >= min_f0_coverage
+            and "fallback_mora_timing" not in flags
+            and "equal_mora_timing_approx" not in flags
         )
         if reliable:
             return ProsodyReferenceTarget(
