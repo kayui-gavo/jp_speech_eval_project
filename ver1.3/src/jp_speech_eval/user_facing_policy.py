@@ -55,6 +55,7 @@ class UserFacingResult:
     display_score: Optional[int]
     user_messages: List[str]
     focus_feedback: Optional[Dict[str, Any]]
+    feedback_candidates: List[Dict[str, Any]]
     display_total_score: bool
     debug: Dict[str, Any]
 

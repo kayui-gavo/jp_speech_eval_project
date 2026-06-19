@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Optional
 
+from .feedback_candidates import build_feedback_candidates
 from .reliability_gate import evaluate_reliability_gate
 from .scoring_policy import ScoringPolicy, policy_from_result
 from .special_mora_scorer import (
     decide_special_mora_runtime,
-    select_special_mora_feedback_candidate,
     special_mora_score_from_decisions,
 )
 from .user_facing_policy import (
@@ -292,37 +292,39 @@ def render_user_facing_result(
     )
     decision_dicts = [item.to_dict() for item in decisions]
     special_mora_score = special_mora_score_from_decisions(decisions)
-    messages: List[str] = list(gate.messages)
+    candidates = build_feedback_candidates(
+        result,
+        policy,
+        gate,
+        special_mora_decisions=decision_dicts,
+        max_candidates=2,
+    )
+    candidate_dicts = [item.to_dict() for item in candidates]
+    messages: List[str] = []
     focus: Optional[Dict[str, Any]] = None
 
     if policy.demo_only:
         messages.append("このモードは参考音のデモです。発音の正しさ判定には使いません。")
         focus = {"category": "demo", "message": messages[-1]}
-    elif policy.weak_reference:
-        messages.append("確認した文をもとにした練習用フィードバックです。厳密な発音採点ではありません。")
-        focus = {"category": "weak_reference", "message": messages[-1]}
-
-    if gate.allow_special_mora_feedback and policy.allow_special_mora_feedback:
-        item = select_special_mora_feedback_candidate(decisions)
-        if item:
-            focus = {
-                "category": "special_mora",
-                "type": item.type,
-                "mora": item.surface_mora,
-                "message": item.feedback_candidate_text,
-            }
-            messages.append(item.feedback_candidate_text)
+    elif candidate_dicts:
+        focus = candidate_dicts[0]
+        messages.append(str(focus.get("user_message") or ""))
+        tip = str(focus.get("practice_tip") or "")
+        if tip:
+            messages.append(f"下一次先练一个点：{tip}")
 
     raw_feedback = [str(item) for item in (result.get("feedback") or [])]
-    for item in raw_feedback:
-        if len(messages) >= 2:
-            break
-        if gate.practice_check_result != "retry" and _is_retry_message(item):
-            continue
-        if not gate.allow_pitch_feedback and ("音高" in item or "語調" in item or "语调" in item):
-            continue
-        if item not in messages:
-            messages.append(item)
+    if not candidate_dicts and not policy.demo_only:
+        messages.extend(gate.messages)
+        for item in raw_feedback:
+            if len(messages) >= 2:
+                break
+            if gate.practice_check_result != "retry" and _is_retry_message(item):
+                continue
+            if not gate.allow_pitch_feedback and ("音高" in item or "語調" in item or "语调" in item):
+                continue
+            if item not in messages:
+                messages.append(item)
     if not messages:
         messages.append("今回の練習は大きな問題なく確認できました。")
 
@@ -336,7 +338,7 @@ def render_user_facing_result(
     primary = None
     suggestion_type = "none"
     if focus and focus.get("category") not in {"demo", "weak_reference"}:
-        primary = str(focus.get("message") or "")
+        primary = str(focus.get("practice_tip") or focus.get("message") or "")
         suggestion_type = str(focus.get("category") or "none")
     elif len(messages) > 1 and status == "practice_suggestion":
         primary = messages[1]
@@ -362,6 +364,7 @@ def render_user_facing_result(
         display_score=display_score,
         user_messages=messages[:2],
         focus_feedback=focus,
+        feedback_candidates=candidate_dicts,
         display_total_score=False,
         debug=_debug_payload(
             result,

@@ -1,0 +1,13 @@
+case_id,fixture_type,expected_feedback_type,expected_location,expected_caveat,known_limitation
+normal_japanese_native,policy_fixture,clear_recording,false,true,positive practice feedback is not a native proficiency claim
+learner_japanese_ok,policy_fixture,clear_recording,false,true,does not diagnose phoneme substitutions
+too_short_japanese,policy_fixture,too_short,false,true,no isolated-word scoring in arbitrary-sentence mode
+random_english_latin,policy_fixture,content_mismatch,false,true,ASR hallucinated Japanese is not exhaustively solved
+flat_pitch,component_fixture,flat_pitch,false,true,weak naturalness only
+random_pitch,component_fixture,unstable_pitch,false,true,weak naturalness only
+low_f0_coverage,component_fixture,low_f0_coverage,false,true,does not imply pitch is wrong
+long_pause_many,policy_fixture,long_pause,false,false,pause location is not available from the aggregate pause counter
+fast_rate,policy_fixture,fast_rate,false,false,rate threshold remains a lightweight practice heuristic
+special_mora_long_vowel_short,policy_fixture,special_mora_duration_issue,true,false,verified fixed-reference fixture only
+special_mora_nasal_short,policy_fixture,special_mora_duration_issue,true,false,verified fixed-reference fixture only
+alignment_fallback,policy_fixture,alignment_uncertain,false,true,no mora or pitch details may be asserted
