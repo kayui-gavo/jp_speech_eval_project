@@ -75,6 +75,7 @@ def _transcribe_for_dynamic_reference(
         audio.sr,
         model_name=str(content_cfg.get("asr_model", "small")),
         provider=str(content_cfg.get("asr_provider", "auto")),
+        language=None,
     )
     return base_cache, transcript
 

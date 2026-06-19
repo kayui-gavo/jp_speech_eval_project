@@ -52,18 +52,29 @@ def build_asr_confirmation_prompt(
         audio.sr,
         model_name=asr_model,
         provider=asr_provider,
+        language=None,
     )
     text = transcript.text if transcript.available and transcript.text else ""
+    sanity = check_asr_transcript_sanity(text) if text else None
+    if sanity and not sanity.ok:
+        text = ""
     confidence = getattr(transcript, "confidence", None)
     candidates = [AsrCandidate(id=1, text=text, confidence=confidence)] if text else []
     digest = hashlib.sha1(f"{Path(wav_path).resolve()}|{text}".encode("utf-8")).hexdigest()[:16]
+    message = "猜你想说的是哪一句？如果不对，请手动修改。"
+    if sanity and not sanity.ok:
+        message = "ASR 没能确认这是可评价的日语。请手动输入你刚才说的日语句子。"
     return AsrConfirmationPrompt(
         mode="asr_confirm",
         session_id=digest,
         asr_candidates=candidates,
         editable_text=text,
-        message="猜你想说的是哪一句？如果不对，请手动修改。",
-        asr_raw=transcript.to_dict(),
+        message=message,
+        asr_raw={
+            **transcript.to_dict(),
+            "transcript_sanity": sanity.to_dict() if sanity else None,
+            "language_detection_mode": "auto",
+        },
     )
 
 

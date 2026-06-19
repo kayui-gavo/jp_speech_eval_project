@@ -3,8 +3,10 @@ from __future__ import annotations
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from jp_speech_eval.asr_confirmation import build_confirmed_weak_target
+from jp_speech_eval.asr import AsrTranscript
 from jp_speech_eval.eval_modes import evaluate_mode
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.user_facing_policy import load_user_facing_messages
@@ -159,6 +161,35 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertTrue(target["weak_reference"])
         self.assertEqual(target["target_source"], "user_confirmed_asr")
         self.assertFalse(target["scoring_policy"]["allow_pitch_feedback"])
+
+    def test_asr_confirmation_rejects_english_candidate_before_scoring(self) -> None:
+        with patch("jp_speech_eval.asr_confirmation.load_audio") as load_audio_mock, \
+             patch("jp_speech_eval.asr_confirmation.trim_to_speech") as trim_mock, \
+             patch("jp_speech_eval.asr_confirmation.transcribe_japanese") as asr_mock:
+            load_audio_mock.return_value = type("Audio", (), {"y": [0.0], "sr": 16000})()
+            trim_mock.return_value = ([0.0], None)
+            asr_mock.return_value = AsrTranscript(True, "mock", "small", "please give me ramen", "en", "ok")
+            from jp_speech_eval.asr_confirmation import build_asr_confirmation_prompt
+            prompt = build_asr_confirmation_prompt("dummy.wav")
+        self.assertEqual(prompt.asr_candidates, [])
+        self.assertEqual(prompt.editable_text, "")
+        self.assertIn("手动输入", prompt.message)
+        self.assertEqual(prompt.asr_raw["transcript_sanity"]["reason"], "not_enough_japanese_content")
+        asr_mock.assert_called()
+        self.assertIsNone(asr_mock.call_args.kwargs.get("language"))
+
+    def test_asr_confirmation_keeps_japanese_candidate(self) -> None:
+        with patch("jp_speech_eval.asr_confirmation.load_audio") as load_audio_mock, \
+             patch("jp_speech_eval.asr_confirmation.trim_to_speech") as trim_mock, \
+             patch("jp_speech_eval.asr_confirmation.transcribe_japanese") as asr_mock:
+            load_audio_mock.return_value = type("Audio", (), {"y": [0.0], "sr": 16000})()
+            trim_mock.return_value = ([0.0], None)
+            asr_mock.return_value = AsrTranscript(True, "mock", "small", "ラーメンをください", "ja", "ok")
+            from jp_speech_eval.asr_confirmation import build_asr_confirmation_prompt
+            prompt = build_asr_confirmation_prompt("dummy.wav")
+        self.assertEqual(prompt.editable_text, "ラーメンをください")
+        self.assertEqual(prompt.asr_candidates[0].text, "ラーメンをください")
+        self.assertEqual(prompt.asr_raw["transcript_sanity"]["reason"], "ok")
 
     def test_kanade_is_demo_only_and_excluded(self) -> None:
         result = _result(details={"mode": "kanade_asr_voice_reference", "demo_only": True, "exclude_from_pronunciation_score": True})

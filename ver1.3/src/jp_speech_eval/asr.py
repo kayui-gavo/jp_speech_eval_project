@@ -29,6 +29,7 @@ def transcribe_japanese(
     sr: int,
     model_name: str = "small",
     provider: str = "auto",
+    language: str | None = "ja",
 ) -> AsrTranscript:
     """Optional ASR wrapper.
 
@@ -39,11 +40,11 @@ def transcribe_japanese(
     """
     provider = provider.lower().strip()
     if provider in {"auto", "faster-whisper", "faster_whisper"}:
-        out = _try_faster_whisper(y, sr, model_name)
+        out = _try_faster_whisper(y, sr, model_name, language=language)
         if out.available or provider in {"faster-whisper", "faster_whisper"}:
             return out
     if provider in {"auto", "whisper", "openai-whisper", "openai_whisper"}:
-        out = _try_openai_whisper(y, sr, model_name)
+        out = _try_openai_whisper(y, sr, model_name, language=language)
         if out.available or provider != "auto":
             return out
     return AsrTranscript(
@@ -56,7 +57,7 @@ def transcribe_japanese(
     )
 
 
-def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscript:
+def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str, *, language: str | None = "ja") -> AsrTranscript:
     try:
         from faster_whisper import WhisperModel
         import soundfile as sf
@@ -72,13 +73,14 @@ def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
             _FASTER_WHISPER_CACHE[cache_key] = model
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as f:
             sf.write(f.name, np.asarray(y, dtype=np.float32), sr)
-            segments, info = model.transcribe(
-                f.name,
-                language="ja",
-                beam_size=1,
-                vad_filter=False,
-                condition_on_previous_text=False,
-            )
+            kwargs = {
+                "beam_size": 1,
+                "vad_filter": False,
+                "condition_on_previous_text": False,
+            }
+            if language:
+                kwargs["language"] = language
+            segments, info = model.transcribe(f.name, **kwargs)
             text = "".join(seg.text for seg in segments).strip()
             language = getattr(info, "language", "ja") or "ja"
         return AsrTranscript(True, "faster-whisper", model_name, text, language, "ok")
@@ -86,7 +88,7 @@ def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
         return AsrTranscript(False, "faster-whisper", model_name, "", "ja", f"{type(exc).__name__}: {exc}")
 
 
-def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscript:
+def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str, *, language: str | None = "ja") -> AsrTranscript:
     try:
         import whisper
     except Exception:
@@ -102,12 +104,13 @@ def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
         if model is None:
             model = whisper.load_model(model_name)
             _OPENAI_WHISPER_CACHE[model_name] = model
-        result = model.transcribe(
-            audio,
-            language="ja",
-            fp16=False,
-            condition_on_previous_text=False,
-        )
+        kwargs = {
+            "fp16": False,
+            "condition_on_previous_text": False,
+        }
+        if language:
+            kwargs["language"] = language
+        result = model.transcribe(audio, **kwargs)
         return AsrTranscript(
             True,
             "openai-whisper",
