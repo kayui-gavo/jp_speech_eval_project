@@ -5,6 +5,7 @@ import cgi
 import hashlib
 import io
 import json
+import math
 import os
 import sys
 import tempfile
@@ -48,8 +49,22 @@ from jp_speech_eval.feedback_renderer import render_user_facing_result
 BACKGROUND_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="debug-ui-bg")
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _json_response(handler: SimpleHTTPRequestHandler, payload: Dict[str, Any], status: int = 200) -> None:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = json.dumps(_json_safe(payload), ensure_ascii=False, allow_nan=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))

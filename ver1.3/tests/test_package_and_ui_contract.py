@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -71,6 +73,18 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertEqual(debug_ui.PUBLIC_DEMO_MODES, ["reference", "asr_pseudo_reference", "kanade_asr_voice_reference"])
         self.assertNotIn("transcript_assisted_light", debug_ui.CORE_MODES)
         self.assertNotIn("acoustic", debug_ui.PUBLIC_DEMO_MODES)
+
+    def test_debug_ui_json_sanitizes_nan_values(self) -> None:
+        import scripts.debug_ui as debug_ui
+
+        payload = {
+            "ok": True,
+            "f0": [120.0, float("nan"), float("inf"), -float("inf")],
+            "nested": {"value": math.nan},
+        }
+        text = json.dumps(debug_ui._json_safe(payload), allow_nan=False)
+        self.assertNotIn("NaN", text)
+        self.assertEqual(json.loads(text)["f0"], [120.0, None, None, None])
 
     def test_package_api_docs_and_example_exist(self) -> None:
         doc = ROOT / "docs" / "python_package_api.md"
