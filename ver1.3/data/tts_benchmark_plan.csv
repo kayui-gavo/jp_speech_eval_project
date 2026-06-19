@@ -1,0 +1,11 @@
+case_id,target_text,focus,cache_prefix,human_oracle_prefix,notes
+ramen_kudasai,ラーメンをください,general_short_sentence,cache/ramen_kudasai,,current packaged pseudo reference exists
+coffee_kudasai,コーヒーをください,long_vowel,,,packaged target lacks verified human audio
+sumimasen,すみません,nasal,,,packaged target lacks verified human audio
+mou_ichido_onegaishimasu,もう一度お願いします,phrase_final_intonation,,,packaged target lacks verified human audio
+eki_made_onegaishimasu,駅までお願いします,phrase_rhythm,,,packaged target lacks verified human audio
+jvs_selected_014,クィーンズアベニューアルファに所属している。,cross_speaker_pitch,,results/test_fixtures/jvs_verified_pitch_demo/jvs001_VOICEACTRESS100_014,test-only verified human oracle exists
+pitch_accent_sensitive_phrase,雨が降っています,pitch_accent_sensitive,,,requires manually validated accent target
+long_vowel_phrase,コーヒーを二つください,long_vowel,,,duration and pitch both need inspection
+sokuon_phrase,切手を買いました,sokuon,,,TTS timing cannot validate learner closure scoring
+nasal_phrase,本を三冊お願いします,nasal,,,nasal mora timing needs inspection

@@ -1,0 +1,12 @@
+{
+  "kind": "asr",
+  "transcript": "ラーメンをください",
+  "language": "ja",
+  "confidence": 0.91,
+  "segments": [{"start": 0.0, "end": 1.8, "text": "ラーメンをください"}],
+  "word_timestamps": [{"start": 0.0, "end": 0.8, "word": "ラーメン"}],
+  "provider_name": "offline_replay",
+  "model_name": "candidate-model",
+  "result_source": "offline_fixture",
+  "raw_metadata": {"network_called": false}
+}

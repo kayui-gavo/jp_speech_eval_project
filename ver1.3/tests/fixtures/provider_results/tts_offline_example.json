@@ -1,0 +1,12 @@
+{
+  "kind": "tts",
+  "audio_path": "fixtures/audio/ramen_candidate.wav",
+  "sample_rate": 24000,
+  "provider_name": "offline_replay",
+  "model_name": "candidate-tts",
+  "voice": "candidate-voice",
+  "prompt_or_style": "neutral Japanese practice reference",
+  "generated_at": "2026-06-20T00:00:00+09:00",
+  "provenance": "synthetic_tts",
+  "raw_metadata": {"network_called": false}
+}

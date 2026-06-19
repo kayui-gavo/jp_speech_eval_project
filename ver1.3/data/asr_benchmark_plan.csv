@@ -1,0 +1,13 @@
+case_id,input_class,target_text,expected_spoken_text,expected_good_japanese,current_asr,current_language,oracle_transcript,whisper_large_candidate,whisperx_candidate,openai_transcribe_candidate,manual_transcript_confirmed,notes
+native_japanese_normal,good_japanese,今日はいい天気です,今日はいい天気です,true,今日はいい天気です,ja,今日はいい天気です,今日はいい天気です,今日はいい天気です,今日はいい天気です,今日はいい天気です,normal native sentence
+learner_japanese_normal,good_japanese,ラーメンをください,ラーメンをください,true,ラーメンをください,ja,ラーメンをください,ラーメンをください,ラーメンをください,ラーメンをください,ラーメンをください,learner content is intelligible
+learner_japanese_with_pronunciation_issue,good_japanese,コーヒーをください,コーヒーをください,true,コヒーをください,ja,コーヒーをください,コーヒーをください,コーヒーをください,コーヒーをください,コーヒーをください,ASR normalization can hide pronunciation detail
+random_english,bad_non_japanese,,please give me ramen,false,please give me ramen,en,please give me ramen,please give me ramen,please give me ramen,please give me ramen,,must remain no-score
+latin_dominant_transcript,bad_non_japanese,,I want sushi kudasai,false,I want sushi kudasai,en,I want sushi kudasai,I want sushi kudasai,I want sushi kudasai,I want sushi kudasai,,must remain no-score
+code_switching,bad_non_japanese,,今日は meeting があります,false,今日は meeting があります,mixed,今日は meeting があります,今日は meeting があります,今日は meeting があります,今日は meeting があります,,Japanese-only practice requires manual confirmation
+short_japanese,low_evidence_japanese,はい,はい,true,はい,ja,はい,はい,はい,はい,はい,content may be correct but evidence remains too short
+noisy_audio,good_japanese,もう一度お願いします,もう一度お願いします,true,,unknown,もう一度お願いします,もう一度お願いします,もう一度お願いします,もう一度お願いします,もう一度お願いします,current ASR unavailable in replay
+wrong_japanese_sentence,bad_wrong_content,ラーメンをください,すしをください,false,すしをください,ja,すしをください,すしをください,すしをください,すしをください,,fixed-target mismatch must reject
+asr_hallucinated_japanese,bad_non_japanese,,hello how are you,false,ラーメンをください,ja,hello how are you,hello how are you,hello how are you,hello how are you,,current-style hallucination risk control
+special_mora_sentence,good_japanese,切手を買いました,切手を買いました,true,きてを買いました,ja,切手を買いました,切手を買いました,切手を買いました,切手を買いました,切手を買いました,word timestamps may help alignment but do not prove closure
+long_pause_sentence,good_japanese,駅までお願いします,駅までお願いします,true,駅までお願いします,ja,駅までお願いします,駅までお願いします,駅までお願いします,駅までお願いします,駅までお願いします,segment timestamps may locate pauses
