@@ -570,7 +570,8 @@ class ProductGuardrailsTest(unittest.TestCase):
         targets = json.loads(path.read_text(encoding="utf-8"))
         self.assertGreaterEqual(len(targets), 5)
         by_id = {item["target_id"]: item for item in targets}
-        self.assertEqual(by_id["ramen_kudasai"]["verified_level"], "human_checked")
+        self.assertEqual(by_id["ramen_kudasai"]["verified_level"], "auto_pyopenjtalk")
+        self.assertEqual(by_id["ramen_kudasai"]["pitch_reference_status"], "weak_tts_pseudo_reference")
         self.assertEqual(by_id["coffee_kudasai"]["verified_level"], "auto_pyopenjtalk")
         self.assertTrue(by_id["coffee_kudasai"]["moras"])
 

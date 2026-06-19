@@ -4,10 +4,12 @@
     "target_text": "ラーメンをください",
     "kana": "ラーメンヲクダサイ",
     "moras": ["ラ", "ー", "メ", "ン", "ヲ", "ク", "ダ", "サ", "イ"],
-    "reference_audio": "cache/ramen_kudasai/reference.wav",
-    "verified_level": "human_checked",
-    "pitch_target_source": "human_checked",
-    "scoring_note": "Current main fixed-reference demo target. Pitch feedback may be shown only when reliability gates pass."
+    "reference_audio": "cache/ramen_kudasai.ref.wav",
+    "verified_level": "auto_pyopenjtalk",
+    "pitch_target_source": "auto_pyopenjtalk",
+    "reference_provenance": "pyopenjtalk_tts_pseudo_reference",
+    "pitch_reference_status": "weak_tts_pseudo_reference",
+    "scoring_note": "Current main fixed-reference demo target. The packaged reference is TTS/pseudo audio, so strong pitch feedback is suppressed until a verified human/native sidecar exists."
   },
   {
     "target_id": "coffee_kudasai",

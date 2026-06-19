@@ -1,18 +1,18 @@
 # Fixed-reference prosody target inventory
 
-- generated_at: 2026-06-18T16:57:03+00:00
+- generated_at: 2026-06-19T02:42:13+00:00
 - targets: 5
 - strong_pitch_reference_targets: 0
 
 ## Inventory
 
-| target_id | reference_source | ref_wav | sidecar | sidecar_reliable | timing | f0_coverage | strong_pitch | reason_if_not |
-|---|---|---|---|---|---|---:|---|---|
-| coffee_kudasai |  | no | no | no |  |  | no | missing_sentence_cache |
-| eki_made_onegaishimasu |  | no | no | no |  |  | no | missing_sentence_cache |
-| mou_ichido_onegaishimasu |  | no | no | no |  |  | no | missing_sentence_cache |
-| ramen_kudasai | pyopenjtalk_tts_pseudo_reference | yes | no | no | equal_mora | 1.0 | no | manifest_reference_audio_missing;untrusted_reference_source;manifest_claims_human_checked_but_cache_not_verified |
-| sumimasen |  | no | no | no |  |  | no | missing_sentence_cache |
+| target_id | manifest_level | manifest_pitch_status | reference_source | ref_wav | sidecar | sidecar_reliable | timing | f0_coverage | strong_pitch | reason_if_not |
+|---|---|---|---|---|---|---|---|---:|---|---|
+| coffee_kudasai | auto_pyopenjtalk |  |  | no | no | no |  |  | no | missing_sentence_cache |
+| eki_made_onegaishimasu | auto_pyopenjtalk |  |  | no | no | no |  |  | no | missing_sentence_cache |
+| mou_ichido_onegaishimasu | auto_pyopenjtalk |  |  | no | no | no |  |  | no | missing_sentence_cache |
+| ramen_kudasai | auto_pyopenjtalk | weak_tts_pseudo_reference | pyopenjtalk_tts_pseudo_reference | yes | no | no | equal_mora | 1.0 | no | untrusted_reference_source;weak_tts_pseudo_reference |
+| sumimasen | auto_pyopenjtalk |  |  | no | no | no |  |  | no | missing_sentence_cache |
 
 ## Interpretation
 

@@ -23,6 +23,16 @@ RELIABLE_REFERENCE_SOURCES = (
     "jvs",
     "matched",
 )
+PSEUDO_REFERENCE_SOURCE_MARKERS = (
+    "unverified",
+    "pseudo",
+    "synthetic",
+    "tts",
+    "pyopenjtalk",
+    "openjtalk",
+    "voicevox",
+    "aivis",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +46,7 @@ class ProsodyReferenceTarget:
     f0_coverage: Optional[float] = None
     quality_flags: List[str] = field(default_factory=list)
     mora_timing_source: Optional[str] = None
+    reference_source: Optional[str] = None
     note: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -101,10 +112,19 @@ def smooth_f0_by_mora(values: Sequence[float]) -> List[float]:
     return filled.tolist()
 
 
+def pseudo_reference_source(source: str | None) -> bool:
+    label = str(source or "").lower()
+    return any(marker in label for marker in PSEUDO_REFERENCE_SOURCE_MARKERS)
+
+
 def trusted_reference_source(source: str | None, *, verified_reference: bool = False) -> bool:
+    label = str(source or "").lower()
+    if not label:
+        return False
+    if pseudo_reference_source(label):
+        return False
     if verified_reference:
         return True
-    label = str(source or "").lower()
     return any(token in label for token in RELIABLE_REFERENCE_SOURCES)
 
 
@@ -133,7 +153,12 @@ def build_prosody_reference_cache_payload(
         quality_flags.append("fallback_mora_timing")
     if "equal" in str(cache.meta.ref_boundary_method).lower():
         quality_flags.append("equal_mora_timing_approx")
-    if not trusted_reference_source(cache.meta.reference_source, verified_reference=verified_reference):
+    trusted_source = trusted_reference_source(cache.meta.reference_source, verified_reference=verified_reference)
+    if verified_reference and pseudo_reference_source(cache.meta.reference_source):
+        quality_flags.append("verified_reference_conflicts_with_pseudo_source")
+    if verified_reference and not str(cache.meta.reference_source or "").strip():
+        quality_flags.append("verified_reference_missing_source_provenance")
+    if not trusted_source:
         quality_flags.append("untrusted_reference_source")
 
     reliable = (
@@ -157,6 +182,7 @@ def build_prosody_reference_cache_payload(
         "target_mora_sequence": list(cache.meta.moras),
         "reference_audio_path": reference_path,
         "reference_source": cache.meta.reference_source,
+        "reference_provenance_status": "trusted" if trusted_source else "untrusted",
         "reference_id": cache.meta.reference_id,
         "reference_f0_mora_values": _jsonable_f0(values),
         "reference_f0_smoothed_values": _jsonable_f0(smoothed),
@@ -221,7 +247,22 @@ def select_prosody_reference_target(
         values = _load_f0(sidecar.get("reference_f0_smoothed_values") or sidecar.get("reference_f0_mora_values"))
         flags = [str(item) for item in sidecar.get("quality_flags") or []]
         coverage = _f0_coverage(values)
-        reliable = bool(sidecar.get("reliable")) and len(values) == cache.mora_count and coverage >= min_f0_coverage
+        sidecar_source = str(sidecar.get("reference_source") or cache.meta.reference_source or "")
+        sidecar_trusted = trusted_reference_source(
+            sidecar_source,
+            verified_reference=bool(sidecar.get("verified_reference")),
+        )
+        if not sidecar_trusted and "untrusted_reference_source" not in flags:
+            flags.append("untrusted_reference_source")
+        if bool(sidecar.get("verified_reference")) and pseudo_reference_source(sidecar_source):
+            if "verified_reference_conflicts_with_pseudo_source" not in flags:
+                flags.append("verified_reference_conflicts_with_pseudo_source")
+        reliable = (
+            bool(sidecar.get("reliable"))
+            and sidecar_trusted
+            and len(values) == cache.mora_count
+            and coverage >= min_f0_coverage
+        )
         if reliable:
             return ProsodyReferenceTarget(
                 pitch_target_source="reference_audio_f0_cache",
@@ -232,6 +273,7 @@ def select_prosody_reference_target(
                 f0_coverage=round(float(coverage), 4),
                 quality_flags=flags,
                 mora_timing_source=str(sidecar.get("mora_timing_source") or ""),
+                reference_source=sidecar_source,
                 note="reliable_reference_audio_f0_cache_used",
             )
         return ProsodyReferenceTarget(
@@ -243,6 +285,7 @@ def select_prosody_reference_target(
             f0_coverage=round(float(coverage), 4),
             quality_flags=flags or ["invalid_prosody_reference_cache"],
             mora_timing_source=str(sidecar.get("mora_timing_source") or ""),
+            reference_source=sidecar_source,
             note="prosody_reference_cache_present_but_unreliable",
         )
 
@@ -263,6 +306,7 @@ def select_prosody_reference_target(
             f0_coverage=round(float(fallback_coverage), 4),
             quality_flags=["runtime_reference_f0_no_sidecar_cache"],
             mora_timing_source=cache.meta.ref_boundary_method,
+            reference_source=cache.meta.reference_source,
             note="trusted_reference_audio_runtime_f0_used",
         )
 
@@ -283,6 +327,7 @@ def select_prosody_reference_target(
             f0_coverage=round(float(fallback_coverage), 4),
             quality_flags=flags or ["unverified_reference_target"],
             mora_timing_source=cache.meta.ref_boundary_method,
+            reference_source=cache.meta.reference_source,
             note="fallback_reference_contour_is_not_reliable_pitch_ground_truth",
         )
 
@@ -292,5 +337,6 @@ def select_prosody_reference_target(
         reference_f0_by_mora=None,
         quality_flags=["no_reference_f0_available"],
         mora_timing_source=cache.meta.ref_boundary_method,
+        reference_source=cache.meta.reference_source,
         note="fallback_to_text_pitch_target",
     )

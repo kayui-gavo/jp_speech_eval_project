@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import csv
+import json
 import statistics
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -19,6 +21,10 @@ from audit_cross_speaker_prosody_reference import (  # noqa: E402
     wrong_drop_f0,
 )
 from audit_fixed_reference_prosody_targets import inventory_rows  # noqa: E402
+from build_test_jvs_prosody_reference_cache import build_test_jvs_cache  # noqa: E402
+from diagnose_wrong_drop_sensitivity import diagnose  # noqa: E402
+from jp_speech_eval.evaluator import evaluate_utterance  # noqa: E402
+from jp_speech_eval.prosody_reference_cache import prosody_reference_cache_path  # noqa: E402
 
 
 class ProsodyReferenceAuditScriptTests(unittest.TestCase):
@@ -40,10 +46,30 @@ class ProsodyReferenceAuditScriptTests(unittest.TestCase):
         self.assertEqual(ramen["pitch_target_source"], "tts_reference_weak")
         self.assertEqual(ramen["pitch_target_reliability"], "weak")
         self.assertEqual(ramen["has_prosody_ref_sidecar"], "no")
-        self.assertEqual(ramen["manifest_reference_audio_exists"], "no")
+        self.assertEqual(ramen["manifest_reference_audio_exists"], "yes")
+        self.assertEqual(ramen["manifest_verified_level"], "auto_pyopenjtalk")
+        self.assertEqual(ramen["manifest_pitch_reference_status"], "weak_tts_pseudo_reference")
         self.assertEqual(ramen["can_be_strong_pitch_reference"], "no")
         self.assertIn("untrusted_reference_source", ramen["reason_if_not"])
-        self.assertIn("manifest_claims_human_checked_but_cache_not_verified", ramen["reason_if_not"])
+        self.assertIn("weak_tts_pseudo_reference", ramen["reason_if_not"])
+
+    def test_manifest_claims_human_checked_missing_reference_path_is_not_strong(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            manifest = tmp / "targets.json"
+            manifest.write_text(json.dumps([{
+                "target_id": "broken_target",
+                "target_text": "ラーメンをください",
+                "kana": "ラーメンヲクダサイ",
+                "reference_audio": "missing/reference.wav",
+                "verified_level": "human_checked",
+                "pitch_target_source": "human_checked",
+            }], ensure_ascii=False), encoding="utf-8")
+            rows = inventory_rows(cache_dir=tmp / "cache", manifest_path=manifest, min_f0_coverage=0.50)
+        broken = rows[0]
+        self.assertEqual(broken["can_be_strong_pitch_reference"], "no")
+        self.assertIn("missing_sentence_cache", broken["reason_if_not"])
+        self.assertIn("manifest_reference_audio_missing", broken["reason_if_not"])
 
     def test_cross_speaker_sanity_artifact_keeps_native_above_counterfactuals(self) -> None:
         csv_path = ROOT / "results" / "calibration" / "cross_speaker_prosody_reference_sanity.csv"
@@ -94,6 +120,42 @@ class ProsodyReferenceAuditScriptTests(unittest.TestCase):
         self.assertIn("No packaged fixed-reference target currently has a verified reliable human/native reference F0 sidecar.", inventory_report)
         self.assertIn("This audit does not make calibration active.", cross_report)
         self.assertIn("Not ready.", cross_report)
+
+    def test_test_only_jvs_verified_sidecar_reaches_evaluator_path_when_jvs_available(self) -> None:
+        jvs_root = ROOT.parent / "JVS"
+        if not (jvs_root / "jvs001").exists() or not (jvs_root / "jvs002").exists():
+            self.skipTest("JVS cross-speaker fixture not available")
+        with tempfile.TemporaryDirectory() as tmp_name:
+            prefix = Path(tmp_name) / "jvs001_voiceactress100_001"
+            cache = build_test_jvs_cache(
+                jvs_root=jvs_root,
+                speaker_id="jvs001",
+                utterance_id="VOICEACTRESS100_001",
+                out_prefix=prefix,
+                write_sidecar=True,
+            )
+            sidecar = json.loads(prosody_reference_cache_path(prefix).read_text(encoding="utf-8"))
+            result = evaluate_utterance(
+                wav_path=jvs_root / "jvs002" / "parallel100" / "wav24kHz16bit" / "VOICEACTRESS100_001.wav",
+                alignment_mode="cached_dtw",
+                cache_path=cache.prefix,
+                use_content_match=True,
+            ).to_dict()
+        self.assertTrue(sidecar["reliable"])
+        self.assertEqual(sidecar["reference_provenance_status"], "trusted")
+        self.assertEqual(result["details"]["pitch_target_source"], "reference_audio_f0_cache")
+        self.assertEqual(result["details"]["pitch_target_reliability"], "reliable")
+        self.assertEqual(result["details"]["content_match"]["status"], "pass")
+
+    def test_wrong_drop_diagnostic_confirms_current_weak_separation_when_jvs_available(self) -> None:
+        jvs_root = ROOT.parent / "JVS"
+        if not (jvs_root / "jvs001").exists() or not (jvs_root / "jvs002").exists():
+            self.skipTest("JVS cross-speaker fixture not available")
+        rows = diagnose(jvs_root, max_speakers=2, max_pairs=3, sample_rate=16000)
+        self.assertGreaterEqual(len(rows), 1)
+        deltas = [float(row["score_delta_native_minus_wrong"]) for row in rows]
+        self.assertLess(statistics.fmean(deltas), 12.0)
+        self.assertTrue(any(row["diagnosis"] == "drop_changed_but_no_explicit_drop_component" for row in rows))
 
 
 if __name__ == "__main__":

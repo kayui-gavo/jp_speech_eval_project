@@ -9,6 +9,7 @@ from jp_speech_eval.target_specs import (
     parse_ints,
     parse_pitch_labels,
     validate_target_spec,
+    verified_level_from_source,
 )
 from jp_speech_eval.text_frontend import build_text_info
 
@@ -74,6 +75,12 @@ class TargetSpecsTest(unittest.TestCase):
                     __import__("os").environ["JP_SPEECH_EVAL_VERIFIED_TARGETS"] = old
         self.assertEqual(info.pitch_target_source, "manual")
         self.assertEqual(info.target_pitch, ["H", "L", "L"])
+
+    def test_reference_audio_source_label_alone_is_not_human_checked(self) -> None:
+        self.assertEqual(verified_level_from_source("reference_audio_f0_cache"), "auto_pyopenjtalk")
+        self.assertEqual(verified_level_from_source("reference_audio_f0_runtime"), "auto_pyopenjtalk")
+        self.assertEqual(verified_level_from_source("jvs_native_reference"), "human_checked")
+        self.assertEqual(verified_level_from_source("pyopenjtalk_tts_pseudo_reference"), "auto_pyopenjtalk")
 
 
 if __name__ == "__main__":

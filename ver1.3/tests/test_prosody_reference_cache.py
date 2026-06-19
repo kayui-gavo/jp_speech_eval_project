@@ -74,6 +74,8 @@ def _sidecar_payload(values: list[float]) -> dict:
         "target_kana": "ラーメンヲクダサイ",
         "target_mora_sequence": MORAS,
         "reference_audio_path": "verified-native.wav",
+        "reference_source": "jvs_native_reference",
+        "reference_provenance_status": "trusted",
         "reference_f0_mora_values": values,
         "reference_f0_smoothed_values": values,
         "voiced_mora_mask": [math.isfinite(v) and v > 0 for v in values],
@@ -90,6 +92,8 @@ def _sidecar_payload(values: list[float]) -> dict:
 def _result(**details_overrides):
     details = {
         "mode": "reference_based",
+        "verified_level": "human_checked",
+        "reference_source": "jvs_native_reference",
         "pitch_target_source": "reference_audio_f0_cache",
         "pitch_target_reliability": "reliable",
         "reliability": {"level": "high", "overall": 0.95, "alignment": 0.9, "f0_coverage": 0.9},
@@ -143,7 +147,7 @@ class ProsodyReferenceCacheTests(unittest.TestCase):
     def test_sidecar_cache_wins_over_runtime_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_name:
             tmp = Path(tmp_name)
-            cache = _fake_cache(tmp, reference_source="pyopenjtalk_tts_pseudo_reference", reference_provider="pyopenjtalk")
+            cache = _fake_cache(tmp, reference_source="jvs_native_reference")
             write_prosody_reference_cache(cache, verified_reference=True)
             target = select_prosody_reference_target(
                 cache,
@@ -153,6 +157,27 @@ class ProsodyReferenceCacheTests(unittest.TestCase):
         self.assertEqual(target.pitch_target_source, "reference_audio_f0_cache")
         self.assertEqual(target.pitch_target_reliability, "reliable")
         self.assertTrue(target.cache_used)
+
+    def test_verified_flag_does_not_promote_tts_pseudo_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            cache = _fake_cache(
+                Path(tmp_name),
+                reference_source="pyopenjtalk_tts_pseudo_reference",
+                reference_provider="pyopenjtalk",
+            )
+            path = write_prosody_reference_cache(cache, verified_reference=True)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            target = select_prosody_reference_target(
+                cache,
+                fallback_reference_f0=F0,
+                text_pitch_target_source="openjtalk_accent_phrase_chain",
+            )
+        self.assertFalse(payload["reliable"])
+        self.assertIn("verified_reference_conflicts_with_pseudo_source", payload["quality_flags"])
+        self.assertEqual(target.pitch_target_source, "reference_audio_f0_cache_unreliable")
+        self.assertEqual(target.pitch_target_reliability, "unreliable")
+        self.assertFalse(target.cache_used)
+        self.assertIn("untrusted_reference_source", target.quality_flags)
 
     def test_missing_sidecar_with_trusted_reference_uses_runtime_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_name:

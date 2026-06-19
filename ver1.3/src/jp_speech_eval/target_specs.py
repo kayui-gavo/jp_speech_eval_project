@@ -98,7 +98,9 @@ def verified_level_from_source(source: str) -> str:
     label = str(source or "").lower()
     if label in {"human_checked", "human", "manual", "manual_checked"}:
         return "human_checked"
-    if label in {"reference_audio_f0_cache", "reference_audio_f0_runtime"}:
+    if any(token in label for token in ("native", "teacher", "jvs", "human")) and not any(
+        marker in label for marker in ("pseudo", "tts", "openjtalk", "unverified")
+    ):
         return "human_checked"
     if label in {"ojad_checked", "ojad_verified", "ojad+manual", "ojad_manual"}:
         return "ojad_checked"

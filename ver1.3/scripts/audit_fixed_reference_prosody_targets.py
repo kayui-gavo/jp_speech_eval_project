@@ -73,6 +73,8 @@ def inventory_rows(*, cache_dir: Path, manifest_path: Path, min_f0_coverage: flo
             "manifest_reference_audio": manifest_audio or "",
             "manifest_verified_level": manifest_row.get("verified_level") or "",
             "manifest_pitch_target_source": manifest_row.get("pitch_target_source") or "",
+            "manifest_reference_provenance": manifest_row.get("reference_provenance") or "",
+            "manifest_pitch_reference_status": manifest_row.get("pitch_reference_status") or "",
             "manifest_reference_audio_exists": _bool_text(bool(manifest_audio_exists)) if manifest_audio_exists is not None else "",
             "has_cache_json": _bool_text(cache_json.exists()),
             "has_cache_npz": _bool_text(cache_npz.exists()),
@@ -112,6 +114,8 @@ def inventory_rows(*, cache_dir: Path, manifest_path: Path, min_f0_coverage: flo
         if manifest_row and str(manifest_row.get("verified_level") or "") == "human_checked":
             if not selection.pitch_target_reliability == "reliable":
                 flags.append("manifest_claims_human_checked_but_cache_not_verified")
+        if str(manifest_row.get("pitch_reference_status") or "").startswith("weak"):
+            flags.append(str(manifest_row.get("pitch_reference_status")))
         row.update({
             "target_text": cache.meta.text,
             "target_kana": cache.meta.kana,
@@ -158,12 +162,13 @@ def _write_report(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
         "",
         "## Inventory",
         "",
-        "| target_id | reference_source | ref_wav | sidecar | sidecar_reliable | timing | f0_coverage | strong_pitch | reason_if_not |",
-        "|---|---|---|---|---|---|---:|---|---|",
+        "| target_id | manifest_level | manifest_pitch_status | reference_source | ref_wav | sidecar | sidecar_reliable | timing | f0_coverage | strong_pitch | reason_if_not |",
+        "|---|---|---|---|---|---|---|---|---:|---|---|",
     ]
     for row in rows:
         lines.append(
-            f"| {row.get('target_id')} | {row.get('reference_source')} | {row.get('has_ref_wav')} | "
+            f"| {row.get('target_id')} | {row.get('manifest_verified_level')} | {row.get('manifest_pitch_reference_status')} | "
+            f"{row.get('reference_source')} | {row.get('has_ref_wav')} | "
             f"{row.get('has_prosody_ref_sidecar')} | {row.get('sidecar_reliable')} | {row.get('timing_source')} | "
             f"{row.get('f0_coverage')} | {row.get('can_be_strong_pitch_reference')} | {row.get('reason_if_not')} |"
         )
