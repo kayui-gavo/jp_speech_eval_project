@@ -32,6 +32,7 @@ from .scoring import (
 from .sentence_cache import SentenceCache, load_sentence_cache
 from .text_frontend import TextInfo, build_text_info
 from .vad import trim_to_speech
+from .weak_reference_guardrails import apply_weak_overall_guardrail
 
 
 @dataclass
@@ -555,7 +556,18 @@ def evaluate_utterance(
             continue
         weak_total += float(value) * weight
         weak_denom += weight
-    weak_overall_practice_score = int(round(weak_total / weak_denom)) if weak_denom > 0 else None
+    weak_overall_before_guardrail = int(round(weak_total / weak_denom)) if weak_denom > 0 else None
+    weak_overall_guardrail = apply_weak_overall_guardrail(
+        weak_overall_score=weak_overall_before_guardrail,
+        target_text=text_info.text,
+        kana=text_info.kana,
+        moras=text_info.moras,
+        duration_sec=active_duration,
+        content_match=content_match.to_dict() if content_match else None,
+        weak_prosody_details=weak_prosody_details,
+        mora_evidence_summary=mora_evidence_summary,
+    )
+    weak_overall_practice_score = weak_overall_guardrail.get("weak_overall_practice_score_after_guardrail")
     score_type = (
         "strict_reference"
         if strict_reference_available
@@ -657,7 +669,9 @@ def evaluate_utterance(
             "weak_reference_native_likeness": {
                 **weak_prosody_details,
                 **weak_scores,
+                "weak_overall_practice_score_before_guardrail": weak_overall_before_guardrail,
                 "weak_overall_practice_score": weak_overall_practice_score,
+                "weak_overall_guardrail": weak_overall_guardrail,
                 "score_type": "weak_reference_native_likeness",
                 "strict_reference_available": False,
                 "feedback": weak_prosody_fb,
