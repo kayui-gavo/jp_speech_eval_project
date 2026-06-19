@@ -1,0 +1,10 @@
+{
+  "jvs_root": "/Users/ryukayuiii/Documents/jp_speech_eval_project/JVS",
+  "speaker_id": "jvs001",
+  "utterance_id": "VOICEACTRESS100_033",
+  "source_audio_path": "/Users/ryukayuiii/Documents/jp_speech_eval_project/JVS/jvs001/parallel100/wav24kHz16bit/VOICEACTRESS100_033.wav",
+  "source_lab_path": "/Users/ryukayuiii/Documents/jp_speech_eval_project/JVS/jvs001/parallel100/lab/mon/VOICEACTRESS100_033.lab",
+  "trim_start_sec": 0.512,
+  "mapping_success": true,
+  "mapping_warning_flags": []
+}

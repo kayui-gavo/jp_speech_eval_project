@@ -1,0 +1,363 @@
+{
+  "text": "芸能プロダクション、アミューズのグループ企業。",
+  "kana": "ゲーノープロダクションアミューズノグループキギョー",
+  "moras": [
+    "ゲ",
+    "ー",
+    "ノ",
+    "ー",
+    "プ",
+    "ロ",
+    "ダ",
+    "ク",
+    "ショ",
+    "ン",
+    "ア",
+    "ミュ",
+    "ー",
+    "ズ",
+    "ノ",
+    "グ",
+    "ル",
+    "ー",
+    "プ",
+    "キ",
+    "ギョ",
+    "ー"
+  ],
+  "target_pitch": [
+    "L",
+    "H",
+    "H",
+    "H",
+    "H",
+    "L",
+    "L",
+    "L",
+    "L",
+    "L",
+    "L",
+    "H",
+    "L",
+    "L",
+    "L",
+    "L",
+    "H",
+    "H",
+    "H",
+    "H",
+    "L",
+    "L"
+  ],
+  "pitch_target_source": "openjtalk_accent_phrase_chain",
+  "is_question": false,
+  "sr": 16000,
+  "ref_duration_sec": 3.072,
+  "ref_mora_boundaries": [
+    [
+      0.0,
+      0.118
+    ],
+    [
+      0.118,
+      0.228
+    ],
+    [
+      0.228,
+      0.368
+    ],
+    [
+      0.368,
+      0.458
+    ],
+    [
+      0.458,
+      0.528
+    ],
+    [
+      0.528,
+      0.638
+    ],
+    [
+      0.638,
+      0.748
+    ],
+    [
+      0.748,
+      0.808
+    ],
+    [
+      0.808,
+      0.988
+    ],
+    [
+      0.988,
+      1.128
+    ],
+    [
+      1.488,
+      1.628
+    ],
+    [
+      1.628,
+      1.788
+    ],
+    [
+      1.788,
+      1.848
+    ],
+    [
+      1.848,
+      1.968
+    ],
+    [
+      1.968,
+      2.148
+    ],
+    [
+      2.148,
+      2.288
+    ],
+    [
+      2.288,
+      2.458
+    ],
+    [
+      2.458,
+      2.528
+    ],
+    [
+      2.528,
+      2.648
+    ],
+    [
+      2.648,
+      2.838
+    ],
+    [
+      2.838,
+      3.048
+    ],
+    [
+      3.048,
+      3.072
+    ]
+  ],
+  "frontend_raw": [
+    {
+      "string": "芸能",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "芸能",
+      "read": "ゲイノウ",
+      "pron": "ゲーノー",
+      "acc": 5,
+      "mora_size": 4,
+      "chain_rule": "C2",
+      "chain_flag": -1
+    },
+    {
+      "string": "プロダクション",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "プロダクション",
+      "read": "プロダクション",
+      "pron": "プロダク’ション",
+      "acc": 0,
+      "mora_size": 6,
+      "chain_rule": "C2",
+      "chain_flag": 1
+    },
+    {
+      "string": "、",
+      "pos": "記号",
+      "pos_group1": "読点",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "、",
+      "read": "、",
+      "pron": "、",
+      "acc": 0,
+      "mora_size": 0,
+      "chain_rule": "*",
+      "chain_flag": 0
+    },
+    {
+      "string": "アミューズ",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "アミューズ",
+      "read": "アミューズ",
+      "pron": "アミューズ",
+      "acc": 2,
+      "mora_size": 4,
+      "chain_rule": "C1",
+      "chain_flag": 0
+    },
+    {
+      "string": "の",
+      "pos": "助詞",
+      "pos_group1": "連体化",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "の",
+      "read": "ノ",
+      "pron": "ノ",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "動詞%F2@0/形容詞%F1",
+      "chain_flag": 1
+    },
+    {
+      "string": "グループ",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "グループ",
+      "read": "グループ",
+      "pron": "グループ’",
+      "acc": 5,
+      "mora_size": 4,
+      "chain_rule": "C1",
+      "chain_flag": 0
+    },
+    {
+      "string": "企業",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "企業",
+      "read": "キギョウ",
+      "pron": "キギョー",
+      "acc": 1,
+      "mora_size": 3,
+      "chain_rule": "C1",
+      "chain_flag": 1
+    },
+    {
+      "string": "。",
+      "pos": "記号",
+      "pos_group1": "句点",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "。",
+      "read": "、",
+      "pron": "、",
+      "acc": 0,
+      "mora_size": 0,
+      "chain_rule": "*",
+      "chain_flag": 0
+    }
+  ],
+  "accent_phrases": [
+    {
+      "words": [
+        "芸能",
+        "プロダクション"
+      ],
+      "moras": [
+        "ゲ",
+        "ー",
+        "ノ",
+        "ー",
+        "プ",
+        "ロ",
+        "ダ",
+        "ク",
+        "ショ",
+        "ン"
+      ],
+      "accent_position": 5,
+      "chain_flags": [
+        -1,
+        1
+      ],
+      "chain_rules": [
+        "C2",
+        "C2"
+      ]
+    },
+    {
+      "words": [
+        "アミューズ",
+        "の"
+      ],
+      "moras": [
+        "ア",
+        "ミュ",
+        "ー",
+        "ズ",
+        "ノ"
+      ],
+      "accent_position": 2,
+      "chain_flags": [
+        0,
+        1
+      ],
+      "chain_rules": [
+        "C1",
+        "動詞%F2@0/形容詞%F1"
+      ]
+    },
+    {
+      "words": [
+        "グループ",
+        "企業"
+      ],
+      "moras": [
+        "グ",
+        "ル",
+        "ー",
+        "プ",
+        "キ",
+        "ギョ",
+        "ー"
+      ],
+      "accent_position": 5,
+      "chain_flags": [
+        0,
+        1
+      ],
+      "chain_rules": [
+        "C1",
+        "C1"
+      ]
+    }
+  ],
+  "reference_text": "芸能プロダクション、アミューズのグループ企業。",
+  "reference_source": "test_only_jvs_native_reference",
+  "ref_boundary_method": "lab_phone_mora",
+  "reference_id": "jvs001:VOICEACTRESS100_033",
+  "reference_provider": "jvs",
+  "reference_model": null,
+  "reference_voice": "jvs001",
+  "reference_speed": null,
+  "reference_style": null,
+  "reference_prompt": null,
+  "reference_language": "ja-JP",
+  "reference_config_hash": null
+}

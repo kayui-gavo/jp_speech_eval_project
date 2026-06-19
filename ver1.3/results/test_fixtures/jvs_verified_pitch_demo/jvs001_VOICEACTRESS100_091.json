@@ -1,0 +1,428 @@
+{
+  "text": "同母姉に、スウェーデン王妃、ジョゼフィーヌがいる。",
+  "kana": "ドーボアネニスウェーデンオーヒジョゼフィーヌガイル",
+  "moras": [
+    "ド",
+    "ー",
+    "ボ",
+    "ア",
+    "ネ",
+    "ニ",
+    "ス",
+    "ウェ",
+    "ー",
+    "デ",
+    "ン",
+    "オ",
+    "ー",
+    "ヒ",
+    "ジョ",
+    "ゼ",
+    "フィ",
+    "ー",
+    "ヌ",
+    "ガ",
+    "イ",
+    "ル"
+  ],
+  "target_pitch": [
+    "L",
+    "H",
+    "H",
+    "L",
+    "L",
+    "L",
+    "L",
+    "H",
+    "H",
+    "H",
+    "H",
+    "H",
+    "L",
+    "L",
+    "L",
+    "H",
+    "H",
+    "L",
+    "L",
+    "L",
+    "L",
+    "H"
+  ],
+  "pitch_target_source": "openjtalk_accent_phrase_chain",
+  "is_question": false,
+  "sr": 16000,
+  "ref_duration_sec": 3.744,
+  "ref_mora_boundaries": [
+    [
+      0.03,
+      0.19
+    ],
+    [
+      0.19,
+      0.34
+    ],
+    [
+      0.34,
+      0.46
+    ],
+    [
+      0.46,
+      0.52
+    ],
+    [
+      0.52,
+      0.67
+    ],
+    [
+      0.67,
+      0.82
+    ],
+    [
+      1.2,
+      1.51
+    ],
+    [
+      1.51,
+      1.58
+    ],
+    [
+      1.58,
+      1.66
+    ],
+    [
+      1.66,
+      1.74
+    ],
+    [
+      1.74,
+      1.79
+    ],
+    [
+      1.79,
+      1.91
+    ],
+    [
+      1.91,
+      2.02
+    ],
+    [
+      2.02,
+      2.29
+    ],
+    [
+      2.56,
+      2.76
+    ],
+    [
+      2.76,
+      2.95
+    ],
+    [
+      2.95,
+      3.08
+    ],
+    [
+      3.08,
+      3.19
+    ],
+    [
+      3.19,
+      3.31
+    ],
+    [
+      3.31,
+      3.47
+    ],
+    [
+      3.47,
+      3.59
+    ],
+    [
+      3.59,
+      3.744
+    ]
+  ],
+  "frontend_raw": [
+    {
+      "string": "同母",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "同母",
+      "read": "ドウボ",
+      "pron": "ドーボ",
+      "acc": 3,
+      "mora_size": 3,
+      "chain_rule": "C1",
+      "chain_flag": -1
+    },
+    {
+      "string": "姉",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "姉",
+      "read": "アネ",
+      "pron": "アネ",
+      "acc": 0,
+      "mora_size": 2,
+      "chain_rule": "C3",
+      "chain_flag": 1
+    },
+    {
+      "string": "に",
+      "pos": "助詞",
+      "pos_group1": "格助詞",
+      "pos_group2": "一般",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "に",
+      "read": "ニ",
+      "pron": "ニ",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "動詞%F5/形容詞%F1/名詞%F1",
+      "chain_flag": 1
+    },
+    {
+      "string": "、",
+      "pos": "記号",
+      "pos_group1": "読点",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "、",
+      "read": "、",
+      "pron": "、",
+      "acc": 0,
+      "mora_size": 0,
+      "chain_rule": "*",
+      "chain_flag": 0
+    },
+    {
+      "string": "スウェーデン",
+      "pos": "名詞",
+      "pos_group1": "固有名詞",
+      "pos_group2": "地域",
+      "pos_group3": "国",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "スウェーデン",
+      "read": "スウェーデン",
+      "pron": "スウェーデン",
+      "acc": 6,
+      "mora_size": 5,
+      "chain_rule": "C1",
+      "chain_flag": 0
+    },
+    {
+      "string": "王妃",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "王妃",
+      "read": "オウヒ",
+      "pron": "オーヒ",
+      "acc": 1,
+      "mora_size": 3,
+      "chain_rule": "C1",
+      "chain_flag": 1
+    },
+    {
+      "string": "、",
+      "pos": "記号",
+      "pos_group1": "読点",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "、",
+      "read": "、",
+      "pron": "、",
+      "acc": 0,
+      "mora_size": 0,
+      "chain_rule": "*",
+      "chain_flag": 0
+    },
+    {
+      "string": "ジョゼフィーヌ",
+      "pos": "名詞",
+      "pos_group1": "固有名詞",
+      "pos_group2": "人名",
+      "pos_group3": "一般",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "ジョゼフィーヌ",
+      "read": "ジョゼフィーヌ",
+      "pron": "ジョゼフィーヌ",
+      "acc": 3,
+      "mora_size": 5,
+      "chain_rule": "*",
+      "chain_flag": 0
+    },
+    {
+      "string": "が",
+      "pos": "助詞",
+      "pos_group1": "格助詞",
+      "pos_group2": "一般",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "が",
+      "read": "ガ",
+      "pron": "ガ",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "名詞%F1",
+      "chain_flag": 1
+    },
+    {
+      "string": "いる",
+      "pos": "動詞",
+      "pos_group1": "自立",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "一段",
+      "cform": "基本形",
+      "orig": "いる",
+      "read": "イル",
+      "pron": "イル",
+      "acc": 0,
+      "mora_size": 2,
+      "chain_rule": "*",
+      "chain_flag": 0
+    },
+    {
+      "string": "。",
+      "pos": "記号",
+      "pos_group1": "句点",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "。",
+      "read": "、",
+      "pron": "、",
+      "acc": 0,
+      "mora_size": 0,
+      "chain_rule": "*",
+      "chain_flag": 0
+    }
+  ],
+  "accent_phrases": [
+    {
+      "words": [
+        "同母",
+        "姉",
+        "に"
+      ],
+      "moras": [
+        "ド",
+        "ー",
+        "ボ",
+        "ア",
+        "ネ",
+        "ニ"
+      ],
+      "accent_position": 3,
+      "chain_flags": [
+        -1,
+        1,
+        1
+      ],
+      "chain_rules": [
+        "C1",
+        "C3",
+        "動詞%F5/形容詞%F1/名詞%F1"
+      ]
+    },
+    {
+      "words": [
+        "スウェーデン",
+        "王妃"
+      ],
+      "moras": [
+        "ス",
+        "ウェ",
+        "ー",
+        "デ",
+        "ン",
+        "オ",
+        "ー",
+        "ヒ"
+      ],
+      "accent_position": 6,
+      "chain_flags": [
+        0,
+        1
+      ],
+      "chain_rules": [
+        "C1",
+        "C1"
+      ]
+    },
+    {
+      "words": [
+        "ジョゼフィーヌ",
+        "が"
+      ],
+      "moras": [
+        "ジョ",
+        "ゼ",
+        "フィ",
+        "ー",
+        "ヌ",
+        "ガ"
+      ],
+      "accent_position": 3,
+      "chain_flags": [
+        0,
+        1
+      ],
+      "chain_rules": [
+        "*",
+        "名詞%F1"
+      ]
+    },
+    {
+      "words": [
+        "いる"
+      ],
+      "moras": [
+        "イ",
+        "ル"
+      ],
+      "accent_position": 0,
+      "chain_flags": [
+        0
+      ],
+      "chain_rules": [
+        "*"
+      ]
+    }
+  ],
+  "reference_text": "同母姉に、スウェーデン王妃、ジョゼフィーヌがいる。",
+  "reference_source": "test_only_jvs_native_reference",
+  "ref_boundary_method": "lab_phone_mora",
+  "reference_id": "jvs001:VOICEACTRESS100_091",
+  "reference_provider": "jvs",
+  "reference_model": null,
+  "reference_voice": "jvs001",
+  "reference_speed": null,
+  "reference_style": null,
+  "reference_prompt": null,
+  "reference_language": "ja-JP",
+  "reference_config_hash": null
+}

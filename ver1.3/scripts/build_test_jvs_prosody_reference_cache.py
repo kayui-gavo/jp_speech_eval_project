@@ -89,6 +89,7 @@ def build_test_jvs_cache(
     out_prefix: Path,
     sample_rate: int = 16000,
     write_sidecar: bool = True,
+    reference_source: str = "jvs_native_reference",
 ) -> SentenceCache:
     item = jvs_item(jvs_root, speaker_id, utterance_id)
     text_info = build_text_info(item["target_text"])
@@ -116,7 +117,7 @@ def build_test_jvs_cache(
         frontend_raw=run_frontend(item["target_text"]),
         accent_phrases=text_info.accent_phrases,
         reference_text=item["target_text"],
-        reference_source="jvs_native_reference",
+        reference_source=reference_source,
         ref_boundary_method="lab_phone_mora",
         reference_id=f"{speaker_id}:{utterance_id}",
         reference_provider="jvs",

@@ -1,0 +1,512 @@
+{
+  "text": "長母音を省略して、エリュシオンとも表記される。",
+  "kana": "チョーボインヲショーリャクシテエリュシオントモヒョーキサレル",
+  "moras": [
+    "チョ",
+    "ー",
+    "ボ",
+    "イ",
+    "ン",
+    "ヲ",
+    "ショ",
+    "ー",
+    "リャ",
+    "ク",
+    "シ",
+    "テ",
+    "エ",
+    "リュ",
+    "シ",
+    "オ",
+    "ン",
+    "ト",
+    "モ",
+    "ヒョ",
+    "ー",
+    "キ",
+    "サ",
+    "レ",
+    "ル"
+  ],
+  "target_pitch": [
+    "L",
+    "H",
+    "H",
+    "L",
+    "L",
+    "L",
+    "L",
+    "H",
+    "H",
+    "H",
+    "L",
+    "H",
+    "L",
+    "H",
+    "L",
+    "L",
+    "L",
+    "L",
+    "L",
+    "H",
+    "L",
+    "L",
+    "L",
+    "H",
+    "H"
+  ],
+  "pitch_target_source": "openjtalk_accent_phrase_chain",
+  "is_question": false,
+  "sr": 16000,
+  "ref_duration_sec": 3.808,
+  "ref_mora_boundaries": [
+    [
+      0.0,
+      0.19
+    ],
+    [
+      0.19,
+      0.29
+    ],
+    [
+      0.29,
+      0.46
+    ],
+    [
+      0.46,
+      0.49
+    ],
+    [
+      0.49,
+      0.67
+    ],
+    [
+      0.67,
+      0.9
+    ],
+    [
+      0.9,
+      0.99
+    ],
+    [
+      0.99,
+      1.09
+    ],
+    [
+      1.09,
+      1.2
+    ],
+    [
+      1.2,
+      1.37
+    ],
+    [
+      1.37,
+      1.43
+    ],
+    [
+      1.43,
+      2.14
+    ],
+    [
+      2.14,
+      2.21
+    ],
+    [
+      2.21,
+      2.42
+    ],
+    [
+      2.42,
+      2.58
+    ],
+    [
+      2.58,
+      2.68
+    ],
+    [
+      2.68,
+      2.73
+    ],
+    [
+      2.73,
+      2.82
+    ],
+    [
+      2.82,
+      3.1
+    ],
+    [
+      3.1,
+      3.25
+    ],
+    [
+      3.25,
+      3.32
+    ],
+    [
+      3.32,
+      3.47
+    ],
+    [
+      3.47,
+      3.57
+    ],
+    [
+      3.57,
+      3.67
+    ],
+    [
+      3.67,
+      3.78
+    ]
+  ],
+  "frontend_raw": [
+    {
+      "string": "長",
+      "pos": "接頭詞",
+      "pos_group1": "名詞接続",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "長",
+      "read": "チョウ",
+      "pron": "チョー",
+      "acc": 3,
+      "mora_size": 2,
+      "chain_rule": "P2",
+      "chain_flag": -1
+    },
+    {
+      "string": "母音",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "母音",
+      "read": "ボイン",
+      "pron": "ボイン",
+      "acc": 0,
+      "mora_size": 3,
+      "chain_rule": "C2",
+      "chain_flag": 1
+    },
+    {
+      "string": "を",
+      "pos": "助詞",
+      "pos_group1": "格助詞",
+      "pos_group2": "一般",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "を",
+      "read": "ヲ",
+      "pron": "ヲ",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "動詞%F5/名詞%F1",
+      "chain_flag": 1
+    },
+    {
+      "string": "省略",
+      "pos": "名詞",
+      "pos_group1": "サ変接続",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "省略",
+      "read": "ショウリャク",
+      "pron": "ショーリャク",
+      "acc": 0,
+      "mora_size": 4,
+      "chain_rule": "C2",
+      "chain_flag": 0
+    },
+    {
+      "string": "し",
+      "pos": "動詞",
+      "pos_group1": "自立",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "サ変・スル",
+      "cform": "連用形",
+      "orig": "する",
+      "read": "シ",
+      "pron": "シ’",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "*",
+      "chain_flag": 0
+    },
+    {
+      "string": "て",
+      "pos": "助詞",
+      "pos_group1": "接続助詞",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "て",
+      "read": "テ",
+      "pron": "テ",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "動詞%F1/形容詞%F1/名詞%F5",
+      "chain_flag": 1
+    },
+    {
+      "string": "、",
+      "pos": "記号",
+      "pos_group1": "読点",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "、",
+      "read": "、",
+      "pron": "、",
+      "acc": 0,
+      "mora_size": 0,
+      "chain_rule": "*",
+      "chain_flag": 0
+    },
+    {
+      "string": "エリュシオン",
+      "pos": "名詞",
+      "pos_group1": "一般",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "エリュシオン",
+      "read": "エリュシオン",
+      "pron": "エリュシオン",
+      "acc": 2,
+      "mora_size": 5,
+      "chain_rule": "C1",
+      "chain_flag": 0
+    },
+    {
+      "string": "とも",
+      "pos": "助詞",
+      "pos_group1": "副助詞",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "とも",
+      "read": "トモ",
+      "pron": "トモ",
+      "acc": 1,
+      "mora_size": 2,
+      "chain_rule": "名詞%F2@1",
+      "chain_flag": 1
+    },
+    {
+      "string": "表記",
+      "pos": "名詞",
+      "pos_group1": "サ変接続",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "表記",
+      "read": "ヒョウキ",
+      "pron": "ヒョーキ’",
+      "acc": 1,
+      "mora_size": 3,
+      "chain_rule": "C1",
+      "chain_flag": 0
+    },
+    {
+      "string": "さ",
+      "pos": "動詞",
+      "pos_group1": "自立",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "サ変・スル",
+      "cform": "未然レル接続",
+      "orig": "する",
+      "read": "サ",
+      "pron": "サ",
+      "acc": 0,
+      "mora_size": 1,
+      "chain_rule": "-1",
+      "chain_flag": 0
+    },
+    {
+      "string": "れる",
+      "pos": "動詞",
+      "pos_group1": "接尾",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "一段",
+      "cform": "基本形",
+      "orig": "れる",
+      "read": "レル",
+      "pron": "レル",
+      "acc": 0,
+      "mora_size": 2,
+      "chain_rule": "-1",
+      "chain_flag": 1
+    },
+    {
+      "string": "。",
+      "pos": "記号",
+      "pos_group1": "句点",
+      "pos_group2": "*",
+      "pos_group3": "*",
+      "ctype": "*",
+      "cform": "*",
+      "orig": "。",
+      "read": "、",
+      "pron": "、",
+      "acc": 0,
+      "mora_size": 0,
+      "chain_rule": "*",
+      "chain_flag": 0
+    }
+  ],
+  "accent_phrases": [
+    {
+      "words": [
+        "長",
+        "母音",
+        "を"
+      ],
+      "moras": [
+        "チョ",
+        "ー",
+        "ボ",
+        "イ",
+        "ン",
+        "ヲ"
+      ],
+      "accent_position": 3,
+      "chain_flags": [
+        -1,
+        1,
+        1
+      ],
+      "chain_rules": [
+        "P2",
+        "C2",
+        "動詞%F5/名詞%F1"
+      ]
+    },
+    {
+      "words": [
+        "省略"
+      ],
+      "moras": [
+        "ショ",
+        "ー",
+        "リャ",
+        "ク"
+      ],
+      "accent_position": 0,
+      "chain_flags": [
+        0
+      ],
+      "chain_rules": [
+        "C2"
+      ]
+    },
+    {
+      "words": [
+        "し",
+        "て"
+      ],
+      "moras": [
+        "シ",
+        "テ"
+      ],
+      "accent_position": 0,
+      "chain_flags": [
+        0,
+        1
+      ],
+      "chain_rules": [
+        "*",
+        "動詞%F1/形容詞%F1/名詞%F5"
+      ]
+    },
+    {
+      "words": [
+        "エリュシオン",
+        "とも"
+      ],
+      "moras": [
+        "エ",
+        "リュ",
+        "シ",
+        "オ",
+        "ン",
+        "ト",
+        "モ"
+      ],
+      "accent_position": 2,
+      "chain_flags": [
+        0,
+        1
+      ],
+      "chain_rules": [
+        "C1",
+        "名詞%F2@1"
+      ]
+    },
+    {
+      "words": [
+        "表記"
+      ],
+      "moras": [
+        "ヒョ",
+        "ー",
+        "キ"
+      ],
+      "accent_position": 1,
+      "chain_flags": [
+        0
+      ],
+      "chain_rules": [
+        "C1"
+      ]
+    },
+    {
+      "words": [
+        "さ",
+        "れる"
+      ],
+      "moras": [
+        "サ",
+        "レ",
+        "ル"
+      ],
+      "accent_position": 0,
+      "chain_flags": [
+        0,
+        1
+      ],
+      "chain_rules": [
+        "-1",
+        "-1"
+      ]
+    }
+  ],
+  "reference_text": "長母音を省略して、エリュシオンとも表記される。",
+  "reference_source": "test_only_jvs_native_reference",
+  "ref_boundary_method": "lab_phone_mora",
+  "reference_id": "jvs001:VOICEACTRESS100_034",
+  "reference_provider": "jvs",
+  "reference_model": null,
+  "reference_voice": "jvs001",
+  "reference_speed": null,
+  "reference_style": null,
+  "reference_prompt": null,
+  "reference_language": "ja-JP",
+  "reference_config_hash": null
+}
