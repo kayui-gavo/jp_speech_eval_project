@@ -1,0 +1,8 @@
+group,condition,n,mean,p10,p50,p90,min,max,speaker_count,speaker_macro_mean,unavailable_count,score_below_80_rate,score_at_least_80_rate
+janon_learner_external,learner_observed,315,75.9746,50.0,81.0,93.6,17.0,97.0,24,75.9487,1,0.4698,0.5302
+janon_native_external,native_normal,284,80.7746,54.0,87.0,95.0,42.0,97.0,4,80.7746,0,0.3521,0.6479
+jvs_native_heldout,flat,600,9.0,9.0,9.0,9.0,9.0,9.0,60,9.0,0,1.0,0.0
+jvs_native_heldout,low_f0,0,,,,,,,60,,600,0.0,0.0
+jvs_native_heldout,native_normal,600,88.6533,78.0,92.0,95.0,50.0,97.0,60,88.6533,0,0.13,0.87
+jvs_native_heldout,shuffled,600,50.2583,42.0,48.0,63.0,34.0,91.0,60,50.2583,0,0.9817,0.0183
+jvs_native_heldout,wrong_drop,600,82.87,68.0,86.0,93.0,48.0,97.0,60,82.87,0,0.2917,0.7083
