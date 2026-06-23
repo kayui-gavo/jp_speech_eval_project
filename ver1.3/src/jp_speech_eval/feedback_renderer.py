@@ -252,6 +252,50 @@ def _suppressed_reasons(gate: Any, decision_dicts: List[Mapping[str, Any]]) -> L
     return reasons
 
 
+def _visible_dimension_contract(
+    result: Mapping[str, Any],
+    policy: ScoringPolicy,
+    gate: Any,
+    *,
+    display_score: Optional[int],
+    special_mora_score: Optional[float],
+    debug: Mapping[str, Any],
+) -> tuple[Dict[str, Optional[int]], Dict[str, str]]:
+    names = ("pronunciation", "rhythm", "fluency", "pitch")
+    if display_score is None:
+        return ({name: None for name in names}, {name: "unavailable" for name in names})
+
+    weak = bool(policy.weak_reference)
+    pronunciation = debug.get("weak_pronunciation_naturalness_score") if weak else debug.get("pronunciation_score")
+    rhythm = debug.get("weak_rhythm_naturalness_score") if weak else special_mora_score
+    if rhythm is None:
+        rhythm = debug.get("rhythm_timing_score")
+    if rhythm is None:
+        rhythm = debug.get("fluency_score")
+    pitch = debug.get("visible_prosody_score")
+    if pitch is None and weak:
+        pitch = debug.get("prosody_score")
+    values = {
+        "pronunciation": int(round(_as_score(pronunciation))),
+        "rhythm": int(round(_as_score(rhythm))),
+        "fluency": int(round(_as_score(debug.get("fluency_score")))),
+        "pitch": int(round(_as_score(pitch))),
+    }
+
+    reasons = set(str(reason) for reason in (gate.reasons or []))
+    base = "high" if gate.reliability == "high" else "medium" if gate.reliability == "medium" else "low"
+    confidence = {name: base for name in names}
+    if {"fallback_alignment", "alignment_confidence_low"}.intersection(reasons):
+        confidence["pronunciation"] = "low"
+        confidence["rhythm"] = "low"
+        confidence["pitch"] = "low"
+    if "low_f0_coverage" in reasons:
+        confidence["pitch"] = "low"
+    if not gate.allow_special_mora_feedback:
+        confidence["rhythm"] = "low" if "fallback_alignment" in reasons else "medium"
+    return values, confidence
+
+
 def _is_retry_message(message: str) -> bool:
     retry_terms = (
         "重录",
@@ -349,6 +393,22 @@ def render_user_facing_result(
         explanation=practice_score_explanation(mode_notice),
     )
 
+    debug_payload = _debug_payload(
+        result,
+        policy,
+        gate,
+        special_mora_decisions=decision_dicts,
+        special_mora_score=special_mora_score,
+        special_mora_profile=(decision_dicts[0].get("evidence_card", {}) if decision_dicts else {}),
+    )
+    dimension_scores, dimension_confidence = _visible_dimension_contract(
+        result,
+        policy,
+        gate,
+        display_score=display_score,
+        special_mora_score=special_mora_score,
+        debug=debug_payload,
+    )
     return UserFacingResult(
         mode=policy.mode,
         status=status,
@@ -363,16 +423,11 @@ def render_user_facing_result(
         debug_available=True,
         suppressed_reasons=_suppressed_reasons(gate, decision_dicts),
         display_score=display_score,
+        dimension_scores=dimension_scores,
+        dimension_confidence=dimension_confidence,
         user_messages=messages[:2],
         focus_feedback=focus,
         feedback_candidates=candidate_dicts,
         display_total_score=False,
-        debug=_debug_payload(
-            result,
-            policy,
-            gate,
-            special_mora_decisions=decision_dicts,
-            special_mora_score=special_mora_score,
-            special_mora_profile=(decision_dicts[0].get("evidence_card", {}) if decision_dicts else {}),
-        ),
+        debug=debug_payload,
     ).to_dict()

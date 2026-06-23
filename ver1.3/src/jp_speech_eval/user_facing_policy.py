@@ -53,6 +53,8 @@ class UserFacingResult:
     debug_available: bool
     suppressed_reasons: List[str]
     display_score: Optional[int]
+    dimension_scores: Dict[str, Optional[int]]
+    dimension_confidence: Dict[str, str]
     user_messages: List[str]
     focus_feedback: Optional[Dict[str, Any]]
     feedback_candidates: List[Dict[str, Any]]

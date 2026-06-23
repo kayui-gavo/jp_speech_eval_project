@@ -143,6 +143,8 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
         self.assertIsNotNone(rendered["debug"]["rhythm_timing_score"])
         self.assertIsNotNone(rendered["debug"]["fluency_score"])
         self.assertIsNotNone(rendered["debug"]["visible_prosody_score"])
+        self.assertTrue(all(value is not None for value in rendered["dimension_scores"].values()))
+        self.assertEqual(rendered["dimension_confidence"]["pitch"], "low")
         self.assertIn("fallback_alignment", rendered["suppressed_reasons"])
 
     def test_confirmed_weak_reference_uses_limited_pitch_estimate_on_low_f0(self) -> None:
@@ -166,6 +168,8 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
         rendered = render_user_facing_result(result, mode="asr_confirmed_weak_reference")
         self.assertEqual(rendered["display_score"], 70)
         self.assertEqual(rendered["debug"]["visible_prosody_score"], result["prosody_score"])
+        self.assertTrue(all(value is not None for value in rendered["dimension_scores"].values()))
+        self.assertEqual(rendered["dimension_confidence"]["pitch"], "low")
         self.assertIn("low_f0_coverage", rendered["suppressed_reasons"])
 
     def test_renderer_hides_weak_overall_and_prosody_when_guardrail_blocks(self) -> None:
@@ -190,6 +194,7 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
         self.assertIsNone(rendered["display_score"])
         self.assertIsNone(rendered["debug"]["visible_prosody_score"])
         self.assertFalse(rendered["debug"]["prosody_score_visible"])
+        self.assertTrue(all(value is None for value in rendered["dimension_scores"].values()))
 
     def test_verified_fixed_reference_path_not_changed(self) -> None:
         result = _weak_result(

@@ -33,6 +33,7 @@ from .sentence_cache import SentenceCache, load_sentence_cache
 from .text_frontend import TextInfo, build_text_info
 from .vad import trim_to_speech
 from .weak_reference_guardrails import apply_weak_overall_guardrail
+from .pitch_naturalness_v2 import load_pitch_naturalness_v2_config, score_pitch_naturalness_v2
 
 
 @dataclass
@@ -449,6 +450,22 @@ def evaluate_utterance(
         is_question=text_info.is_question,
         config=config,
     )
+    pitch_v2_config = load_pitch_naturalness_v2_config()
+    if bool(pitch_v2_config.get("active")):
+        pitch_v2_score, pitch_v2_details = score_pitch_naturalness_v2(
+            f0_by_mora=f0_mora,
+            weak_details=weak_prosody_details,
+            target_pattern=text_info.target_pitch,
+            accent_phrases=text_info.accent_phrases,
+            pitch_target_source=text_info.pitch_target_source,
+            is_question=text_info.is_question,
+            config=pitch_v2_config,
+        )
+        weak_prosody_details["pitch_naturalness_v2"] = pitch_v2_details
+        weak_prosody_details["scoring_version"] = "v2_continuous_calibrated"
+        if pitch_v2_score is not None:
+            weak_prosody_details["v1_heuristic_score_debug"] = weak_prosody_score
+            weak_prosody_score = pitch_v2_score
     fluency_score, fluency_fb, fluency_details = score_fluency(
         mora_count=len(text_info.moras),
         duration=active_duration,

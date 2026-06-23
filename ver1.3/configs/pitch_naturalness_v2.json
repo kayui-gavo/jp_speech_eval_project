@@ -1,0 +1,56 @@
+{
+  "schema_version": 2,
+  "active": true,
+  "status": "active_for_weak_reference_practice_only",
+  "model_type": "standard_scaler_plus_ridge_regression",
+  "score_type": "weak_reference_pitch_naturalness_v2",
+  "training_target": "broad_native_likeness_pseudo_anchors",
+  "not_a_target": "teacher_grade_pitch_accent_correctness",
+  "features": [
+    "f0_coverage",
+    "utterance_f0_range_log",
+    "local_pitch_movement",
+    "transition_smoothness",
+    "flatness_penalty",
+    "instability_penalty"
+  ],
+  "pseudo_score_anchors": {
+    "native_normal": 95.0,
+    "flat": 20.0,
+    "shuffled": 45.0
+  },
+  "ridge_alpha": 50.0,
+  "scaler_mean": [
+    0.9728357143,
+    0.38797,
+    0.6228720238,
+    0.6778208333,
+    0.15,
+    0.1110527381
+  ],
+  "scaler_scale": [
+    0.0371874116,
+    0.2909770175,
+    0.4930005249,
+    0.2870213654,
+    0.2121320344,
+    0.1387546016
+  ],
+  "coefficients": [
+    0.6762911404,
+    8.4206715072,
+    5.5930715731,
+    4.1156327508,
+    -23.9784634354,
+    -20.3286431296
+  ],
+  "intercept": 53.3333333333,
+  "output_floor": 10.0,
+  "output_ceiling": 98.0,
+  "automatic_accent_hint_weight": 0.08,
+  "verified_accent_hint_weight": 0.2,
+  "training_split": "JVS jvs001-jvs030 nonpara30; actual 28 speakers with complete local assets",
+  "development_split": "JVS jvs031-jvs040 nonpara30",
+  "locked_evaluation_policy": "speaker-disjoint JVS plus external JANON; never fit on JANON",
+  "activation_evidence": "fresh JVS parallel100 300 recordings plus JANON 1976 sentence recordings; see reports/pitch_naturalness_v2_audit.md"
+}

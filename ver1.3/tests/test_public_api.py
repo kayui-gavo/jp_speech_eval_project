@@ -51,6 +51,8 @@ class PublicApiTest(unittest.TestCase):
             response = client.evaluate(EvaluationRequest(audio_path="user.wav", mode="reference"))
         self.assertTrue(response.ok)
         self.assertIn("display_score", response.user_facing)
+        self.assertIn("dimension_scores", response.user_facing)
+        self.assertIn("dimension_confidence", response.user_facing)
         self.assertIn("practice_score", response.user_facing)
         self.assertIn("summary_text", response.user_facing)
         self.assertEqual(response.raw_result["target_text"], "ラーメンをください")
