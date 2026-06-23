@@ -40,10 +40,10 @@ def _debug_payload(
     weak_prosody_score = weak.get("weak_prosody_naturalness_score") or result.get("weak_prosody_naturalness_score")
     if policy.weak_reference:
         guardrail_blocks = weak_guardrail.get("status") == "no_score"
-        visible_prosody_score = (
-            weak_prosody_score
-            if gate.allow_pitch_feedback and not guardrail_blocks and weak_prosody_score is not None
-            else None
+        # In confirmed free-speech practice, weak F0/alignment evidence limits
+        # detailed correction but should not erase the numeric practice dimension.
+        visible_prosody_score = None if guardrail_blocks else (
+            weak_prosody_score if weak_prosody_score is not None else raw_prosody_score
         )
     else:
         visible_prosody_score = raw_prosody_score if gate.allow_pitch_feedback else None
@@ -139,19 +139,24 @@ def _display_score(
     *,
     special_mora_score: Optional[float] = None,
 ) -> Optional[int]:
-    if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
+    details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
+    weak_details = details.get("weak_reference_native_likeness") if isinstance(details.get("weak_reference_native_likeness"), Mapping) else {}
+    weak_guardrail = weak_details.get("weak_overall_guardrail") if isinstance(weak_details.get("weak_overall_guardrail"), Mapping) else {}
+    weak_no_score = weak_guardrail.get("status") == "no_score"
+    if gate.reliability == "unscorable" or weak_no_score or (
+        not policy.weak_reference and gate.practice_check_result == "retry"
+    ):
         return None
     pronunciation = _as_score(result.get("pronunciation_score"))
     fluency = _as_score(result.get("fluency_score"))
     prosody = _as_score(result.get("prosody_score"))
-    details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     fluency_details = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     pronunciation_details = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
     prosody_details = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
     alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
-    if alignment_mode.endswith("fallback_equal") or "fallback" in alignment_mode:
+    if not policy.weak_reference and (alignment_mode.endswith("fallback_equal") or "fallback" in alignment_mode):
         return None
     content_score = 100.0 if str(content.get("status") or "unknown") in {"pass", "unknown"} else 35.0
     scores = {
@@ -164,10 +169,6 @@ def _display_score(
     if policy.demo_only:
         return None
     if policy.weak_reference:
-        weak_details = details.get("weak_reference_native_likeness") if isinstance(details.get("weak_reference_native_likeness"), Mapping) else {}
-        weak_guardrail = weak_details.get("weak_overall_guardrail") if isinstance(weak_details.get("weak_overall_guardrail"), Mapping) else {}
-        if weak_guardrail.get("status") == "no_score":
-            return None
         weak_overall = result.get("weak_overall_practice_score") or weak_details.get("weak_overall_practice_score")
         if weak_overall is not None:
             return int(round(_as_score(weak_overall)))
@@ -225,7 +226,7 @@ def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -
         return "debug_only"
     if policy.weak_reference and "confirmed" not in policy.mode:
         return "debug_only"
-    if gate.reliability == "low":
+    if gate.reliability == "low" and not policy.weak_reference:
         return "debug_only"
     if focus and focus.get("category") not in {"demo", "weak_reference"}:
         return "practice_suggestion"

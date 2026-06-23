@@ -59,7 +59,8 @@ class FeedbackActionabilityTests(unittest.TestCase):
 
     def test_alignment_fallback_has_no_special_mora_or_pitch_detail(self) -> None:
         rendered = _render("alignment_fallback")
-        self.assertIsNone(rendered["display_score"])
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertIsNotNone(rendered["debug"]["visible_prosody_score"])
         self.assertEqual([item["evidence_type"] for item in rendered["feedback_candidates"]], ["alignment_uncertain"])
         self.assertIsNone(rendered["feedback_candidates"][0]["location"])
 

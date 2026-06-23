@@ -2559,7 +2559,10 @@
       const blocked = gate.blocked_categories || [];
       const hiddenReasons = userFacing?.suppressed_reasons || gate.reasons || [];
       const scoreSuppressed = Boolean(userFacing && userFacing.display_score == null);
-      const hideFormalDimensions = scoreSuppressed || hiddenReasons.includes("content_mismatch_veto") || hiddenReasons.includes("fallback_alignment");
+      const weakPractice = Boolean(userFacing && debug.weak_reference);
+      const hideFormalDimensions = scoreSuppressed
+        || hiddenReasons.includes("content_mismatch_veto")
+        || (!weakPractice && hiddenReasons.includes("fallback_alignment"));
       if (userFacing) {
         const status = userFacing.practice_check_result || "needs_attention";
         const reliability = userFacing.reliability || "unknown";
@@ -2567,12 +2570,12 @@
       }
       const hidePitchDimension = scoreSuppressed
         || hiddenReasons.includes("content_mismatch_veto")
-        || hiddenReasons.includes("fallback_alignment")
-        || hiddenReasons.includes("low_f0_coverage")
+        || (!weakPractice && hiddenReasons.includes("fallback_alignment"))
+        || (!weakPractice && hiddenReasons.includes("low_f0_coverage"))
         || hiddenReasons.includes("short_utterance");
       const hidePronunciationDimension = scoreSuppressed
         || hiddenReasons.includes("content_mismatch_veto")
-        || hiddenReasons.includes("fallback_alignment");
+        || (!weakPractice && hiddenReasons.includes("fallback_alignment"));
       const dimensionScores = {
         pronunciation_score: userFacing ? debug.pronunciation_score : result.pronunciation_score,
         fluency_score: userFacing ? debug.fluency_score : result.fluency_score,

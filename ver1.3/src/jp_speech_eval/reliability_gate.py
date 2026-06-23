@@ -156,7 +156,10 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         )
 
     if level == "low" or overall < 0.40 or alignment_score < 0.35:
-        practice = "retry"
+        # Confirmed weak-reference practice can still provide coarse numeric
+        # scores. Low alignment suppresses detailed corrections, not scoring;
+        # content/language and minimum-evidence guardrails remain authoritative.
+        practice = "needs_attention" if policy.weak_reference else "retry"
         allow_detail = False
         allow_special = False
         allow_pitch = False

@@ -129,6 +129,45 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
         self.assertLessEqual(guardrail["weak_overall_practice_score_after_guardrail"], 70)
         self.assertIn("low_f0_coverage_practice_cap", guardrail["reasons"])
 
+    def test_confirmed_weak_reference_keeps_four_numeric_dimensions_on_fallback(self) -> None:
+        result = _weak_result(
+            alignment_mode="cached_dtw_fallback_equal",
+            details={
+                "alignment": {"mode": "cached_dtw_fallback_equal"},
+                "reliability": {"level": "medium", "overall": 0.70, "alignment": 0.55, "f0_coverage": 0.92},
+            },
+        )
+        rendered = render_user_facing_result(result, mode="asr_confirmed_weak_reference")
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertIsNotNone(rendered["debug"]["pronunciation_score"])
+        self.assertIsNotNone(rendered["debug"]["rhythm_timing_score"])
+        self.assertIsNotNone(rendered["debug"]["fluency_score"])
+        self.assertIsNotNone(rendered["debug"]["visible_prosody_score"])
+        self.assertIn("fallback_alignment", rendered["suppressed_reasons"])
+
+    def test_confirmed_weak_reference_uses_limited_pitch_estimate_on_low_f0(self) -> None:
+        result = _weak_result(
+            weak_prosody_naturalness_score=None,
+            weak_overall_practice_score=70,
+            details={
+                "reliability": {"level": "medium", "overall": 0.72, "alignment": 0.82, "f0_coverage": 0.25},
+                "weak_reference_native_likeness": {
+                    "weak_prosody_naturalness_score": None,
+                    "weak_overall_practice_score": 70,
+                    "weak_overall_guardrail": {
+                        "status": "capped",
+                        "display_allowed": True,
+                        "cap": 70,
+                        "reasons": ["low_f0_coverage_practice_cap"],
+                    },
+                },
+            },
+        )
+        rendered = render_user_facing_result(result, mode="asr_confirmed_weak_reference")
+        self.assertEqual(rendered["display_score"], 70)
+        self.assertEqual(rendered["debug"]["visible_prosody_score"], result["prosody_score"])
+        self.assertIn("low_f0_coverage", rendered["suppressed_reasons"])
+
     def test_renderer_hides_weak_overall_and_prosody_when_guardrail_blocks(self) -> None:
         result = _weak_result(
             target_text="please give me ramen",
