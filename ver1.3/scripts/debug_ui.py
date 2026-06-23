@@ -22,7 +22,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from jp_speech_eval.audio_features import load_audio
+from jp_speech_eval.audio_features import extract_f0, load_audio
 from jp_speech_eval.audio_features import median_f0_by_mora
 from jp_speech_eval.acoustic_evaluator import evaluate_reference_free_acoustic
 from jp_speech_eval.asr_confirmation import build_asr_confirmation_prompt
@@ -42,7 +42,7 @@ from jp_speech_eval.sentence_cache import build_sentence_cache, load_sentence_ca
 from jp_speech_eval.streaming_features import StreamingFeatureExtractor
 from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_light
 from jp_speech_eval.unified_result import unify_evaluation_result
-from jp_speech_eval.vad import detect_speech_region
+from jp_speech_eval.vad import detect_speech_region, trim_to_speech
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 
 
@@ -97,6 +97,121 @@ def _reference_payload(cache_prefix: Path) -> Dict[str, Any]:
         "ref_duration_sec": cache.meta.ref_duration_sec,
         "ref_mora_boundaries": cache.meta.ref_mora_boundaries,
         "ref_f0_by_mora": [_none_if_nan(v) for v in ref_f0],
+    }
+
+
+def _normalized_pitch_trace(
+    times: Any,
+    f0_hz: Any,
+    boundaries: List[tuple[float, float]],
+    *,
+    max_points: int = 420,
+) -> List[Dict[str, Any]]:
+    """Build a speaker-normalized frame F0 trace on a mora-relative x axis."""
+    times_array = np.asarray(times, dtype=float)
+    f0_array = np.asarray(f0_hz, dtype=float)
+    usable = np.isfinite(f0_array) & (f0_array > 0)
+    if times_array.size != f0_array.size or int(np.sum(usable)) < 3 or not boundaries:
+        return []
+    center = float(np.median(f0_array[usable]))
+    semitones = np.full(f0_array.shape, np.nan, dtype=float)
+    semitones[usable] = 12.0 * np.log2(f0_array[usable] / max(center, 1e-8))
+    smoothed = semitones.copy()
+    radius = 2
+    for index in np.flatnonzero(np.isfinite(semitones)):
+        window = semitones[max(0, index - radius) : min(len(semitones), index + radius + 1)]
+        finite = window[np.isfinite(window)]
+        if finite.size:
+            smoothed[index] = float(np.median(finite))
+
+    points: List[Dict[str, Any]] = []
+    boundary_index = 0
+    for time_sec, value in zip(times_array, smoothed):
+        while boundary_index < len(boundaries) and time_sec > boundaries[boundary_index][1]:
+            boundary_index += 1
+        if boundary_index >= len(boundaries):
+            break
+        start, end = boundaries[boundary_index]
+        if time_sec < start or time_sec > end:
+            continue
+        fraction = (float(time_sec) - start) / max(end - start, 1e-8)
+        points.append({
+            "x_mora": round(boundary_index + float(np.clip(fraction, 0.0, 1.0)), 4),
+            "semitone": None if not np.isfinite(value) else round(float(np.clip(value, -12.0, 12.0)), 4),
+        })
+    if len(points) <= max_points:
+        return points
+    indexes = np.linspace(0, len(points) - 1, max_points, dtype=int)
+    return [points[int(index)] for index in indexes]
+
+
+def _pitch_visualization_payload(
+    result: Dict[str, Any],
+    wav_path: Path,
+    reference_prefix: Path | None,
+) -> Dict[str, Any]:
+    mora_table = list(result.get("mora_table") or [])
+    boundaries = [
+        (float(row.get("start_sec", 0.0)), float(row.get("end_sec", 0.0)))
+        for row in mora_table
+    ]
+    moras = [str(row.get("mora") or "") for row in mora_table]
+    details = result.get("details") if isinstance(result.get("details"), dict) else {}
+    reliability = details.get("reliability") if isinstance(details.get("reliability"), dict) else {}
+    sample_rate = 16000
+    cache = None
+    if reference_prefix and (
+        reference_prefix.exists()
+        or reference_prefix.with_suffix(".json").exists()
+        or reference_prefix.with_suffix(".npz").exists()
+    ):
+        cache = load_sentence_cache(reference_prefix)
+        sample_rate = int(cache.meta.sr)
+    audio = load_audio(str(wav_path), sr=sample_rate)
+    speech, _region = trim_to_speech(audio.y, audio.sr)
+    user_times, user_f0, user_method = extract_f0(speech, audio.sr)
+
+    pitch_source = str(details.get("pitch_target_source") or "")
+    pitch_reliability = str(details.get("pitch_target_reliability") or "")
+    verified_reference = (
+        cache is not None
+        and pitch_reliability == "reliable"
+        and pitch_source in {"reference_audio_f0_cache", "reference_audio_f0_runtime"}
+    )
+    reference_trace: List[Dict[str, Any]] = []
+    if verified_reference and cache is not None:
+        reference_trace = _normalized_pitch_trace(
+            cache.ref_f0_times,
+            cache.ref_f0,
+            [(float(start), float(end)) for start, end in cache.meta.ref_mora_boundaries],
+        )
+    target_pitch = list(result.get("target_pitch") or [])
+    guide = [
+        {
+            "index": index,
+            "mora": moras[index] if index < len(moras) else "",
+            "label": str(target_pitch[index] if index < len(target_pitch) else "?"),
+            "level": 1.6 if index < len(target_pitch) and target_pitch[index] == "H" else -1.6,
+        }
+        for index in range(len(moras))
+    ]
+    return {
+        "schema_version": 1,
+        "x_axis": "mora_relative_time",
+        "y_axis": "semitones_from_each_speaker_median",
+        "user_trace": _normalized_pitch_trace(user_times, user_f0, boundaries),
+        "reference_trace": reference_trace,
+        "target_guide": guide,
+        "guide_type": "verified_reference" if verified_reference else "soft_hl_guide",
+        "guide_reliability": "high" if verified_reference else "weak",
+        "pitch_target_source": pitch_source,
+        "f0_method": user_method,
+        "f0_coverage": float(reliability.get("f0_coverage", 0.0) or 0.0),
+        "note": (
+            "verified human/native reference contour"
+            if verified_reference
+            else "automatic H/L guide is not a unique correct contour"
+        ),
     }
 
 
@@ -405,6 +520,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
             user_facing = render_user_facing_result(result, mode=result.get("details", {}).get("mode") or mode)
+            pitch_prefix_raw = str(result.get("cache_prefix") or "")
+            pitch_prefix = Path(pitch_prefix_raw) if pitch_prefix_raw else self.server.cache_prefix  # type: ignore[attr-defined]
+            pitch_visualization = _pitch_visualization_payload(result, wav_path, pitch_prefix)
             _json_response(self, {
                 "ok": True,
                 "mode": mode,
@@ -416,6 +534,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "unified": unified_payload,
                 "user_facing": user_facing,
                 "realtime": realtime,
+                "pitch_visualization": pitch_visualization,
             })
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
@@ -494,6 +613,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
+            pitch_visualization = _pitch_visualization_payload(result, wav_path, generated_prefix)
             _json_response(self, {
                 "ok": True,
                 "mode": response_mode,
@@ -508,6 +628,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "result": result,
                 "unified": unified_payload,
                 "user_facing": render_user_facing_result(result, mode=mode),
+                "pitch_visualization": pitch_visualization,
             })
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)

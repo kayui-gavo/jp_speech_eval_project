@@ -86,6 +86,28 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertNotIn("NaN", text)
         self.assertEqual(json.loads(text)["f0"], [120.0, None, None, None])
 
+    def test_pitch_visualization_uses_frame_trace_and_is_pitch_scale_invariant(self) -> None:
+        import scripts.debug_ui as debug_ui
+
+        times = [0.05, 0.15, 0.25, 0.35]
+        boundaries = [(0.0, 0.2), (0.2, 0.4)]
+        trace_a = debug_ui._normalized_pitch_trace(times, [100.0, 120.0, 0.0, 150.0], boundaries)
+        trace_b = debug_ui._normalized_pitch_trace(times, [200.0, 240.0, 0.0, 300.0], boundaries)
+        self.assertEqual(len(trace_a), 4)
+        self.assertEqual(
+            [row["semitone"] for row in trace_a],
+            [row["semitone"] for row in trace_b],
+        )
+        self.assertIsNone(trace_a[2]["semitone"])
+
+    def test_pitch_ui_uses_soft_guide_not_per_mora_red_green_correctness(self) -> None:
+        html = (ROOT / "debug_ui" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("softPitchGuide", html)
+        self.assertIn("framePitchSummary", html)
+        self.assertIn("pitch-scroll", html)
+        self.assertIn("逐帧音高", html)
+        self.assertNotIn('ctx.fillText(`${t("observedAbbr")}:${obs}`', html)
+
     def test_package_api_docs_and_example_exist(self) -> None:
         doc = ROOT / "docs" / "python_package_api.md"
         example = ROOT / "examples" / "package_api_quickstart.py"
