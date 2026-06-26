@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 import jp_speech_eval
 from jp_speech_eval import EvaluationRequest, SpeechEvalConfig, SpeechEvaluationClient
 
@@ -105,8 +107,37 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn("softPitchGuide", html)
         self.assertIn("framePitchSummary", html)
         self.assertIn("pitch-scroll", html)
-        self.assertIn("逐帧音高", html)
+        self.assertIn("逐帧 F0", html)
         self.assertNotIn('ctx.fillText(`${t("observedAbbr")}:${obs}`', html)
+
+    def test_pitch_plot_dtw_maps_user_frames_to_reference_mora_axis(self) -> None:
+        from jp_speech_eval.alignment import align_user_times_to_reference_mora_axis
+        from jp_speech_eval.audio_features import load_audio, trim_silence
+        from jp_speech_eval.sentence_cache import load_sentence_cache
+
+        cache = load_sentence_cache(ROOT / "cache" / "ramen_kudasai")
+        audio = load_audio(str(ROOT / "data" / "ramen.wav"), sr=cache.meta.sr)
+        speech, _ = trim_silence(audio.y, top_db=30.0)
+        frame_times = np.arange(0.0, len(speech) / audio.sr, 0.01)
+        x_mora, metadata = align_user_times_to_reference_mora_axis(
+            cache,
+            speech,
+            audio.sr,
+            frame_times,
+        )
+        finite = x_mora[np.isfinite(x_mora)]
+        self.assertTrue(metadata["available"])
+        self.assertEqual(metadata["method"], "mfcc_dtw_reference_time")
+        self.assertGreater(float(metadata["mapped_ratio"]), 0.95)
+        self.assertGreater(len(finite), 20)
+        self.assertTrue(np.all(np.diff(finite) >= 0))
+
+    def test_pitch_ui_labels_generated_reference_as_demonstration(self) -> None:
+        html = (ROOT / "debug_ui" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("demonstrationContour", html)
+        self.assertIn("dtwAlignedLabel", html)
+        self.assertIn('drawTrace(referenceTrace, "#0f766e", 3.0', html)
+        self.assertIn('drawTrace(userTrace, "#b45309", 3.0', html)
 
     def test_package_api_docs_and_example_exist(self) -> None:
         doc = ROOT / "docs" / "python_package_api.md"
@@ -144,7 +175,9 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn('hiddenReasons.includes("low_f0_coverage")', html)
         self.assertIn("const debug = userFacing?.debug || {};", html)
         self.assertIn("debug.special_mora_score ?? debug.rhythm_timing_score", html)
-        self.assertIn("debug.visible_prosody_score ?? debug.prosody_score", html)
+        self.assertIn("Object.prototype.hasOwnProperty.call(userDims, name)", html)
+        self.assertIn('dimensionValue("pitch", debug.visible_prosody_score)', html)
+        self.assertNotIn("debug.visible_prosody_score ?? debug.prosody_score", html)
         self.assertNotIn('result[key] ?? 0', html)
 
 

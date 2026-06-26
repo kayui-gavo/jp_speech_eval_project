@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from jp_speech_eval.feedback_renderer import render_user_facing_result
+from jp_speech_eval.scoring import score_fluency
 from jp_speech_eval.weak_reference_guardrails import apply_weak_overall_guardrail
 
 
@@ -149,6 +150,7 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
 
     def test_confirmed_weak_reference_uses_limited_pitch_estimate_on_low_f0(self) -> None:
         result = _weak_result(
+            prosody_score=96,
             weak_prosody_naturalness_score=None,
             weak_overall_practice_score=70,
             details={
@@ -167,9 +169,14 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
         )
         rendered = render_user_facing_result(result, mode="asr_confirmed_weak_reference")
         self.assertEqual(rendered["display_score"], 70)
-        self.assertEqual(rendered["debug"]["visible_prosody_score"], result["prosody_score"])
-        self.assertTrue(all(value is not None for value in rendered["dimension_scores"].values()))
-        self.assertEqual(rendered["dimension_confidence"]["pitch"], "low")
+        self.assertEqual(rendered["debug"]["prosody_score"], 96)
+        self.assertIsNone(rendered["debug"]["visible_prosody_score"])
+        self.assertFalse(rendered["debug"]["prosody_score_visible"])
+        self.assertIsNone(rendered["dimension_scores"]["pitch"])
+        self.assertEqual(rendered["dimension_confidence"]["pitch"], "unavailable")
+        self.assertIsNotNone(rendered["dimension_scores"]["pronunciation"])
+        self.assertIsNotNone(rendered["dimension_scores"]["rhythm"])
+        self.assertIsNotNone(rendered["dimension_scores"]["fluency"])
         self.assertIn("low_f0_coverage", rendered["suppressed_reasons"])
 
     def test_renderer_hides_weak_overall_and_prosody_when_guardrail_blocks(self) -> None:
@@ -237,6 +244,22 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
         self.assertGreaterEqual(native, 85.0)
         self.assertLess(flat, native)
         self.assertLess(random, native)
+
+    def test_single_phrase_pause_in_longer_sentence_is_not_over_penalized(self) -> None:
+        natural, _fb, natural_details = score_fluency(
+            mora_count=22,
+            duration=4.0,
+            pause_info={"pause_ratio": 0.20, "pause_count": 1},
+        )
+        choppy, _fb2, choppy_details = score_fluency(
+            mora_count=22,
+            duration=4.0,
+            pause_info={"pause_ratio": 0.38, "pause_count": 6},
+        )
+        self.assertGreaterEqual(natural, 88)
+        self.assertLess(choppy, natural - 15)
+        self.assertEqual(natural_details["delivery_fluency_components"]["pause_count_excess"], 0)
+        self.assertGreater(choppy_details["delivery_fluency_components"]["pause_count_excess"], 0)
 
 
 if __name__ == "__main__":

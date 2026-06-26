@@ -22,7 +22,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from jp_speech_eval.audio_features import extract_f0, load_audio
+from jp_speech_eval.alignment import align_user_times_to_reference_mora_axis
+from jp_speech_eval.audio_features import extract_f0, load_audio, trim_silence
 from jp_speech_eval.audio_features import median_f0_by_mora
 from jp_speech_eval.acoustic_evaluator import evaluate_reference_free_acoustic
 from jp_speech_eval.asr_confirmation import build_asr_confirmation_prompt
@@ -42,7 +43,7 @@ from jp_speech_eval.sentence_cache import build_sentence_cache, load_sentence_ca
 from jp_speech_eval.streaming_features import StreamingFeatureExtractor
 from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_light
 from jp_speech_eval.unified_result import unify_evaluation_result
-from jp_speech_eval.vad import detect_speech_region, trim_to_speech
+from jp_speech_eval.vad import detect_speech_region
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 
 
@@ -105,13 +106,20 @@ def _normalized_pitch_trace(
     f0_hz: Any,
     boundaries: List[tuple[float, float]],
     *,
+    x_mora: Any | None = None,
     max_points: int = 420,
 ) -> List[Dict[str, Any]]:
     """Build a speaker-normalized frame F0 trace on a mora-relative x axis."""
     times_array = np.asarray(times, dtype=float)
     f0_array = np.asarray(f0_hz, dtype=float)
+    x_array = None if x_mora is None else np.asarray(x_mora, dtype=float)
     usable = np.isfinite(f0_array) & (f0_array > 0)
-    if times_array.size != f0_array.size or int(np.sum(usable)) < 3 or not boundaries:
+    if (
+        times_array.size != f0_array.size
+        or (x_array is not None and x_array.size != times_array.size)
+        or int(np.sum(usable)) < 3
+        or not boundaries
+    ):
         return []
     center = float(np.median(f0_array[usable]))
     semitones = np.full(f0_array.shape, np.nan, dtype=float)
@@ -126,7 +134,16 @@ def _normalized_pitch_trace(
 
     points: List[Dict[str, Any]] = []
     boundary_index = 0
-    for time_sec, value in zip(times_array, smoothed):
+    for point_index, (time_sec, value) in enumerate(zip(times_array, smoothed)):
+        if x_array is not None:
+            x_value = x_array[point_index]
+            if not np.isfinite(x_value):
+                continue
+            points.append({
+                "x_mora": round(float(np.clip(x_value, 0.0, len(boundaries))), 4),
+                "semitone": None if not np.isfinite(value) else round(float(np.clip(value, -12.0, 12.0)), 4),
+            })
+            continue
         while boundary_index < len(boundaries) and time_sec > boundaries[boundary_index][1]:
             boundary_index += 1
         if boundary_index >= len(boundaries):
@@ -168,7 +185,7 @@ def _pitch_visualization_payload(
         cache = load_sentence_cache(reference_prefix)
         sample_rate = int(cache.meta.sr)
     audio = load_audio(str(wav_path), sr=sample_rate)
-    speech, _region = trim_to_speech(audio.y, audio.sr)
+    speech, _trim = trim_silence(audio.y, top_db=30.0)
     user_times, user_f0, user_method = extract_f0(speech, audio.sr)
 
     pitch_source = str(details.get("pitch_target_source") or "")
@@ -179,7 +196,19 @@ def _pitch_visualization_payload(
         and pitch_source in {"reference_audio_f0_cache", "reference_audio_f0_runtime"}
     )
     reference_trace: List[Dict[str, Any]] = []
-    if verified_reference and cache is not None:
+    alignment = {
+        "method": "mora_boundary_time",
+        "available": bool(boundaries),
+        "mapped_ratio": 1.0 if boundaries else 0.0,
+    }
+    aligned_x = None
+    if cache is not None:
+        aligned_x, alignment = align_user_times_to_reference_mora_axis(
+            cache,
+            speech,
+            audio.sr,
+            user_times,
+        )
         reference_trace = _normalized_pitch_trace(
             cache.ref_f0_times,
             cache.ref_f0,
@@ -199,18 +228,25 @@ def _pitch_visualization_payload(
         "schema_version": 1,
         "x_axis": "mora_relative_time",
         "y_axis": "semitones_from_each_speaker_median",
-        "user_trace": _normalized_pitch_trace(user_times, user_f0, boundaries),
+        "user_trace": _normalized_pitch_trace(
+            user_times,
+            user_f0,
+            boundaries,
+            x_mora=aligned_x if alignment.get("available") else None,
+        ),
         "reference_trace": reference_trace,
         "target_guide": guide,
-        "guide_type": "verified_reference" if verified_reference else "soft_hl_guide",
+        "guide_type": "verified_reference" if verified_reference else "demonstration_reference",
         "guide_reliability": "high" if verified_reference else "weak",
+        "reference_role": "verified_native_reference" if verified_reference else "demonstration_only",
+        "alignment": alignment,
         "pitch_target_source": pitch_source,
         "f0_method": user_method,
         "f0_coverage": float(reliability.get("f0_coverage", 0.0) or 0.0),
         "note": (
             "verified human/native reference contour"
             if verified_reference
-            else "automatic H/L guide is not a unique correct contour"
+            else "generated demonstration contour is aligned for comparison but is not a unique correct contour"
         ),
     }
 

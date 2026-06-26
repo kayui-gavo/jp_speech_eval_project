@@ -886,10 +886,10 @@
           </div>
           <div class="legend">
             <span id="pitchGuideLegend"><span class="swatch guide"></span><span id="pitchGuideLegendText">高低提示（弱参考）</span></span>
-            <span id="pitchReferenceLegend" hidden><span class="swatch ref"></span><span id="pitchReferenceLegendText">真人参考走势</span></span>
+            <span id="pitchReferenceLegend" hidden><span class="swatch ref"></span><span id="pitchReferenceLegendText">示范发音</span></span>
             <span><span class="swatch user"></span><span data-i18n="yourRecording">你的录音</span></span>
           </div>
-          <div class="chart-note" id="pitchChartNote" data-i18n="pitchChartNote">橙线是逐帧音高；色块只提示大致高低区，不代表唯一正确答案。</div>
+          <div class="chart-note" id="pitchChartNote" data-i18n="pitchChartNote">两条线都按逐帧 F0 绘制，并映射到同一示范时间轴；自动示范只用于练习对照。</div>
         </div>
       </section>
     </div>
@@ -1007,12 +1007,16 @@
         pitchContour: "音高走势",
         speakerNormalized: "按说话人归一化",
         yourRecording: "你的录音",
-        pitchChartNote: "橙线是逐帧音高；色块只提示大致高低区，不代表唯一正确答案。",
+        pitchChartNote: "两条线都按逐帧 F0 绘制，并映射到同一示范时间轴；自动示范只用于练习对照。",
         softPitchGuide: "东京式高低提示（弱参考）",
         verifiedReferenceContour: "真人参考走势",
-        framePitchSummary: "F0 覆盖 {coverage}% · {points} 帧 · {guide}",
+        demonstrationContour: "示范发音（非唯一标准）",
+        framePitchSummary: "F0 覆盖 {coverage}% · {points} 帧 · {guide} · {alignment}",
         weakGuideLabel: "弱参考",
         verifiedGuideLabel: "真人参考",
+        dtwAlignedLabel: "DTW 已对齐",
+        boundaryAlignedLabel: "按拍边界对齐",
+        alignmentUnavailableLabel: "对齐证据不足",
         relativeSemitone: "相对半音",
         feedback: "反馈",
         feedbackEmpty: "完成一次评价后，这里会显示给学习者看的反馈。",
@@ -1124,6 +1128,7 @@
         reliabilityMedium: "中等",
         reliabilityLow: "较低",
         reliabilityUnscorable: "不适合判断",
+        reliabilityUnavailable: "证据不足",
         reliableParts: "可参考内容",
         cautionParts: "需谨慎",
         mainIssue: "主要限制",
@@ -1221,12 +1226,16 @@
         pitchContour: "音高走勢",
         speakerNormalized: "依說話人正規化",
         yourRecording: "你的錄音",
-        pitchChartNote: "橙線是逐幀音高；色塊只提示大致高低區，不代表唯一正確答案。",
+        pitchChartNote: "兩條線都以逐幀 F0 繪製，並映射到同一示範時間軸；自動示範只供練習對照。",
         softPitchGuide: "東京式高低提示（弱參考）",
         verifiedReferenceContour: "真人參考走勢",
-        framePitchSummary: "F0 覆蓋 {coverage}% · {points} 幀 · {guide}",
+        demonstrationContour: "示範發音（非唯一標準）",
+        framePitchSummary: "F0 覆蓋 {coverage}% · {points} 幀 · {guide} · {alignment}",
         weakGuideLabel: "弱參考",
         verifiedGuideLabel: "真人參考",
+        dtwAlignedLabel: "DTW 已對齊",
+        boundaryAlignedLabel: "按拍邊界對齊",
+        alignmentUnavailableLabel: "對齊證據不足",
         relativeSemitone: "相對半音",
         feedback: "練習建議",
         feedbackEmpty: "完成一次檢查後，這裡會顯示給學習者看的建議。",
@@ -1338,6 +1347,7 @@
         reliabilityMedium: "中等",
         reliabilityLow: "較低",
         reliabilityUnscorable: "不適合判斷",
+        reliabilityUnavailable: "證據不足",
         reliableParts: "可參考內容",
         cautionParts: "需謹慎",
         mainIssue: "主要限制",
@@ -1435,12 +1445,16 @@
         pitchContour: "ピッチ推移",
         speakerNormalized: "話者正規化",
         yourRecording: "あなたの録音",
-        pitchChartNote: "オレンジ線はフレーム単位のピッチです。色の帯は大まかな高低の目安で、唯一の正解ではありません。",
+        pitchChartNote: "両方の線をフレーム単位の F0 で描き、同じ参照時間軸へ対応付けています。自動生成音声は練習用の比較です。",
         softPitchGuide: "東京式の高低ガイド（弱い参照）",
         verifiedReferenceContour: "実音声の参照ピッチ",
-        framePitchSummary: "F0 被覆 {coverage}% · {points} フレーム · {guide}",
+        demonstrationContour: "デモ音声（唯一の正解ではありません）",
+        framePitchSummary: "F0 被覆 {coverage}% · {points} フレーム · {guide} · {alignment}",
         weakGuideLabel: "弱い参照",
         verifiedGuideLabel: "実音声参照",
+        dtwAlignedLabel: "DTW 対応済み",
+        boundaryAlignedLabel: "モーラ境界で対応",
+        alignmentUnavailableLabel: "対応付けの証拠不足",
         relativeSemitone: "相対半音",
         feedback: "フィードバック",
         feedbackEmpty: "評価後、学習者向けのフィードバックがここに表示されます。",
@@ -1552,6 +1566,7 @@
         reliabilityMedium: "中程度",
         reliabilityLow: "低め",
         reliabilityUnscorable: "判定に不向き",
+        reliabilityUnavailable: "証拠不足",
         reliableParts: "参考にできる点",
         cautionParts: "慎重に見る点",
         mainIssue: "主な制限",
@@ -1649,12 +1664,16 @@
         pitchContour: "Pitch contour",
         speakerNormalized: "Speaker-normalized",
         yourRecording: "Your recording",
-        pitchChartNote: "The orange line is frame-level pitch. The bands are broad H/L cues, not a single correct answer.",
+        pitchChartNote: "Both lines use frame-level F0 mapped to one demonstration timeline. An automatic demonstration is for practice comparison only.",
         softPitchGuide: "Tokyo-style H/L guide (weak reference)",
         verifiedReferenceContour: "Verified human reference contour",
-        framePitchSummary: "F0 coverage {coverage}% · {points} frames · {guide}",
+        demonstrationContour: "Demonstration audio (not one correct answer)",
+        framePitchSummary: "F0 coverage {coverage}% · {points} frames · {guide} · {alignment}",
         weakGuideLabel: "weak guide",
         verifiedGuideLabel: "human reference",
+        dtwAlignedLabel: "DTW aligned",
+        boundaryAlignedLabel: "mora-boundary aligned",
+        alignmentUnavailableLabel: "insufficient alignment evidence",
         relativeSemitone: "relative semitones",
         feedback: "Feedback",
         feedbackEmpty: "Learner-facing feedback will appear here after an evaluation.",
@@ -1766,6 +1785,7 @@
         reliabilityMedium: "medium",
         reliabilityLow: "low",
         reliabilityUnscorable: "not scorable",
+        reliabilityUnavailable: "insufficient evidence",
         reliableParts: "Reliable parts",
         cautionParts: "Use caution",
         mainIssue: "Main limitation",
@@ -2586,7 +2606,8 @@
         high: "reliabilityHigh",
         medium: "reliabilityMedium",
         low: "reliabilityLow",
-        unscorable: "reliabilityUnscorable"
+        unscorable: "reliabilityUnscorable",
+        unavailable: "reliabilityUnavailable"
       }[value] || "reliabilityMedium";
       return t(key);
     }
@@ -2621,26 +2642,44 @@
       const hidePronunciationDimension = scoreSuppressed
         || hiddenReasons.includes("content_mismatch_veto")
         || (!weakPractice && hiddenReasons.includes("fallback_alignment"));
+      const userDims = userFacing?.dimension_scores || null;
+      const dimensionValue = (name, fallback) => {
+        if (userDims && Object.prototype.hasOwnProperty.call(userDims, name)) {
+          return userDims[name];
+        }
+        return fallback;
+      };
       const dimensionScores = {
-        pronunciation_score: userFacing ? (userFacing.dimension_scores?.pronunciation ?? debug.pronunciation_score) : result.pronunciation_score,
-        fluency_score: userFacing ? (userFacing.dimension_scores?.fluency ?? debug.fluency_score) : result.fluency_score,
+        pronunciation_score: userFacing ? dimensionValue("pronunciation", debug.pronunciation_score) : result.pronunciation_score,
+        fluency_score: userFacing ? dimensionValue("fluency", debug.fluency_score) : result.fluency_score,
         rhythm_score: userFacing
-          ? (userFacing.dimension_scores?.rhythm ?? debug.special_mora_score ?? debug.rhythm_timing_score)
+          ? dimensionValue("rhythm", debug.special_mora_score ?? debug.rhythm_timing_score)
           : result.details?.fluency?.rhythm_timing_score,
         pitch_score: hidePitchDimension
           ? null
-          : (userFacing ? (userFacing.dimension_scores?.pitch ?? debug.visible_prosody_score ?? debug.prosody_score) : result.prosody_score),
+          : (userFacing ? dimensionValue("pitch", debug.visible_prosody_score) : result.prosody_score),
       };
       const keys = (hideTotal ? scoreKeys.filter((key) => key !== "total_score") : scoreKeys)
         .filter((key) => !(hideFormalDimensions && key !== "total_score"))
         .filter((key) => !(hidePronunciationDimension && key === "pronunciation_score"));
+      const confidenceByScoreKey = {
+        pronunciation_score: "pronunciation",
+        rhythm_score: "rhythm",
+        fluency_score: "fluency",
+        pitch_score: "pitch",
+      };
       cards.push(...keys.map((key) => {
         const label = tGroup("scoreLabels", key);
         const description = key === "total_score" ? "" : tGroup("scoreDescriptions", key);
         const rawValue = key === "total_score" ? result[key] : dimensionScores[key];
         const value = rawValue === null || rawValue === undefined || rawValue === "" ? "--" : rawValue;
         const className = key === "total_score" ? "score total" : "score";
-        const suffix = value === "--" ? t("notAvailable") : "/ 100";
+        const confidenceKey = confidenceByScoreKey[key];
+        const dimensionConfidence = confidenceKey ? userFacing?.dimension_confidence?.[confidenceKey] : null;
+        const confidenceSuffix = dimensionConfidence && value !== "--"
+          ? ` · ${t("reliabilitySimple")}：${reliabilityDisplay(dimensionConfidence)}`
+          : "";
+        const suffix = value === "--" ? t("notAvailable") : `/ 100${confidenceSuffix}`;
         return `<div class="${className}" title="${escapeHtml(description)}"><span>${label}</span><strong>${value}</strong><span>${suffix}</span></div>`;
       }));
       $("scoreGrid").innerHTML = cards.join("");
@@ -2950,11 +2989,13 @@
         const item = guide[i] || {};
         if (item.label === "H" || item.label === "L") {
           const centerY = yFor(Number.isFinite(Number(item.level)) ? Number(item.level) : item.label === "H" ? 1.6 : -1.6);
-          const bandHeight = Math.max(10, Math.abs(yFor(0) - yFor(0.9)));
-          ctx.fillStyle = "rgba(15, 118, 110, 0.16)";
-          ctx.fillRect(x0 + 5, centerY - bandHeight / 2, Math.max(4, x1 - x0 - 10), bandHeight);
-          ctx.strokeStyle = "rgba(15, 118, 110, 0.42)";
-          ctx.strokeRect(x0 + 5, centerY - bandHeight / 2, Math.max(4, x1 - x0 - 10), bandHeight);
+          ctx.strokeStyle = "rgba(15, 118, 110, 0.18)";
+          ctx.lineWidth = 9;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(x0 + 11, centerY);
+          ctx.lineTo(x1 - 11, centerY);
+          ctx.stroke();
         }
         ctx.fillStyle = "#18202a";
         ctx.textAlign = "center";
@@ -2971,11 +3012,11 @@
       ctx.stroke();
       ctx.textAlign = "left";
 
-      function drawTrace(points, color, width, glow = false) {
+      function drawTrace(points, color, width, glowColor = null) {
         if (!points.length) return;
-        if (glow) {
-          ctx.strokeStyle = "rgba(180, 83, 9, 0.14)";
-          ctx.lineWidth = 8;
+        if (glowColor) {
+          ctx.strokeStyle = glowColor;
+          ctx.lineWidth = 9;
           ctx.lineCap = "round";
           ctx.lineJoin = "round";
           ctx.beginPath();
@@ -3013,21 +3054,30 @@
         ctx.stroke();
       }
 
-      drawTrace(referenceTrace, "#0f766e", 2.2, false);
-      drawTrace(userTrace, "#b45309", 3.2, true);
+      drawTrace(referenceTrace, "#0f766e", 3.0, "rgba(15, 118, 110, 0.12)");
+      drawTrace(userTrace, "#b45309", 3.0, "rgba(180, 83, 9, 0.12)");
 
       const verified = visualization?.guide_type === "verified_reference";
+      const alignmentMethod = visualization?.alignment?.method || "";
+      const alignmentLabel = alignmentMethod === "mfcc_dtw_reference_time"
+        ? t("dtwAlignedLabel")
+        : visualization?.alignment?.available
+        ? t("boundaryAlignedLabel")
+        : t("alignmentUnavailableLabel");
       $("pitchGuideLegendText").textContent = t("softPitchGuide");
       $("pitchGuideLegend").hidden = false;
       $("pitchReferenceLegend").hidden = !referenceTrace.length;
-      $("pitchReferenceLegendText").textContent = t("verifiedReferenceContour");
+      $("pitchReferenceLegendText").textContent = verified
+        ? t("verifiedReferenceContour")
+        : t("demonstrationContour");
       $("pitchChartNote").textContent = t("pitchChartNote");
       if (result && visualization) {
         const coverage = Math.round(Number(visualization.f0_coverage || 0) * 100);
         $("pitchSummary").textContent = t("framePitchSummary", {
           coverage,
           points: userTrace.filter((point) => Number.isFinite(Number(point?.semitone))).length,
-          guide: verified ? t("verifiedGuideLabel") : t("weakGuideLabel")
+          guide: verified ? t("verifiedGuideLabel") : t("weakGuideLabel"),
+          alignment: alignmentLabel
         });
       } else {
         $("pitchSummary").textContent = t("pitchAfterScoring");

@@ -556,6 +556,23 @@ def evaluate_utterance(
             0.55 * float(fluency_details.get("rhythm_timing_score", fluency_score) or fluency_score)
             + 0.45 * float(fluency_score)
         ))
+    weak_dimension_adjustments: List[str] = []
+    if alignment_mode.endswith("fallback_equal"):
+        if weak_pronunciation_score is not None:
+            weak_pronunciation_score = min(int(weak_pronunciation_score), 70)
+        if weak_rhythm_score is not None:
+            weak_rhythm_score = min(int(weak_rhythm_score), 75)
+        weak_dimension_adjustments.append(
+            "fallback_alignment_caps_pronunciation_and_rhythm_practice_dimensions"
+        )
+    if judgement_count < judgement_needed:
+        if weak_pronunciation_score is not None:
+            weak_pronunciation_score = min(int(weak_pronunciation_score), 60)
+        if weak_rhythm_score is not None:
+            weak_rhythm_score = min(int(weak_rhythm_score), 72)
+        weak_dimension_adjustments.append(
+            "low_mora_evidence_caps_pronunciation_and_rhythm_practice_dimensions"
+        )
     weak_scores = {
         "weak_pronunciation_naturalness_score": weak_pronunciation_score,
         "weak_prosody_naturalness_score": weak_prosody_score,
@@ -689,6 +706,7 @@ def evaluate_utterance(
                 "weak_overall_practice_score_before_guardrail": weak_overall_before_guardrail,
                 "weak_overall_practice_score": weak_overall_practice_score,
                 "weak_overall_guardrail": weak_overall_guardrail,
+                "weak_dimension_adjustments": weak_dimension_adjustments,
                 "score_type": "weak_reference_native_likeness",
                 "strict_reference_available": False,
                 "feedback": weak_prosody_fb,

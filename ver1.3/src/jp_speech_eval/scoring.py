@@ -51,11 +51,15 @@ def score_fluency(
 
     pause_ratio = float(pause_info.get("pause_ratio", 0.0))
     pause_count = int(pause_info.get("pause_count", 0))
-    native_pause_allowance = 0.18
+    # Longer Japanese sentences naturally contain bunsetsu/phrase pauses.
+    # Without phrase-boundary alignment, treat a small number of pauses as
+    # normal delivery evidence instead of pronunciation mistakes.
+    native_pause_allowance = min(0.30, 0.14 + 0.004 * max(0, mora_count))
+    allowed_pause_count = 1 + max(0, (mora_count - 8) // 12)
     pause_excess = max(0.0, pause_ratio - native_pause_allowance)
-    pause_count_excess = max(0, pause_count - 2)
-    pause_score = 100.0 - pause_excess * 140.0 - pause_count_excess * 4.0
-    if pause_ratio > 0.28 or pause_count > 4:
+    pause_count_excess = max(0, pause_count - allowed_pause_count)
+    pause_score = 100.0 - pause_excess * float(c.get("pause_ratio_weight", 180.0)) - pause_count_excess * float(c.get("pause_count_penalty", 8.0))
+    if pause_ratio > max(0.28, native_pause_allowance + 0.08) or pause_count > allowed_pause_count + 2:
         feedback.append(f"检测到 {pause_count} 次较长停顿，流畅度会下降。")
 
     rhythm_timing_score = clamp_score(0.72 * rate_score + 0.28 * pause_score)
@@ -78,8 +82,11 @@ def score_fluency(
         "delivery_fluency_components": {
             "long_pause_count": pause_count,
             "pause_ratio": pause_ratio,
+            "natural_pause_ratio_allowance": round(float(native_pause_allowance), 4),
+            "allowed_pause_count": int(allowed_pause_count),
+            "pause_count_excess": int(pause_count_excess),
             "pause_score": clamp_score(pause_score),
-            "note": "recording_quality_and_endpointing_are_reliability_inputs_not_pronunciation_penalties",
+            "note": "short natural phrase pauses are allowed; repeated or excessive internal pauses are penalized",
         },
         "note": "split_rhythm_timing_and_delivery_fluency; thresholds should be calibrated with JVS percentiles",
     }

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import librosa
 import numpy as np
@@ -73,6 +73,107 @@ def _map_ref_boundaries_to_user(
         fixed.append((s, e))
         prev_end = e
     return fixed
+
+
+def align_user_times_to_reference_mora_axis(
+    cache: SentenceCache,
+    user_y: np.ndarray,
+    sr: int,
+    user_times: np.ndarray,
+    band_rad: float = 0.25,
+) -> Tuple[np.ndarray, Dict[str, float | str | bool]]:
+    """Warp user frame times onto the cached reference's mora-relative axis.
+
+    This is intended for comparison plots. It exposes the frame-level MFCC-DTW
+    mapping instead of pretending that equal-width mora bins are precise.
+    Runtime score calculation remains unchanged.
+    """
+    times = np.asarray(user_times, dtype=float)
+    fallback = np.full(times.shape, np.nan, dtype=float)
+    mora_count = cache.mora_count
+    if mora_count <= 0 or times.size == 0:
+        return fallback, {
+            "method": "unavailable",
+            "available": False,
+            "mapped_ratio": 0.0,
+        }
+
+    # Callers pass the same endpointed clip used for F0 extraction so that the
+    # F0 frame times and MFCC frame times share one origin.
+    user_duration = len(user_y) / max(sr, 1)
+    hop = 160
+    usr_mfcc = _user_mfcc(user_y, sr=sr, hop=hop)
+    ref_mfcc = cache.ref_mfcc
+    if ref_mfcc.ndim != 2 or usr_mfcc.ndim != 2 or ref_mfcc.shape[1] < 2 or usr_mfcc.shape[1] < 2:
+        return fallback, {
+            "method": "unavailable",
+            "available": False,
+            "mapped_ratio": 0.0,
+        }
+
+    try:
+        try:
+            cost, path = librosa.sequence.dtw(
+                X=ref_mfcc,
+                Y=usr_mfcc,
+                metric="euclidean",
+                global_constraints=True,
+                band_rad=band_rad,
+            )
+        except TypeError:
+            cost, path = librosa.sequence.dtw(X=ref_mfcc, Y=usr_mfcc, metric="euclidean")
+    except Exception:
+        return fallback, {
+            "method": "unavailable",
+            "available": False,
+            "mapped_ratio": 0.0,
+        }
+
+    path = np.asarray(path, dtype=int)
+    if path.ndim != 2 or path.shape[1] != 2 or path.size == 0:
+        return fallback, {
+            "method": "unavailable",
+            "available": False,
+            "mapped_ratio": 0.0,
+        }
+
+    user_to_ref: Dict[int, int] = {}
+    for user_frame in np.unique(path[:, 1]):
+        ref_frames = path[path[:, 1] == user_frame, 0]
+        user_to_ref[int(user_frame)] = int(np.median(ref_frames))
+    keys = np.array(sorted(user_to_ref), dtype=int)
+    if keys.size == 0:
+        return fallback, {
+            "method": "unavailable",
+            "available": False,
+            "mapped_ratio": 0.0,
+        }
+
+    boundaries = [(float(start), float(end)) for start, end in cache.meta.ref_mora_boundaries]
+    for index, time_sec in enumerate(times):
+        if not np.isfinite(time_sec) or time_sec < 0 or time_sec > user_duration + hop / sr:
+            continue
+        user_frame = int(round(float(time_sec) * sr / hop))
+        nearest_user = int(keys[np.argmin(np.abs(keys - user_frame))])
+        ref_frame = int(user_to_ref[nearest_user])
+        ref_time = ref_frame * hop / sr
+        for mora_index, (start, end) in enumerate(boundaries):
+            if ref_time <= end or mora_index == len(boundaries) - 1:
+                fraction = (ref_time - start) / max(end - start, 1e-8)
+                fallback[index] = mora_index + float(np.clip(fraction, 0.0, 1.0))
+                break
+
+    finite = np.isfinite(fallback)
+    if np.any(finite):
+        fallback[finite] = np.maximum.accumulate(fallback[finite])
+    normalized_cost = float(cost[-1, -1] / max(len(path), 1))
+    return fallback, {
+        "method": "mfcc_dtw_reference_time",
+        "available": True,
+        "mapped_ratio": round(float(np.mean(finite)), 4),
+        "path_coverage": round(float(len(keys) / max(usr_mfcc.shape[1], 1)), 4),
+        "normalized_cost": round(normalized_cost, 4),
+    }
 
 
 def estimate_mora_boundaries_cached_dtw(

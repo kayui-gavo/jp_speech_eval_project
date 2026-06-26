@@ -40,11 +40,10 @@ def _debug_payload(
     weak_prosody_score = weak.get("weak_prosody_naturalness_score") or result.get("weak_prosody_naturalness_score")
     if policy.weak_reference:
         guardrail_blocks = weak_guardrail.get("status") == "no_score"
-        # In confirmed free-speech practice, weak F0/alignment evidence limits
-        # detailed correction but should not erase the numeric practice dimension.
-        visible_prosody_score = None if guardrail_blocks else (
-            weak_prosody_score if weak_prosody_score is not None else raw_prosody_score
-        )
+        # In confirmed free-speech practice, raw strict-reference prosody is a
+        # debug diagnostic. Do not backfill the user-facing pitch dimension with
+        # it when weak pitch evidence is unavailable.
+        visible_prosody_score = None if guardrail_blocks else weak_prosody_score
     else:
         visible_prosody_score = raw_prosody_score if gate.allow_pitch_feedback else None
     return {
@@ -265,6 +264,11 @@ def _visible_dimension_contract(
     if display_score is None:
         return ({name: None for name in names}, {name: "unavailable" for name in names})
 
+    def visible_int(value: Any) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        return int(round(_as_score(value)))
+
     weak = bool(policy.weak_reference)
     pronunciation = debug.get("weak_pronunciation_naturalness_score") if weak else debug.get("pronunciation_score")
     rhythm = debug.get("weak_rhythm_naturalness_score") if weak else special_mora_score
@@ -273,13 +277,11 @@ def _visible_dimension_contract(
     if rhythm is None:
         rhythm = debug.get("fluency_score")
     pitch = debug.get("visible_prosody_score")
-    if pitch is None and weak:
-        pitch = debug.get("prosody_score")
     values = {
-        "pronunciation": int(round(_as_score(pronunciation))),
-        "rhythm": int(round(_as_score(rhythm))),
-        "fluency": int(round(_as_score(debug.get("fluency_score")))),
-        "pitch": int(round(_as_score(pitch))),
+        "pronunciation": visible_int(pronunciation),
+        "rhythm": visible_int(rhythm),
+        "fluency": visible_int(debug.get("fluency_score")),
+        "pitch": visible_int(pitch),
     }
 
     reasons = set(str(reason) for reason in (gate.reasons or []))
@@ -293,6 +295,9 @@ def _visible_dimension_contract(
         confidence["pitch"] = "low"
     if not gate.allow_special_mora_feedback:
         confidence["rhythm"] = "low" if "fallback_alignment" in reasons else "medium"
+    for name, value in values.items():
+        if value is None:
+            confidence[name] = "unavailable"
     return values, confidence
 
 
