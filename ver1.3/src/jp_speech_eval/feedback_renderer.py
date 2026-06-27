@@ -18,6 +18,39 @@ from .user_facing_policy import (
 )
 
 
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _is_degraded_reference_practice(
+    result: Mapping[str, Any],
+    policy: ScoringPolicy,
+    gate: Any,
+) -> bool:
+    """Return whether fixed-reference output must fall back to practice proxies.
+
+    A failed alignment invalidates strict reference comparisons, but it does not
+    automatically invalidate recording-level clarity, broad timing, fluency,
+    and weak pitch-naturalness evidence. Content and recording vetoes remain
+    authoritative through the reliability gate and weak-overall guardrail.
+    """
+
+    if policy.weak_reference or policy.demo_only or gate.reliability == "unscorable":
+        return False
+    details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
+    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
+    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
+    reasons = {str(reason) for reason in (gate.reasons or [])}
+    return (
+        "fallback" in alignment_mode
+        or alignment_mode in {"equal", "equal_fallback"}
+        or bool({"fallback_alignment", "alignment_confidence_low"}.intersection(reasons))
+    )
+
+
 def _debug_payload(
     result: Mapping[str, Any],
     policy: ScoringPolicy,
@@ -37,12 +70,16 @@ def _debug_payload(
     fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
     raw_prosody_score = result.get("prosody_score")
-    weak_prosody_score = weak.get("weak_prosody_naturalness_score") or result.get("weak_prosody_naturalness_score")
-    if policy.weak_reference:
+    weak_prosody_score = _first_not_none(
+        weak.get("weak_prosody_naturalness_score"),
+        result.get("weak_prosody_naturalness_score"),
+    )
+    degraded_reference_practice = _is_degraded_reference_practice(result, policy, gate)
+    if policy.weak_reference or degraded_reference_practice:
         guardrail_blocks = weak_guardrail.get("status") == "no_score"
-        # In confirmed free-speech practice, raw strict-reference prosody is a
-        # debug diagnostic. Do not backfill the user-facing pitch dimension with
-        # it when weak pitch evidence is unavailable.
+        # In weak or degraded-reference practice, raw strict-reference prosody
+        # is diagnostic only. Never backfill a missing weak pitch estimate with
+        # the strict/reference score.
         visible_prosody_score = None if guardrail_blocks else weak_prosody_score
     else:
         visible_prosody_score = raw_prosody_score if gate.allow_pitch_feedback else None
@@ -50,10 +87,12 @@ def _debug_payload(
         "debug_total_score": result.get("total_score"),
         "pronunciation_score": result.get("pronunciation_score"),
         "prosody_score": raw_prosody_score,
-        "weak_pronunciation_naturalness_score": weak.get("weak_pronunciation_naturalness_score") or result.get("weak_pronunciation_naturalness_score"),
+        "rhythm_score": result.get("rhythm_score"),
+        "rhythm_practice": details.get("rhythm") if isinstance(details.get("rhythm"), Mapping) else {},
+        "weak_pronunciation_naturalness_score": _first_not_none(weak.get("weak_pronunciation_naturalness_score"), result.get("weak_pronunciation_naturalness_score")),
         "weak_prosody_naturalness_score": weak_prosody_score,
-        "weak_rhythm_naturalness_score": weak.get("weak_rhythm_naturalness_score") or result.get("weak_rhythm_naturalness_score"),
-        "weak_overall_practice_score": weak.get("weak_overall_practice_score") or result.get("weak_overall_practice_score"),
+        "weak_rhythm_naturalness_score": _first_not_none(weak.get("weak_rhythm_naturalness_score"), result.get("weak_rhythm_naturalness_score")),
+        "weak_overall_practice_score": _first_not_none(weak.get("weak_overall_practice_score"), result.get("weak_overall_practice_score")),
         "weak_overall_guardrail": weak_guardrail,
         "score_type": details.get("score_type") or result.get("score_type"),
         "strict_reference_available": details.get("strict_reference_available") if "strict_reference_available" in details else result.get("strict_reference_available"),
@@ -64,8 +103,17 @@ def _debug_payload(
         "delivery_fluency_score": fluency.get("delivery_fluency_score"),
         "expression_proxy_score": result.get("tone_score"),
         "alignment_confidence": reliability.get("alignment"),
-        "mora_duration_cv": pronunciation.get("mora_duration_cv"),
-        "special_mora_ratios": pronunciation.get("special_mora_diagnostics"),
+        "mora_duration_cv": _first_not_none(
+            pronunciation.get("mora_duration_cv"),
+            (pronunciation.get("legacy_timing_proxy_details") or {}).get("mora_duration_cv")
+            if isinstance(pronunciation.get("legacy_timing_proxy_details"), Mapping)
+            else None,
+        ),
+        "special_mora_ratios": (
+            pronunciation.get("legacy_timing_proxy_details", {}).get("special_mora_diagnostics")
+            if isinstance(pronunciation.get("legacy_timing_proxy_details"), Mapping)
+            else pronunciation.get("special_mora_diagnostics")
+        ),
         "special_mora_decisions": special_mora_decisions,
         "special_mora_evidence_cards": [item.get("evidence_card") for item in special_mora_decisions if item.get("evidence_card")],
         "special_mora_threshold_profile": special_mora_profile,
@@ -74,6 +122,7 @@ def _debug_payload(
         "f0_voiced_coverage": reliability.get("f0_coverage"),
         "reference_source": details.get("reference_source"),
         "weak_reference": policy.weak_reference,
+        "degraded_reference_practice": degraded_reference_practice,
         "demo_only": policy.demo_only,
         "scoring_policy": policy.to_dict(),
         "reliability_gate": gate.to_dict(),
@@ -99,7 +148,9 @@ def _debug_payload(
             "raw_prosody_score": raw_prosody_score,
             "weak_prosody_naturalness_score": weak_prosody_score,
             "score_type": details.get("score_type") or result.get("score_type"),
-            "strict_pitch_accent_correctness": False if policy.weak_reference else gate.allow_pitch_feedback,
+            "strict_pitch_accent_correctness": False
+            if policy.weak_reference or degraded_reference_practice
+            else gate.allow_pitch_feedback,
             "visible_prosody_score": visible_prosody_score,
             "visible": visible_prosody_score is not None,
             "hidden_reason": "pitch_blocked" if visible_prosody_score is None else None,
@@ -142,66 +193,74 @@ def _display_score(
     weak_details = details.get("weak_reference_native_likeness") if isinstance(details.get("weak_reference_native_likeness"), Mapping) else {}
     weak_guardrail = weak_details.get("weak_overall_guardrail") if isinstance(weak_details.get("weak_overall_guardrail"), Mapping) else {}
     weak_no_score = weak_guardrail.get("status") == "no_score"
-    if gate.reliability == "unscorable" or weak_no_score or (
-        not policy.weak_reference and gate.practice_check_result == "retry"
-    ):
+    if gate.reliability == "unscorable" or weak_no_score:
         return None
     pronunciation = _as_score(result.get("pronunciation_score"))
     fluency = _as_score(result.get("fluency_score"))
     prosody = _as_score(result.get("prosody_score"))
-    content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
-    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     fluency_details = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
-    pronunciation_details = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
-    prosody_details = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
-    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
-    if not policy.weak_reference and (alignment_mode.endswith("fallback_equal") or "fallback" in alignment_mode):
-        return None
-    content_score = 100.0 if str(content.get("status") or "unknown") in {"pass", "unknown"} else 35.0
+    rhythm = result.get("rhythm_score")
+    degraded_reference_practice = _is_degraded_reference_practice(result, policy, gate)
     scores = {
-        "content_score": content_score,
         "mora_clarity_score": pronunciation,
-        "rhythm_timing_score": fluency_details.get("rhythm_timing_score", fluency),
-        "phrase_intonation_score": prosody_details.get("final_intonation_score"),
+        "rhythm_timing_score": rhythm,
         "delivery_fluency_score": fluency_details.get("delivery_fluency_score", fluency),
+        "pitch_score": prosody,
     }
     if policy.demo_only:
         return None
-    if policy.weak_reference:
-        weak_overall = result.get("weak_overall_practice_score") or weak_details.get("weak_overall_practice_score")
+    if policy.weak_reference or degraded_reference_practice:
+        weak_overall = _first_not_none(
+            result.get("weak_overall_practice_score"),
+            weak_details.get("weak_overall_practice_score"),
+        )
         if weak_overall is not None:
             return int(round(_as_score(weak_overall)))
+        weak_pronunciation = _first_not_none(
+            result.get("weak_pronunciation_naturalness_score"),
+            weak_details.get("weak_pronunciation_naturalness_score"),
+            result.get("pronunciation_score"),
+        )
+        weak_rhythm = _first_not_none(
+            result.get("weak_rhythm_naturalness_score"),
+            weak_details.get("weak_rhythm_naturalness_score"),
+            rhythm,
+        )
+        weak_pitch = _first_not_none(
+            result.get("weak_prosody_naturalness_score"),
+            weak_details.get("weak_prosody_naturalness_score"),
+        )
+        scores = {
+            "mora_clarity_score": weak_pronunciation,
+            "rhythm_timing_score": weak_rhythm,
+            "delivery_fluency_score": fluency_details.get("delivery_fluency_score", fluency),
+            "pitch_score": weak_pitch,
+        }
         display = _weighted_available(scores, {
-            "content_score": 0.25,
             "mora_clarity_score": 0.30,
-            "rhythm_timing_score": 0.15,
-            "delivery_fluency_score": 0.30,
+            "rhythm_timing_score": 0.20,
+            "delivery_fluency_score": 0.25,
+            "pitch_score": 0.25,
         })
         if display is None:
-            display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
-        if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
-            display = max(display, 85.0)
+            return None
         if weak_guardrail.get("status") == "capped" and weak_guardrail.get("cap") is not None:
             display = min(display, _as_score(weak_guardrail.get("cap")))
         return int(round(display))
     if not gate.allow_pitch_feedback:
         display = _weighted_available(scores, {
-            "content_score": 0.25,
-            "mora_clarity_score": 0.30,
-            "rhythm_timing_score": 0.20,
-            "delivery_fluency_score": 0.25,
+            "mora_clarity_score": 0.40,
+            "rhythm_timing_score": 0.30,
+            "delivery_fluency_score": 0.30,
         })
         if display is None:
             display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
-        if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
-            display = max(display, 85.0)
         return int(round(display))
     display = _weighted_available(scores, {
-        "content_score": 0.25,
-        "mora_clarity_score": 0.25,
+        "mora_clarity_score": 0.30,
         "rhythm_timing_score": 0.20,
-        "phrase_intonation_score": 0.10,
-        "delivery_fluency_score": 0.20,
+        "delivery_fluency_score": 0.25,
+        "pitch_score": 0.25,
     })
     if display is not None:
         return int(round(display))
@@ -226,6 +285,9 @@ def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -
     if policy.weak_reference and "confirmed" not in policy.mode:
         return "debug_only"
     if gate.reliability == "low" and not policy.weak_reference:
+        reasons = {str(reason) for reason in (gate.reasons or [])}
+        if {"fallback_alignment", "alignment_confidence_low"}.intersection(reasons):
+            return "practice_suggestion"
         return "debug_only"
     if focus and focus.get("category") not in {"demo", "weak_reference"}:
         return "practice_suggestion"
@@ -269,13 +331,14 @@ def _visible_dimension_contract(
             return None
         return int(round(_as_score(value)))
 
-    weak = bool(policy.weak_reference)
+    degraded_reference_practice = bool(debug.get("degraded_reference_practice"))
+    weak = bool(policy.weak_reference or degraded_reference_practice)
     pronunciation = debug.get("weak_pronunciation_naturalness_score") if weak else debug.get("pronunciation_score")
-    rhythm = debug.get("weak_rhythm_naturalness_score") if weak else special_mora_score
+    rhythm = debug.get("weak_rhythm_naturalness_score") if weak else debug.get("rhythm_score")
+    if rhythm is None:
+        rhythm = debug.get("rhythm_score")
     if rhythm is None:
         rhythm = debug.get("rhythm_timing_score")
-    if rhythm is None:
-        rhythm = debug.get("fluency_score")
     pitch = debug.get("visible_prosody_score")
     values = {
         "pronunciation": visible_int(pronunciation),
@@ -287,6 +350,22 @@ def _visible_dimension_contract(
     reasons = set(str(reason) for reason in (gate.reasons or []))
     base = "high" if gate.reliability == "high" else "medium" if gate.reliability == "medium" else "low"
     confidence = {name: base for name in names}
+    alignment_mode = str(result.get("alignment_mode") or "")
+    rhythm_practice = debug.get("rhythm_practice") if isinstance(debug.get("rhythm_practice"), Mapping) else {}
+    if weak:
+        # Weak-reference dimensions are practice proxies. High acoustic
+        # reliability must not be presented as teacher-grade correctness.
+        confidence["pronunciation"] = "medium" if values["pronunciation"] is not None else "unavailable"
+        confidence["pitch"] = "medium" if values["pitch"] is not None else "unavailable"
+        confidence["rhythm"] = str(rhythm_practice.get("confidence") or "medium")
+    if degraded_reference_practice:
+        confidence = {
+            name: "low" if values[name] is not None else "unavailable"
+            for name in names
+        }
+    if "fallback" in alignment_mode or alignment_mode in {"equal", "equal_fallback"}:
+        confidence["pronunciation"] = "low"
+        confidence["rhythm"] = "low"
     if {"fallback_alignment", "alignment_confidence_low"}.intersection(reasons):
         confidence["pronunciation"] = "low"
         confidence["rhythm"] = "low"
@@ -319,8 +398,8 @@ def render_user_facing_result(
     *,
     mode: str | None = None,
     enable_runtime_special_mora_shadow: bool = True,
-    enable_user_facing_calibrated_special_mora: bool = True,
-    special_mora_threshold_profile: str | None = "v2_limited_candidate",
+    enable_user_facing_calibrated_special_mora: bool = False,
+    special_mora_threshold_profile: str | None = "default_safe",
     enable_weak_reference_special_mora_hint: bool = False,
 ) -> Dict[str, Any]:
     policy = policy_from_result(result, mode=mode)

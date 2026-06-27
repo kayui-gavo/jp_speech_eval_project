@@ -203,6 +203,32 @@ class WeakReferenceContentGuardrailTests(unittest.TestCase):
         self.assertFalse(rendered["debug"]["prosody_score_visible"])
         self.assertTrue(all(value is None for value in rendered["dimension_scores"].values()))
 
+    def test_zero_weak_scores_are_not_replaced_by_raw_debug_scores(self) -> None:
+        result = _weak_result(
+            prosody_score=96,
+            weak_prosody_naturalness_score=0,
+            weak_overall_practice_score=0,
+            details={
+                "weak_reference_native_likeness": {
+                    "weak_pronunciation_naturalness_score": 0,
+                    "weak_prosody_naturalness_score": 0,
+                    "weak_rhythm_naturalness_score": 0,
+                    "weak_overall_practice_score": 0,
+                    "weak_overall_guardrail": {
+                        "status": "ok",
+                        "display_allowed": True,
+                        "reasons": [],
+                    },
+                },
+            },
+        )
+        rendered = render_user_facing_result(result, mode="asr_confirmed_weak_reference")
+        self.assertEqual(rendered["display_score"], 0)
+        self.assertEqual(rendered["debug"]["visible_prosody_score"], 0)
+        self.assertEqual(rendered["dimension_scores"]["pronunciation"], 0)
+        self.assertEqual(rendered["dimension_scores"]["rhythm"], 0)
+        self.assertEqual(rendered["dimension_scores"]["pitch"], 0)
+
     def test_verified_fixed_reference_path_not_changed(self) -> None:
         result = _weak_result(
             score_type="strict_reference",

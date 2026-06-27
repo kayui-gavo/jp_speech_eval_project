@@ -117,11 +117,16 @@ def _result(**details_overrides):
         "mora_table": [],
         "total_score": 90,
         "pronunciation_score": 88,
+        "rhythm_score": 90,
         "prosody_score": 91,
         "fluency_score": 93,
         "tone_score": 0,
         "feedback": [],
         "alignment_mode": details.get("alignment", {}).get("mode", "cached_dtw"),
+        "weak_pronunciation_naturalness_score": 86,
+        "weak_rhythm_naturalness_score": 88,
+        "weak_prosody_naturalness_score": 79,
+        "weak_overall_practice_score": 86,
         "details": details,
     }
 
@@ -244,10 +249,20 @@ class ProsodyReferenceCacheTests(unittest.TestCase):
     def test_fallback_alignment_still_hides_pitch_with_reliable_reference(self) -> None:
         rendered = render_user_facing_result(_result(
             alignment={"mode": "cached_dtw_fallback_equal"},
+            weak_reference_native_likeness={
+                "weak_pronunciation_naturalness_score": 86,
+                "weak_rhythm_naturalness_score": 88,
+                "weak_prosody_naturalness_score": 79,
+                "weak_overall_practice_score": 86,
+                "weak_overall_guardrail": {"status": "pass", "display_allowed": True},
+            },
         ))
-        self.assertIsNone(rendered["display_score"])
+        self.assertEqual(rendered["display_score"], 86)
         self.assertIn("fallback_alignment", rendered["suppressed_reasons"])
-        self.assertIsNone(rendered["debug"]["visible_prosody_score"])
+        self.assertEqual(rendered["debug"]["visible_prosody_score"], 79)
+        self.assertNotEqual(rendered["debug"]["visible_prosody_score"], 91)
+        self.assertFalse(rendered["debug"]["prosody_debug"]["strict_pitch_accent_correctness"])
+        self.assertEqual(set(rendered["dimension_confidence"].values()), {"low"})
 
     def test_evaluator_prefers_reference_audio_sidecar_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_name:

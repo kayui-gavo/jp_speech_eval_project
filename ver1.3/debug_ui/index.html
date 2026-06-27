@@ -971,8 +971,8 @@
     const scoreKeys = [
       "total_score",
       "pronunciation_score",
-      "fluency_score",
       "rhythm_score",
+      "fluency_score",
       "pitch_score"
     ];
 
@@ -1143,13 +1143,13 @@
           total_score: "总分",
           pronunciation_score: "发音清晰度",
           fluency_score: "流畅度",
-          rhythm_score: "节奏 / 特殊拍",
+          rhythm_score: "节奏 / 特殊拍证据",
           pitch_score: "音高变化（自然度参考）"
         },
         scoreDescriptions: {
-          pronunciation_score: "基于录音清晰度、拍对齐和发音稳定性的练习参考。",
+          pronunciation_score: "基于录音质量、可懂度和可分析证据的清晰度参考；不是音素级正确率。",
           fluency_score: "基于语速、停顿和发声连续性的练习参考。",
-          rhythm_score: "基于长音、促音、拨音等时长证据；证据不足时不强提示。",
+          rhythm_score: "主要看拍时长的整体稳定性；特殊拍只有在边界证据可靠时才提示。",
           pitch_score: "基于 F0 覆盖、变化幅度和平稳性；不是严格高低重音判定。"
         },
         modeLabels: {
@@ -1362,13 +1362,13 @@
           total_score: "總分",
           pronunciation_score: "發音清晰度",
           fluency_score: "流暢度",
-          rhythm_score: "節奏 / 特殊拍",
+          rhythm_score: "節奏 / 特殊拍證據",
           pitch_score: "音高變化（自然度參考）"
         },
         scoreDescriptions: {
-          pronunciation_score: "依錄音清晰度、拍對齊與發音穩定性提供練習參考。",
+          pronunciation_score: "依錄音品質、可懂度與可分析證據提供清晰度參考；不是音素級正確率。",
           fluency_score: "依語速、停頓與發聲連續性提供練習參考。",
-          rhythm_score: "依長音、促音、撥音等時長證據；證據不足時不強提示。",
+          rhythm_score: "主要看拍長的整體穩定性；特殊拍只在邊界證據可靠時提示。",
           pitch_score: "依 F0 覆蓋、變化幅度與平穩性；不是嚴格高低重音判定。"
         },
         modeLabels: {
@@ -1581,13 +1581,13 @@
           total_score: "総合",
           pronunciation_score: "発音の明瞭さ",
           fluency_score: "流暢さ",
-          rhythm_score: "リズム（特殊拍）",
+          rhythm_score: "リズム（特殊拍の証拠）",
           pitch_score: "ピッチ変化（自然さの目安）"
         },
         scoreDescriptions: {
-          pronunciation_score: "録音の明瞭さ、モーラ対応、発音の安定性にもとづく練習目安です。",
+          pronunciation_score: "録音品質、聞き取りやすさ、分析可能な証拠にもとづく明瞭さの目安です。音素単位の正誤ではありません。",
           fluency_score: "発話速度、ポーズ、発声の連続性にもとづく練習目安です。",
-          rhythm_score: "長音・促音・撥音などの長さの証拠を見ます。証拠不足時は強く指摘しません。",
+          rhythm_score: "主にモーラ長の全体的な安定性を見ます。特殊拍は境界の証拠が十分な場合だけ提示します。",
           pitch_score: "F0 の取得率、変化幅、滑らかさの目安です。厳密なアクセント正誤ではありません。"
         },
         modeLabels: {
@@ -1800,13 +1800,13 @@
           total_score: "Total",
           pronunciation_score: "Pronunciation clarity",
           fluency_score: "Fluency",
-          rhythm_score: "Rhythm / special mora",
+          rhythm_score: "Rhythm / special-mora evidence",
           pitch_score: "Pitch movement (naturalness)"
         },
         scoreDescriptions: {
-          pronunciation_score: "Practice reference from recording clarity, mora alignment, and pronunciation stability.",
+          pronunciation_score: "Clarity proxy from recording quality, intelligibility, and analyzable evidence; not phone-level accuracy.",
           fluency_score: "Practice reference from speaking rate, pauses, and continuity.",
-          rhythm_score: "Timing evidence for long vowels, sokuon, and moraic nasal; weak evidence is not asserted.",
+          rhythm_score: "Broad mora-timing stability; special-mora hints require reliable boundary evidence.",
           pitch_score: "F0 coverage, movement range, and smoothness; not strict pitch-accent correctness."
         },
         modeLabels: {
@@ -2625,10 +2625,8 @@
       const blocked = gate.blocked_categories || [];
       const hiddenReasons = userFacing?.suppressed_reasons || gate.reasons || [];
       const scoreSuppressed = Boolean(userFacing && userFacing.display_score == null);
-      const weakPractice = Boolean(userFacing && debug.weak_reference);
       const hideFormalDimensions = scoreSuppressed
-        || hiddenReasons.includes("content_mismatch_veto")
-        || (!weakPractice && hiddenReasons.includes("fallback_alignment"));
+        || hiddenReasons.includes("content_mismatch_veto");
       if (userFacing) {
         const status = userFacing.practice_check_result || "needs_attention";
         const reliability = userFacing.reliability || "unknown";
@@ -2636,12 +2634,9 @@
       }
       const hidePitchDimension = scoreSuppressed
         || hiddenReasons.includes("content_mismatch_veto")
-        || (!weakPractice && hiddenReasons.includes("fallback_alignment"))
-        || (!weakPractice && hiddenReasons.includes("low_f0_coverage"))
         || hiddenReasons.includes("short_utterance");
       const hidePronunciationDimension = scoreSuppressed
-        || hiddenReasons.includes("content_mismatch_veto")
-        || (!weakPractice && hiddenReasons.includes("fallback_alignment"));
+        || hiddenReasons.includes("content_mismatch_veto");
       const userDims = userFacing?.dimension_scores || null;
       const dimensionValue = (name, fallback) => {
         if (userDims && Object.prototype.hasOwnProperty.call(userDims, name)) {
@@ -2653,8 +2648,8 @@
         pronunciation_score: userFacing ? dimensionValue("pronunciation", debug.pronunciation_score) : result.pronunciation_score,
         fluency_score: userFacing ? dimensionValue("fluency", debug.fluency_score) : result.fluency_score,
         rhythm_score: userFacing
-          ? dimensionValue("rhythm", debug.special_mora_score ?? debug.rhythm_timing_score)
-          : result.details?.fluency?.rhythm_timing_score,
+          ? dimensionValue("rhythm", debug.rhythm_score ?? debug.rhythm_timing_score)
+          : (result.rhythm_score ?? result.details?.rhythm?.score),
         pitch_score: hidePitchDimension
           ? null
           : (userFacing ? dimensionValue("pitch", debug.visible_prosody_score) : result.prosody_score),

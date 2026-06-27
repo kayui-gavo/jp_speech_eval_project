@@ -57,6 +57,13 @@ def _pick(d: Mapping[str, Any], *path: str, default: Any = None) -> Any:
     return cur
 
 
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def _flatten_selected(result: Dict[str, Any]) -> Dict[str, Any]:
     details = result.get("details", {}) if isinstance(result.get("details"), Mapping) else {}
     prosody = result.get("prosody_metrics") or details.get("prosody_metrics") or details.get("prosody") or {}
@@ -80,8 +87,8 @@ def _flatten_selected(result: Dict[str, Any]) -> Dict[str, Any]:
         "speech_ratio": endpointing.get("speech_ratio"),
         "leading_silence_sec": endpointing.get("leading_silence"),
         "trailing_silence_sec": endpointing.get("trailing_silence"),
-        "pause_ratio": pause.get("pause_ratio") or acoustic.get("pause_ratio"),
-        "pause_count": pause.get("pause_count") or acoustic.get("pause_count"),
+        "pause_ratio": _first_not_none(pause.get("pause_ratio"), acoustic.get("pause_ratio")),
+        "pause_count": _first_not_none(pause.get("pause_count"), acoustic.get("pause_count")),
         "voiced_ratio": acoustic.get("voiced_ratio"),
         "f0_mean_hz": acoustic.get("f0_mean_hz"),
         "f0_std_hz": acoustic.get("f0_std_hz"),
@@ -119,8 +126,8 @@ def _flatten_selected(result: Dict[str, Any]) -> Dict[str, Any]:
         "compressed_mora_risk": structure.get("compressed_mora_risk"),
         "low_voicing_risk": structure.get("low_voicing_risk"),
         "high_pause_risk": structure.get("high_pause_risk"),
-        "mora_duration_cv": pronunciation.get("mora_duration_cv"),
-        "special_mora_penalty": pronunciation.get("special_mora_penalty"),
+        "mora_duration_cv": _pick(pronunciation, "legacy_timing_proxy_details", "mora_duration_cv"),
+        "special_mora_penalty": _pick(pronunciation, "legacy_timing_proxy_details", "special_mora_penalty"),
         "contour_corr": prosody.get("contour_corr"),
         "contour_rmse": prosody.get("contour_rmse"),
         "transition_agreement": prosody.get("transition_agreement"),
@@ -162,6 +169,7 @@ def unify_evaluation_result(
     scores = {
         "total": raw.get("total_score"),
         "pronunciation": raw.get("pronunciation_score"),
+        "rhythm": raw.get("rhythm_score"),
         "prosody": raw.get("prosody_score"),
         "fluency": raw.get("fluency_score"),
         "expression": raw.get("tone_score"),

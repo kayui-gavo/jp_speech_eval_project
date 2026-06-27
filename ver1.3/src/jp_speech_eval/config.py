@@ -15,6 +15,8 @@ DEFAULT_SCORING_CONFIG: Dict[str, Any] = {
         # Calibrate these with native/listener scores before using as research claims.
         "target_mora_per_sec_min": 4.0,
         "target_mora_per_sec_max": 7.0,
+        "target_mora_per_sec_center": 6.0,
+        "rate_log_penalty": 32.0,
         "slow_mora_per_sec": 3.0,
         "fast_mora_per_sec": 8.5,
         "pause_ratio_weight": 180.0,
@@ -45,11 +47,12 @@ DEFAULT_SCORING_CONFIG: Dict[str, Any] = {
         "pause_ratio_weight": 120.0,
     },
     "aggregate": {
-        "pronunciation_weight": 0.35,
-        "prosody_weight": 0.40,
-        "fluency_weight": 0.25,
+        "pronunciation_weight": 0.30,
+        "rhythm_weight": 0.20,
+        "prosody_weight": 0.30,
+        "fluency_weight": 0.20,
         "tone_weight": 0.0,
-        "note": "tone is expression/style evidence and is excluded from pronunciation-oriented total_score by default",
+        "note": "the four displayed practice dimensions are aggregated; tone is debug-only expression evidence",
     },
     "realtime": {
         "chunk_ms": 20,

@@ -32,22 +32,17 @@ def score_fluency(
     target_max = float(c["target_mora_per_sec_max"])
     slow = float(c["slow_mora_per_sec"])
     fast = float(c["fast_mora_per_sec"])
-    very_fast = fast * 1.25
 
-    if target_min <= speech_rate <= target_max:
-        rate_score = 100.0
-    elif slow <= speech_rate < target_min:
-        rate_score = 82.0 + (speech_rate - slow) / max(target_min - slow, 1e-6) * 18.0
-        feedback.append("语速稍慢，但仍然可以理解。")
-    elif target_max < speech_rate <= fast:
-        rate_score = 100.0 - (speech_rate - target_max) / max(fast - target_max, 1e-6) * 18.0
-        feedback.append("语速稍快，可能影响清晰度。")
-    elif fast < speech_rate <= very_fast:
-        rate_score = 70.0 - (speech_rate - fast) / max(very_fast - fast, 1e-6) * 28.0
-        feedback.append("语速明显偏快，容易让人听不清。")
-    else:
-        rate_score = 45.0
-        feedback.append("语速和自然说话差得有些多。")
+    # The previous broad 4--7 mora/s plateau assigned exactly 100 to most
+    # readable JVS/JANON recordings. A continuous log-rate curve preserves a
+    # broad native range while giving the dimension useful resolution.
+    target_center = float(c.get("target_mora_per_sec_center", 6.0))
+    log_deviation = abs(float(np.log(max(speech_rate, 1e-6) / max(target_center, 1e-6))))
+    rate_score = max(45.0, 98.0 - float(c.get("rate_log_penalty", 32.0)) * (log_deviation / 0.50) ** 1.5)
+    if speech_rate < target_min:
+        feedback.append("语速稍慢，但仍然可以理解。" if speech_rate >= slow else "语速明显偏慢，可能有较多犹豫。")
+    elif speech_rate > target_max:
+        feedback.append("语速稍快，可能影响清晰度。" if speech_rate <= fast else "语速明显偏快，容易让人听不清。")
 
     pause_ratio = float(pause_info.get("pause_ratio", 0.0))
     pause_count = int(pause_info.get("pause_count", 0))
@@ -58,7 +53,7 @@ def score_fluency(
     allowed_pause_count = 1 + max(0, (mora_count - 8) // 12)
     pause_excess = max(0.0, pause_ratio - native_pause_allowance)
     pause_count_excess = max(0, pause_count - allowed_pause_count)
-    pause_score = 100.0 - pause_excess * float(c.get("pause_ratio_weight", 180.0)) - pause_count_excess * float(c.get("pause_count_penalty", 8.0))
+    pause_score = 96.0 - pause_excess * float(c.get("pause_ratio_weight", 180.0)) - pause_count_excess * float(c.get("pause_count_penalty", 8.0))
     if pause_ratio > max(0.28, native_pause_allowance + 0.08) or pause_count > allowed_pause_count + 2:
         feedback.append(f"检测到 {pause_count} 次较长停顿，流畅度会下降。")
 
@@ -77,7 +72,9 @@ def score_fluency(
         "rhythm_timing_components": {
             "mora_rate_score": clamp_score(rate_score),
             "pause_score": clamp_score(pause_score),
-            "note": "native_percentile_calibration_report_available_but_runtime_thresholds_are_still_lightweight",
+            "rate_log_deviation": round(float(log_deviation), 4),
+            "target_mora_per_sec_center": round(float(target_center), 4),
+            "note": "continuous_log_rate_curve_avoids_the_previous_100_point_plateau",
         },
         "delivery_fluency_components": {
             "long_pause_count": pause_count,

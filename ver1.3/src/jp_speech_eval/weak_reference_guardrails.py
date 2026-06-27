@@ -10,9 +10,10 @@ _JA_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆〤ー]")
 
 def _float_or_none(value: Any) -> Optional[float]:
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if number == number and abs(number) != float("inf") else None
 
 
 def _count_linguistic_chars(text: str) -> tuple[int, int, int]:

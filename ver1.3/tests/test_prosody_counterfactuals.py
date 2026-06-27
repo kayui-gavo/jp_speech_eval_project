@@ -128,7 +128,7 @@ class ProsodyCounterfactualTests(unittest.TestCase):
         self.assertIn('"rhythm_score"', score_key_block)
         self.assertIn('"pitch_score"', score_key_block)
         self.assertNotIn('"tone_score"', score_key_block)
-        self.assertIn('rhythm_score: "节奏 / 特殊拍"', label_block)
+        self.assertIn('rhythm_score: "节奏 / 特殊拍证据"', label_block)
         self.assertIn('pitch_score: "音高变化（自然度参考）"', label_block)
         self.assertNotIn("expression_proxy_score", label_block)
 

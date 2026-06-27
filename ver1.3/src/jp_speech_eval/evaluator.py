@@ -34,6 +34,12 @@ from .text_frontend import TextInfo, build_text_info
 from .vad import trim_to_speech
 from .weak_reference_guardrails import apply_weak_overall_guardrail
 from .pitch_naturalness_v2 import load_pitch_naturalness_v2_config, score_pitch_naturalness_v2
+from .practice_dimensions import (
+    score_coarse_frame_pitch_fallback,
+    score_pronunciation_clarity_practice,
+    score_rhythm_timing_practice,
+    weighted_four_dimension_overall,
+)
 
 
 @dataclass
@@ -57,6 +63,7 @@ class EvaluationResult:
     f0_method: str
     alignment_mode: str
     pronunciation_score: int
+    rhythm_score: int
     prosody_score: int
     fluency_score: int
     tone_score: int
@@ -419,7 +426,7 @@ def evaluate_utterance(
         audio.sr,
         min_pause_sec=float(config["pause"]["long_pause_sec"]),
     )
-    pronunciation_score, pron_fb, pron_details = score_pronunciation_rhythm(
+    pronunciation_timing_score, pron_timing_fb, pron_timing_details = score_pronunciation_rhythm(
         text_info.moras, boundaries, config=config
     )
     prosody_score, prosody_fb, prosody_details = score_prosody(
@@ -466,12 +473,41 @@ def evaluate_utterance(
         if pitch_v2_score is not None:
             weak_prosody_details["v1_heuristic_score_debug"] = weak_prosody_score
             weak_prosody_score = pitch_v2_score
+    if weak_prosody_score is None:
+        coarse_pitch_score, coarse_pitch_details = score_coarse_frame_pitch_fallback(f0)
+        weak_prosody_details["coarse_frame_pitch_fallback"] = coarse_pitch_details
+        if coarse_pitch_score is not None:
+            weak_prosody_details["mora_pitch_unavailable_reason"] = weak_prosody_details.get("unavailable_reason")
+            weak_prosody_details["available"] = True
+            weak_prosody_details["coarse_fallback_used"] = True
+            weak_prosody_details["scoring_version"] = "frame_f0_low_confidence_fallback"
+            weak_prosody_score = coarse_pitch_score
+            weak_prosody_fb = [
+                "逐拍音高证据不足；本次只显示低置信度的整体音高变化参考。",
+                "这不是严格高低重音判定。",
+            ]
     fluency_score, fluency_fb, fluency_details = score_fluency(
         mora_count=len(text_info.moras),
         duration=active_duration,
         pause_info=pause_info,
         config=config,
     )
+    pronunciation_score, pronunciation_clarity_details = score_pronunciation_clarity_practice(
+        recording_quality=recording_quality,
+        mora_evidence_summary=mora_evidence_summary,
+        alignment_mode=alignment_mode,
+        content_match=content_match.to_dict() if content_match else None,
+    )
+    rhythm_score, rhythm_details = score_rhythm_timing_practice(
+        boundaries=boundaries,
+        alignment_mode=alignment_mode,
+        rate_score=fluency_details.get("rate_score"),
+    )
+    pron_details = {
+        **pronunciation_clarity_details,
+        "legacy_timing_proxy_score_debug": pronunciation_timing_score,
+        "legacy_timing_proxy_details": pron_timing_details,
+    }
     tone_score, tone_fb, tone_details = score_tone_simple(f0_mora, y_speech, pause_info, config=config)
     timing["scoring"] = time.perf_counter() - ts
 
@@ -488,16 +524,14 @@ def evaluate_utterance(
 
     score_adjustments: List[str] = []
     if alignment_mode.endswith("fallback_equal"):
-        pronunciation_score = min(pronunciation_score, 80)
         score_adjustments.append(
-            "mora 边界回退到等分切分，细节发音判断已降级。"
+            "mora 边界回退到等分切分，发音与节奏只保留低置信度练习参考。"
         )
     judgement_count = int(mora_evidence_summary.get("judgement_available_count", 0) or 0)
     judgement_needed = max(3, int(len(text_info.moras) * 0.55))
     if judgement_count < judgement_needed:
-        pronunciation_score = min(pronunciation_score, 60)
         score_adjustments.append(
-            "可判定的 mora 证据不足，发音代理分已封顶。"
+            "可判定的 mora 证据不足，具体音素和特殊拍不作强判断。"
         )
     if float(reliability.get("f0_coverage", 0.0) or 0.0) < 0.50:
         prosody_score = min(prosody_score, 55)
@@ -507,9 +541,10 @@ def evaluate_utterance(
 
     aggregate_cfg = config.get("aggregate", {})
     aggregate_weights = {
-        "pronunciation": float(aggregate_cfg.get("pronunciation_weight", 0.35)),
-        "prosody": float(aggregate_cfg.get("prosody_weight", 0.40)),
-        "fluency": float(aggregate_cfg.get("fluency_weight", 0.25)),
+        "pronunciation": float(aggregate_cfg.get("pronunciation_weight", 0.30)),
+        "rhythm": float(aggregate_cfg.get("rhythm_weight", 0.20)),
+        "prosody": float(aggregate_cfg.get("prosody_weight", 0.30)),
+        "fluency": float(aggregate_cfg.get("fluency_weight", 0.20)),
         "tone": float(aggregate_cfg.get("tone_weight", 0.0)),
     }
     aggregate_denominator = sum(max(0.0, value) for value in aggregate_weights.values())
@@ -518,6 +553,7 @@ def evaluate_utterance(
     total_score = round(
         (
             aggregate_weights["pronunciation"] * pronunciation_score
+            + aggregate_weights["rhythm"] * rhythm_score
             + aggregate_weights["prosody"] * prosody_score
             + aggregate_weights["fluency"] * fluency_score
             + aggregate_weights["tone"] * tone_score
@@ -531,6 +567,7 @@ def evaluate_utterance(
         )
     if content_match and content_match.status == "fail":
         pronunciation_score = 0
+        rhythm_score = 0
         prosody_score = 0
         fluency_score = 0
         tone_score = 0
@@ -550,47 +587,27 @@ def evaluate_utterance(
         reliability["level"] = "low"
 
     weak_pronunciation_score: Optional[int] = pronunciation_score
-    weak_rhythm_score: Optional[int] = weak_prosody_details.get("weak_rhythm_naturalness_score")
-    if weak_rhythm_score is None:
-        weak_rhythm_score = int(round(
-            0.55 * float(fluency_details.get("rhythm_timing_score", fluency_score) or fluency_score)
-            + 0.45 * float(fluency_score)
-        ))
+    weak_rhythm_score: Optional[int] = rhythm_score
     weak_dimension_adjustments: List[str] = []
     if alignment_mode.endswith("fallback_equal"):
-        if weak_pronunciation_score is not None:
-            weak_pronunciation_score = min(int(weak_pronunciation_score), 70)
-        if weak_rhythm_score is not None:
-            weak_rhythm_score = min(int(weak_rhythm_score), 75)
         weak_dimension_adjustments.append(
-            "fallback_alignment_caps_pronunciation_and_rhythm_practice_dimensions"
+            "fallback_alignment_uses_low_confidence_clarity_and_coarse_rhythm"
         )
     if judgement_count < judgement_needed:
-        if weak_pronunciation_score is not None:
-            weak_pronunciation_score = min(int(weak_pronunciation_score), 60)
-        if weak_rhythm_score is not None:
-            weak_rhythm_score = min(int(weak_rhythm_score), 72)
         weak_dimension_adjustments.append(
-            "low_mora_evidence_caps_pronunciation_and_rhythm_practice_dimensions"
+            "low_mora_evidence_blocks_specific_pronunciation_and_special_mora_claims"
         )
     weak_scores = {
         "weak_pronunciation_naturalness_score": weak_pronunciation_score,
         "weak_prosody_naturalness_score": weak_prosody_score,
         "weak_rhythm_naturalness_score": weak_rhythm_score,
     }
-    weak_overall_values = [
-        (weak_pronunciation_score, 0.35),
-        (weak_prosody_score, 0.30),
-        (weak_rhythm_score, 0.35),
-    ]
-    weak_total = 0.0
-    weak_denom = 0.0
-    for value, weight in weak_overall_values:
-        if value is None:
-            continue
-        weak_total += float(value) * weight
-        weak_denom += weight
-    weak_overall_before_guardrail = int(round(weak_total / weak_denom)) if weak_denom > 0 else None
+    weak_overall_before_guardrail, weak_overall_details = weighted_four_dimension_overall(
+        pronunciation=weak_pronunciation_score,
+        rhythm=weak_rhythm_score,
+        fluency=fluency_score,
+        pitch=weak_prosody_score,
+    )
     weak_overall_guardrail = apply_weak_overall_guardrail(
         weak_overall_score=weak_overall_before_guardrail,
         target_text=text_info.text,
@@ -628,9 +645,11 @@ def evaluate_utterance(
             )
         )
 
-    technical_feedback = pron_fb + prosody_fb + fluency_fb + tone_fb
+    technical_feedback = pron_timing_fb + prosody_fb + fluency_fb + tone_fb
     feedback_decision = _build_learner_feedback(
-        pronunciation_feedback=pron_fb,
+        # Legacy duration-CV messages are retained in debug only. They are not
+        # valid segmental pronunciation corrections.
+        pronunciation_feedback=[],
         prosody_feedback=prosody_fb,
         fluency_feedback=fluency_fb,
         tone_feedback=tone_fb,
@@ -665,6 +684,7 @@ def evaluate_utterance(
         f0_method=f0_method,
         alignment_mode=alignment_mode,
         pronunciation_score=pronunciation_score,
+        rhythm_score=rhythm_score,
         prosody_score=prosody_score,
         fluency_score=fluency_score,
         tone_score=tone_score,
@@ -699,12 +719,14 @@ def evaluate_utterance(
                 else "cached_alignment_used",
             },
             "pronunciation": pron_details,
+            "rhythm": rhythm_details,
             "prosody": prosody_details,
             "weak_reference_native_likeness": {
                 **weak_prosody_details,
                 **weak_scores,
                 "weak_overall_practice_score_before_guardrail": weak_overall_before_guardrail,
                 "weak_overall_practice_score": weak_overall_practice_score,
+                "weak_overall_details": weak_overall_details,
                 "weak_overall_guardrail": weak_overall_guardrail,
                 "weak_dimension_adjustments": weak_dimension_adjustments,
                 "score_type": "weak_reference_native_likeness",
@@ -715,7 +737,7 @@ def evaluate_utterance(
             "prosody_metrics": prosody_metrics,
             "aggregate": {
                 "weights": aggregate_weights,
-                "score_interpretation": "pronunciation_oriented_total_excludes_expression_style_when_tone_weight_is_zero",
+                "score_interpretation": "four_displayed_dimensions_are_aggregated; expression_style_is_excluded_when_tone_weight_is_zero",
             },
             "score_adjustments": score_adjustments,
             "accent_phrases": text_info.accent_phrases,

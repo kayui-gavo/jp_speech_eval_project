@@ -96,13 +96,34 @@ def _special_mora_user_feedback(rendered: Dict[str, Any]) -> bool:
 
 def _scenario_rows() -> List[Dict[str, Any]]:
     base = _base_result()
+    fallback = _with(
+        base,
+        rhythm_score=72,
+        weak_pronunciation_naturalness_score=78,
+        weak_rhythm_naturalness_score=72,
+        weak_prosody_naturalness_score=76,
+        weak_overall_practice_score=79,
+        alignment_mode="cached_dtw_fallback_equal",
+        details={
+            "alignment": {"mode": "cached_dtw_fallback_equal"},
+            "reliability": {"level": "medium", "overall": 0.70, "alignment": 0.50, "f0_coverage": 0.80},
+            "weak_reference_native_likeness": {
+                "weak_pronunciation_naturalness_score": 78,
+                "weak_rhythm_naturalness_score": 72,
+                "weak_prosody_naturalness_score": 76,
+                "weak_overall_practice_score": 79,
+                "weak_overall_guardrail": {"status": "ok", "display_allowed": True},
+            },
+        },
+    )
     clear_short = _clear_short_long_vowel()
     near = _near_boundary_long_vowel()
     rows = [
         {"name": "fixed_normal_pass", "result": base, "kwargs": {}, "expect": {"status": "pass"}},
+        {"name": "fixed_fallback_degrades_to_four_practice_scores", "result": fallback, "kwargs": {}, "expect": {"status": "practice_suggestion", "degraded_four_dimensions": True, "no_special_feedback": True}},
         {"name": "fixed_poor_recording_retry", "result": _with(base, details={"recording_quality": {"score": 0.1}}), "kwargs": {}, "expect": {"status": "retry"}},
         {"name": "fixed_near_boundary_special_mora_accepted", "result": near, "kwargs": {"special_mora_threshold_profile": "v2_limited_candidate", "enable_user_facing_calibrated_special_mora": True}, "expect": {"no_special_feedback": True}},
-        {"name": "fixed_clear_long_vowel_default_gentle", "result": clear_short, "kwargs": {"special_mora_threshold_profile": "v2_limited_candidate"}, "expect": {"status": "practice_suggestion", "suggestion_type": "special_mora"}},
+        {"name": "fixed_clear_long_vowel_default_safe", "result": clear_short, "kwargs": {}, "expect": {"status": "pass", "no_special_feedback": True}},
         {"name": "fixed_clear_long_vowel_explicit_gentle", "result": clear_short, "kwargs": {"special_mora_threshold_profile": "v2_limited_candidate", "enable_user_facing_calibrated_special_mora": True}, "expect": {"status": "practice_suggestion", "suggestion_type": "special_mora"}},
         {"name": "weak_asr_unconfirmed", "result": _with(base, details={"mode": "asr_pseudo_reference", "weak_reference": True}), "kwargs": {"mode": "asr_pseudo_reference"}, "expect": {"status": "debug_only", "practice_score_none": True}},
         {"name": "weak_asr_confirmed", "result": _with(base, details={"mode": "asr_confirmed_weak_reference", "weak_reference": True}), "kwargs": {"mode": "asr_confirmed_weak_reference"}, "expect": {"weak_reference": True}},
@@ -138,6 +159,21 @@ def _evaluate_expectations(rendered: Dict[str, Any], expect: Dict[str, Any]) -> 
     if expect.get("weak_reference") and not rendered.get("debug", {}).get("weak_reference"):
         ok = False
         notes.append("weak_reference_missing")
+    if expect.get("degraded_four_dimensions"):
+        dimensions = rendered.get("dimension_scores") or {}
+        confidence = rendered.get("dimension_confidence") or {}
+        if not rendered.get("debug", {}).get("degraded_reference_practice"):
+            ok = False
+            notes.append("degraded_reference_practice_missing")
+        if any(dimensions.get(name) is None for name in ("pronunciation", "rhythm", "fluency", "pitch")):
+            ok = False
+            notes.append("degraded_dimension_missing")
+        if any(confidence.get(name) != "low" for name in ("pronunciation", "rhythm", "fluency", "pitch")):
+            ok = False
+            notes.append("degraded_confidence_not_low")
+        if rendered.get("debug", {}).get("visible_prosody_score") == rendered.get("debug", {}).get("prosody_score"):
+            ok = False
+            notes.append("strict_pitch_score_leaked")
     policy = rendered.get("debug", {}).get("scoring_policy", {})
     if expect.get("kanade_excluded") and not policy.get("exclude_from_pronunciation_score"):
         ok = False
@@ -210,7 +246,7 @@ def write_outputs(rows: List[Dict[str, Any]]) -> None:
         "",
     ]
     for row in rows:
-        lines.append(f"- {row['scenario']}: {'PASS' if row['passed'] else 'FAIL'} ({row['status']}) {row['notes']}")
+        lines.append(f"- {row['scenario']}: {'PASS' if row['passed'] else 'FAIL'} ({row['status']}) {row['notes']}".rstrip())
     (reports_dir / "demo_flow_smoke_test_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

@@ -130,6 +130,18 @@ def _low_f0_candidate(result: Mapping[str, Any], gate: Any) -> Optional[Feedback
     weak = _mapping(details.get("weak_reference_native_likeness"))
     if "low_f0_coverage" not in reasons and weak.get("available") is not False:
         return None
+    if weak.get("coarse_fallback_used"):
+        return FeedbackCandidate(
+            dimension="pitch_naturalness",
+            severity="info",
+            confidence="low",
+            evidence_type="low_f0_coverage",
+            location=None,
+            user_message="这次逐拍音高证据较少，只显示整体音高变化的低置信度参考。",
+            practice_tip="保持自然音量，把完整短句连续读完，音高轨迹会更稳定。",
+            caveat="这个数字不是逐拍高低重音判定，也不代表具体重音有错。",
+            category="pitch_naturalness",
+        )
     return FeedbackCandidate(
         dimension="pitch_naturalness",
         severity="info",
@@ -150,9 +162,11 @@ def _fluency_candidates(result: Mapping[str, Any]) -> List[FeedbackCandidate]:
     components = _mapping(fluency.get("delivery_fluency_components"))
     pause_count = int(components.get("long_pause_count") or pause_info.get("pause_count") or 0)
     pause_ratio = _float(components.get("pause_ratio", pause_info.get("pause_ratio")))
+    pause_allowance = _float(components.get("natural_pause_ratio_allowance"), 0.18)
+    pause_count_excess = int(components.get("pause_count_excess") or 0)
     speech_rate = _float(fluency.get("speech_rate_mora_per_sec"))
     candidates: List[FeedbackCandidate] = []
-    if pause_count > 4 or pause_ratio > 0.28:
+    if pause_count_excess > 2 or pause_ratio > pause_allowance + 0.08:
         candidates.append(FeedbackCandidate(
             dimension="fluency",
             severity="medium",
@@ -163,7 +177,7 @@ def _fluency_candidates(result: Mapping[str, Any]) -> List[FeedbackCandidate]:
             practice_tip="先找好短语边界，再一口气读完整个短句。",
             category="fluency",
         ))
-    if speech_rate >= 6.5:
+    if speech_rate >= 8.5:
         candidates.append(FeedbackCandidate(
             dimension="fluency",
             severity="medium",
@@ -174,7 +188,7 @@ def _fluency_candidates(result: Mapping[str, Any]) -> List[FeedbackCandidate]:
             practice_tip="下一次先用大约 80% 的速度读，不要急着连读。",
             category="fluency",
         ))
-    elif 0 < speech_rate <= 2.0:
+    elif 0 < speech_rate <= 3.0:
         candidates.append(FeedbackCandidate(
             dimension="fluency",
             severity="mild",

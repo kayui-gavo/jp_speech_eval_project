@@ -37,9 +37,10 @@ _JA_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff々〆〤ー]")
 
 def _float_or_none(value: Any) -> float | None:
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if number == number and abs(number) != float("inf") else None
 
 
 def _latin_dominant(text: str) -> bool:
@@ -156,15 +157,15 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         )
 
     if level == "low" or overall < 0.40 or alignment_score < 0.35:
-        # Confirmed weak-reference practice can still provide coarse numeric
-        # scores. Low alignment suppresses detailed corrections, not scoring;
-        # content/language and minimum-evidence guardrails remain authoritative.
-        practice = "needs_attention" if policy.weak_reference else "retry"
+        # Alignment failure suppresses detailed and strict-reference claims,
+        # but recording-level practice proxies can still be shown. Recording,
+        # content/language, and minimum-evidence vetoes are handled above.
+        practice = "needs_attention"
         allow_detail = False
         allow_special = False
         allow_pitch = False
         blocked.extend(["special_mora", "pitch", "pronunciation"])
-        messages.append("今回は細かい発音判定が難しいため、もう一度録音してください。")
+        messages.append("今回は細かい発音判定が難しいため、全体の練習参考として確認してください。")
         reasons.append("alignment_confidence_low")
     elif overall < 0.75 or alignment_mode.endswith("fallback_equal"):
         practice = "needs_attention"

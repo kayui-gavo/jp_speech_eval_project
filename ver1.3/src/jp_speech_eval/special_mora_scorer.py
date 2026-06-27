@@ -534,7 +534,17 @@ def decide_special_mora_runtime(
 
 
 def special_mora_score_from_decisions(decisions: List[RuntimeSpecialMoraDecision]) -> Optional[float]:
-    judged = [d for d in decisions if d.threshold_status == "active" and d.decision in {"ok", "too_short", "too_long"} and d.evidence_confidence >= 0.45]
+    judged = [
+        d
+        for d in decisions
+        if d.threshold_status == "active"
+        and d.decision in {"ok", "too_short", "too_long"}
+        and d.evidence_confidence >= 0.45
+        and "fallback" not in d.alignment_method
+        and d.alignment_method not in {"equal", "equal_fallback"}
+        and d.mapping_success
+        and not SEVERE_MAPPING_WARNINGS.intersection(d.mapping_warning_flags)
+    ]
     if not judged:
         return None
     bad = sum(1 for d in judged if d.decision in {"too_short", "too_long"})

@@ -10,6 +10,7 @@ def _render(case_id: str):
     return render_user_facing_result(
         _fixture(case_id),
         special_mora_threshold_profile="v2_limited_candidate",
+        enable_user_facing_calibrated_special_mora=True,
     )
 
 

@@ -39,11 +39,16 @@ def _result(**overrides):
         ],
         "total_score": 88,
         "pronunciation_score": 80,
+        "rhythm_score": 82,
         "prosody_score": 90,
         "fluency_score": 95,
         "tone_score": 70,
         "feedback": ["整体音高和示范音比较接近。", "語速は自然です。"],
         "alignment_mode": "cached_dtw",
+        "weak_pronunciation_naturalness_score": 80,
+        "weak_rhythm_naturalness_score": 82,
+        "weak_prosody_naturalness_score": 84,
+        "weak_overall_practice_score": 84,
         "details": {
             "mode": "reference_based",
             "pitch_target_source": "ojad_checked",
@@ -54,6 +59,13 @@ def _result(**overrides):
             "alignment": {"mode": "cached_dtw"},
             "pronunciation": {"mora_duration_cv": 0.1, "special_mora_diagnostics": []},
             "prosody": {"contour_corr": 0.8, "transition_agreement": 0.8, "pitch_target_source": "ojad_checked"},
+            "weak_reference_native_likeness": {
+                "weak_pronunciation_naturalness_score": 80,
+                "weak_rhythm_naturalness_score": 82,
+                "weak_prosody_naturalness_score": 84,
+                "weak_overall_practice_score": 84,
+                "weak_overall_guardrail": {"status": "pass", "display_allowed": True},
+            },
             "mora_evidence": [
                 {"judgement_available": True, "boundary_confidence": 0.9, "energy_coverage": 0.9}
                 for _ in range(9)
@@ -80,7 +92,7 @@ class ProductGuardrailsTest(unittest.TestCase):
             {"mora": "ダ", "start_sec": 1.03, "end_sec": 1.23},
             {"mora": "サ", "start_sec": 1.23, "end_sec": 1.43},
             {"mora": "イ", "start_sec": 1.43, "end_sec": 1.63},
-        ]))
+        ]), special_mora_threshold_profile="v2_limited_candidate", enable_user_facing_calibrated_special_mora=True)
         self.assertFalse(rendered["display_total_score"])
         self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
         self.assertIn("全体としては問題ありません", rendered["focus_feedback"]["message"])
@@ -284,9 +296,13 @@ class ProductGuardrailsTest(unittest.TestCase):
         rows = score_special_mora_timing(result)
         self.assertTrue(all(row.status == "uncertain" for row in rows if row.type in {"long_vowel", "moraic_nasal"}))
         rendered = render_user_facing_result(result)
-        self.assertIsNone(rendered["display_score"])
-        self.assertIsNone(rendered["debug"]["visible_prosody_score"])
-        self.assertFalse(rendered["debug"]["prosody_debug"]["visible"])
+        self.assertEqual(rendered["display_score"], 84)
+        self.assertEqual(rendered["debug"]["visible_prosody_score"], 84)
+        self.assertNotEqual(rendered["debug"]["visible_prosody_score"], result["prosody_score"])
+        self.assertTrue(rendered["debug"]["degraded_reference_practice"])
+        self.assertTrue(all(value is not None for value in rendered["dimension_scores"].values()))
+        self.assertEqual(set(rendered["dimension_confidence"].values()), {"low"})
+        self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
         self.assertIn("fallback_alignment", rendered["suppressed_reasons"])
 
     def test_low_f0_coverage_hides_visible_prosody_without_hiding_other_practice_score(self) -> None:
@@ -427,7 +443,11 @@ class ProductGuardrailsTest(unittest.TestCase):
             {"mora": "サ", "start_sec": 1.235, "end_sec": 1.435},
             {"mora": "イ", "start_sec": 1.435, "end_sec": 1.635},
         ])
-        rendered = render_user_facing_result(result, special_mora_threshold_profile="v2_limited_candidate")
+        rendered = render_user_facing_result(
+            result,
+            special_mora_threshold_profile="v2_limited_candidate",
+            enable_user_facing_calibrated_special_mora=True,
+        )
         self.assertTrue(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
         self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
         self.assertEqual(rendered["focus_feedback"]["type"], "long_vowel")
@@ -521,7 +541,8 @@ class ProductGuardrailsTest(unittest.TestCase):
             },
         )
         rendered = render_user_facing_result(result)
-        self.assertGreaterEqual(rendered["display_score"], 88)
+        self.assertLess(rendered["display_score"], 88)
+        self.assertGreater(rendered["display_score"], result["prosody_score"])
         self.assertEqual(rendered["practice_score"]["value"], rendered["display_score"])
         self.assertIn("練習用の目安", rendered["practice_score"]["explanation"])
 
@@ -540,7 +561,7 @@ class ProductGuardrailsTest(unittest.TestCase):
             },
         )
         rendered = render_user_facing_result(result, mode="asr_pseudo_reference")
-        self.assertGreaterEqual(rendered["display_score"], 85)
+        self.assertLess(rendered["display_score"], 85)
         self.assertTrue(rendered["debug"]["weak_reference"])
         self.assertEqual(rendered["status"], "debug_only")
         self.assertIsNone(rendered["practice_score"]["value"])
@@ -570,7 +591,7 @@ class ProductGuardrailsTest(unittest.TestCase):
             },
         )
         rendered = render_user_facing_result(base)
-        self.assertGreaterEqual(rendered["practice_score"]["value"], 85)
+        self.assertLess(rendered["practice_score"]["value"], 85)
         self.assertNotIn("ネイティブ", rendered["practice_score"]["explanation"])
 
     def test_user_facing_result_has_safe_contract_fields(self) -> None:
@@ -625,8 +646,10 @@ class ProductGuardrailsTest(unittest.TestCase):
         from scripts.run_demo_flow_smoke_tests import run
 
         rows = run()
-        self.assertEqual(len(rows), 11)
+        self.assertEqual(len(rows), 12)
         self.assertTrue(all(row["passed"] for row in rows))
+        fallback = next(row for row in rows if row["scenario"] == "fixed_fallback_degrades_to_four_practice_scores")
+        self.assertEqual(fallback["status"], "practice_suggestion")
         kanade = next(row for row in rows if row["scenario"] == "kanade_excluded_from_scoring")
         self.assertFalse(kanade["kanade_scoring_leakage"])
 
