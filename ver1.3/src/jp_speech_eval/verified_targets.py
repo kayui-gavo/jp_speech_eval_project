@@ -5,12 +5,14 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .package_assets import resolve_asset_path
+
 
 def default_verified_targets_path() -> Path:
     env_path = os.environ.get("JP_SPEECH_EVAL_VERIFIED_TARGETS")
     if env_path:
         return Path(env_path)
-    return Path(__file__).resolve().parents[2] / "configs" / "verified_accent_targets.json"
+    return resolve_asset_path("configs/verified_accent_targets.json")
 
 
 def load_verified_targets(path: str | Path | None = None) -> Dict[str, Dict[str, Any]]:

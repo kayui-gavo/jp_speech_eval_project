@@ -1,10 +1,11 @@
-# jp_speech_eval_project v1.5 mora-evidence speech-evaluation patch
+# jp_speech_eval_project v1.6 four-dimension practice package
 
 A lightweight Python prototype for Japanese speaking evaluation.
 
-For integration into another project, use the Python package API:
-run `pip install -e .` from this package directory, then import
-`SpeechEvaluationClient` from `jp_speech_eval`. See `docs/python_package_api.md` and
+For integration, install the wheel or run `pip install -e ".[asr]"`, then import
+`SpeechEvaluationClient` from `jp_speech_eval`. The learner-facing contract is
+`EvaluationResponse.user_facing`; raw metrics are debug-only. See
+`docs/integration_handoff_zh.md`, `docs/python_package_api.md`, and
 `examples/package_api_quickstart.py`.
 
 This version adds:
@@ -23,14 +24,15 @@ This version adds:
 
 Current scoring dimensions:
 
-- pronunciation proxy: core pronunciation-related mora rhythm + special mora duration
-- prosody: core pronunciation-related mora-level F0 / H-L pattern / sentence-final intonation
-- fluency: delivery/style, based on endpointed speech rate + in-speech pauses
-- tone / emotion proxy: expression/style, based on pitch range + energy + in-speech pause ratio
+- pronunciation clarity: recording, alignment and articulation-stability practice proxy
+- rhythm / special mora: mora timing and evidence-gated special-mora practice proxy
+- fluency: endpointed speech rate, in-speech pauses and continuity
+- pitch movement: F0 coverage, range, local movement and stability naturalness reference
 
-`total_score` is pronunciation-oriented by default: it combines pronunciation,
-prosody, and fluency, while `tone_score` remains a separate expression/style
-dimension and is excluded unless a config explicitly gives it weight.
+These are practice dimensions, not teacher-grade or exam-grade scores. The
+learner UI reads `display_score`, `dimension_scores`, and
+`dimension_confidence`. `tone_score` remains debug-only and outside the core
+four dimensions.
 
 For fixed reference reading, the content gate is acoustic-first. Duration
 differences are treated mainly as fluency evidence, not content errors, and ASR
@@ -55,10 +57,11 @@ verified pitch targets. An `ojad_verified` target is treated as stronger
 evidence than an automatic frontend hypothesis; it does not turn a TTS waveform
 into ground truth.
 
-Evidence-gate note: when mora alignment falls back to equal-time segmentation,
-too few morae have acoustic evidence, F0 coverage is low, or overall reliability
-is below stable-evaluation range, pronunciation/prosody/total scores are capped.
-This prevents artificial high scores caused by unstable alignment or missing F0.
+Evidence-display note: valid Japanese practice input should receive usable
+four-dimension practice feedback whenever the available acoustic evidence
+supports it. Low alignment or F0 evidence is carried in dimension confidence
+and conservative feedback. Clear content mismatch, non-Japanese input and
+invalid recordings still suppress formal learner-facing scores.
 
 Phonology note: duration-sensitive mora analysis now distinguishes strong
 special morae (`ー`, `ッ`, `ン`) from weak vowel-lengthening candidates such as
@@ -97,11 +100,11 @@ and free production. It does not change the fixed-reference acoustic scorer and
 does not introduce extra user-facing metrics; raw debug evidence remains
 available for development.
 
-Product guardrail note: fixed-reference reading is the only serious scoring
-path. ASR-generated references now require user confirmation before a weak
-pseudo-reference can be generated, Kanade references are marked as demo-only
-playback, and user-facing responses hide total scores by default. Raw
-`total_score`, `prosody_score`, and expression proxies remain in debug output.
+Product guardrail note: arbitrary-sentence practice uses user-confirmed text and
+weak-reference native-likeness scoring. Fixed-reference reading remains a
+separate path for known sentences. Kanade is demo-only playback. A missing
+learner-facing score must never fall back to raw `total_score` or
+`prosody_score`; raw metrics remain available only for engineering inspection.
 
 ---
 

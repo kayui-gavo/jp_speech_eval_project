@@ -26,7 +26,9 @@ def main() -> None:
 
     user_facing = payload["user_facing"]
     print("status:", user_facing["status"])
-    print("practice_score:", user_facing["practice_score"])
+    print("display_score:", user_facing["display_score"])
+    print("dimension_scores:", user_facing["dimension_scores"])
+    print("dimension_confidence:", user_facing["dimension_confidence"])
     print("summary:", user_facing["summary_text"])
     print("suggestion:", user_facing["primary_suggestion_text"])
 

@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .package_assets import resolve_asset_path
+
 
 DEFAULT_USER_FACING_MESSAGES: Dict[str, str] = {
     "status.pass": "全体としてよくできています。",
@@ -68,7 +70,7 @@ class UserFacingResult:
 
 
 def default_user_facing_messages_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "user_facing_messages_ja.json"
+    return resolve_asset_path("configs/user_facing_messages_ja.json")
 
 
 @lru_cache(maxsize=4)

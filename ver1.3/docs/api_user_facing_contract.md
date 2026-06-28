@@ -10,6 +10,19 @@ Product UI should read `response.user_facing` first. Raw scores remain available
   "mode": "reference",
   "user_facing": {
     "status": "pass | practice_suggestion | retry | debug_only",
+    "display_score": 82,
+    "dimension_scores": {
+      "pronunciation": 84,
+      "rhythm": 78,
+      "fluency": 86,
+      "pitch": 80
+    },
+    "dimension_confidence": {
+      "pronunciation": "medium",
+      "rhythm": "medium",
+      "fluency": "high",
+      "pitch": "medium"
+    },
     "practice_score": {
       "value": 93,
       "label": "良好",
@@ -34,6 +47,9 @@ Product UI should read `response.user_facing` first. Raw scores remain available
 
 - `status`: learner-facing state. `retry` means recording/content reliability failed, not pronunciation failure.
 - `practice_score`: practice guidance for this recording. It is not a validated pronunciation ability score.
+- `display_score`: learner-facing overall practice score, or `null` when formal display is suppressed.
+- `dimension_scores`: the four formal practice dimensions. Values are integers in `0..100` or `null`.
+- `dimension_confidence`: evidence confidence for each dimension; it is not a score.
 - `confidence`: reliability gate result.
 - `summary_text`: one short safe message.
 - `primary_suggestion_text`: at most one actionable suggestion.
@@ -58,6 +74,8 @@ These are for inspection, not normal C-end display.
 
 - UI should not show raw `total_score` as the main score.
 - UI should not show `prosody_score` as pronunciation correctness.
+- UI must not fall back to raw `total_score` when `display_score` is `null`.
+- UI must not fall back to raw `prosody_score` when the user-facing `pitch` dimension is `null`.
 - UI should not show raw DTW, raw F0, thresholds, or debug evidence to normal users.
 - Weak-reference results must keep a weak-reference notice visible.
 - Kanade results must keep a playback-only notice visible.

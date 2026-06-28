@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROFILE_CONFIG = ROOT / "configs" / "special_mora_threshold_profiles.json"
+from .package_assets import resolve_asset_path
+
+DEFAULT_PROFILE_CONFIG = resolve_asset_path("configs/special_mora_threshold_profiles.json")
 
 
 @dataclass(frozen=True)
@@ -31,7 +32,7 @@ class SpecialMoraThresholdProfile:
         if not self.threshold_file:
             return None
         path = Path(self.threshold_file)
-        return path if path.is_absolute() else ROOT / path
+        return path if path.is_absolute() else resolve_asset_path(path)
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)

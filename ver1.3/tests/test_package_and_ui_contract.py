@@ -10,6 +10,11 @@ import numpy as np
 
 import jp_speech_eval
 from jp_speech_eval import EvaluationRequest, SpeechEvalConfig, SpeechEvaluationClient
+from jp_speech_eval.package_assets import BUNDLED_ASSET_ROOT
+from jp_speech_eval.pitch_naturalness_v2 import default_config_path as default_pitch_config_path
+from jp_speech_eval.special_mora_profiles import load_threshold_profile
+from jp_speech_eval.user_facing_policy import default_user_facing_messages_path
+from jp_speech_eval.verified_targets import default_verified_targets_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,9 +150,33 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertTrue(doc.exists())
         self.assertTrue(example.exists())
         text = doc.read_text(encoding="utf-8")
-        self.assertIn("pip install -e", text)
+        self.assertIn("jp_speech_eval-1.6.0", text)
         self.assertIn("SpeechEvaluationClient", text)
         self.assertIn("user_facing", text)
+
+    def test_runtime_json_assets_are_bundled_for_wheel_install(self) -> None:
+        expected = {
+            "configs/pitch_naturalness_v2.json": default_pitch_config_path(),
+            "configs/user_facing_messages_ja.json": default_user_facing_messages_path(),
+            "configs/verified_accent_targets.json": default_verified_targets_path(),
+        }
+        for relative, resolved in expected.items():
+            self.assertEqual(resolved, BUNDLED_ASSET_ROOT / relative)
+            self.assertTrue(resolved.exists(), relative)
+            self.assertEqual(
+                resolved.read_bytes(),
+                (ROOT / relative).read_bytes(),
+                f"bundled runtime asset drifted: {relative}",
+            )
+
+        profile = load_threshold_profile("default_safe")
+        self.assertIsNotNone(profile.threshold_path())
+        self.assertTrue(profile.threshold_path().exists())
+
+    def test_package_version_matches_release_metadata(self) -> None:
+        self.assertEqual(jp_speech_eval.__version__, "1.6.0")
+        pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('version = "1.6.0"', pyproject)
 
     def test_hosted_demo_fast_start_contract(self) -> None:
         repo_root = ROOT.parent

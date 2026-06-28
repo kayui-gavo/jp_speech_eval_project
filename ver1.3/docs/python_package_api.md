@@ -1,23 +1,26 @@
 # Python package API
 
-This package exposes a small Python interface for integrating the speech evaluation pipeline into another project.
+The stable import name is `jp_speech_eval`. Version `1.6.0` exposes a small
+integration API while keeping research/debug metrics separate from learner UI.
 
-## Install locally
-
-From the repository root, enter the current package source directory and install it editable:
+## Install
 
 ```bash
-cd ver1.3
-python -m pip install -e .
+python -m pip install jp_speech_eval-1.6.0-py3-none-any.whl
+# Add local ASR support when needed:
+python -m pip install "jp_speech_eval-1.6.0-py3-none-any.whl[asr]"
 ```
 
-The directory name `ver1.3` is an internal project folder kept for compatibility. External callers should depend on the package/import name `jp_speech_eval`, not on the directory name.
+Runtime JSON defaults are bundled in the wheel. Fixed-reference audio caches
+remain external assets and must be supplied through `SpeechEvalConfig` or each
+request.
 
 ## Main import
 
 ```python
 from jp_speech_eval import (
     EvaluationRequest,
+    EvaluationResponse,
     SpeechEvalConfig,
     SpeechEvaluationClient,
     build_asr_confirmation,
@@ -25,103 +28,77 @@ from jp_speech_eval import (
 )
 ```
 
-## Fixed-reference evaluation
-
-Use this for known target sentences. This is the most reliable product path.
+## ASR-confirmed weak-reference evaluation
 
 ```python
-from jp_speech_eval import EvaluationRequest, SpeechEvalConfig, SpeechEvaluationClient
-
-client = SpeechEvaluationClient(
-    SpeechEvalConfig(
-        cache_path="cache/ramen_kudasai",
-        tts_backend="pyopenjtalk",
-    )
-)
-
+client = SpeechEvaluationClient()
 response = client.evaluate(
     EvaluationRequest(
-        audio_path="data/ramen.wav",
+        audio_path="user.wav",
+        mode="asr_confirmed_weak_reference",
+        user_confirmed_text="今日は大学で勉強しました",
+    )
+)
+```
+
+The application must let the user confirm or edit ASR text before evaluation.
+Weak-reference results are native-likeness/practice guidance, not strict pitch
+accent correctness.
+
+## Fixed-reference evaluation
+
+```python
+client = SpeechEvaluationClient(
+    SpeechEvalConfig(cache_path="sample_assets/cache/ramen_kudasai")
+)
+response = client.evaluate(
+    EvaluationRequest(
+        audio_path="sample_assets/data/ramen.wav",
         mode="reference",
         target_text="ラーメンをください",
     )
 )
-
-if response.ok:
-    print(response.user_facing["summary_text"])
-    print(response.user_facing["practice_score"])
 ```
-
-Product UI should use `response.user_facing`.
-
-`response.raw_result` is for developer/debug use only.
-
-## ASR-confirmed weak-reference flow
-
-ASR modes must be two-step.
-
-```python
-prompt = client.build_asr_confirmation("user_free_speech.wav")
-
-# Show prompt.prompt["editable_text"] to the user.
-# User confirms or edits the text in the app.
-
-response = client.evaluate(
-    EvaluationRequest(
-        audio_path="user_free_speech.wav",
-        mode="asr_confirmed_weak_reference",
-        user_confirmed_text="ラーメンをください",
-    )
-)
-```
-
-Rules:
-
-- ASR raw text must not become a scoring reference directly.
-- `user_confirmed_text` is required for weak-reference scoring.
-- Weak-reference feedback is practice support, not strict pronunciation correctness.
-
-## ASR + Kanade flow
-
-Kanade can be used as personalized reference playback, but it must not be treated as correctness scoring.
-
-```python
-response = client.evaluate(
-    EvaluationRequest(
-        audio_path="user_free_speech.wav",
-        mode="kanade_asr_voice_reference",
-        user_confirmed_text="ラーメンをください",
-    )
-)
-```
-
-Policy:
-
-- Kanade is playback/reference experience only.
-- Kanade output is excluded from pronunciation correctness.
-- Similarity to Kanade audio should not be shown as a score.
 
 ## Public response contract
 
+Product code must render `response.user_facing`, especially:
+
 ```python
 {
-    "ok": True,
-    "mode": "reference",
-    "user_facing": {
-        "status": "pass",
-        "practice_score": {"value": 93, "label": "良好"},
-        "summary_text": "全体としてよくできています。",
-        "primary_suggestion_text": None,
-        "mode_notice": "..."
+    "display_score": 82,
+    "dimension_scores": {
+        "pronunciation": 84,
+        "rhythm": 78,
+        "fluency": 86,
+        "pitch": 80,
     },
-    "raw_result": {...}
+    "dimension_confidence": {
+        "pronunciation": "medium",
+        "rhythm": "medium",
+        "fluency": "high",
+        "pitch": "medium",
+    },
+    "summary_text": "...",
+    "primary_suggestion_text": "...",
+    "mode_notice": "...",
 }
 ```
 
-## Current limitations
+Scores may be `None` when content or recording evidence is invalid. Never fall
+back from a missing user-facing score to `raw_result.total_score` or raw
+`prosody_score`.
 
-- `practice_score` is demo guidance, not validated pronunciation ability.
-- `total_score` and `prosody_score` are proxy/debug metrics.
-- Fixed-reference is currently the most reliable path.
-- ASR-generated reference requires user confirmation.
-- Kanade is playback reference only, not scoring ground truth.
+`response.raw_result` is intentionally retained for logs, diagnostics and
+research inspection. It is not the learner-facing contract.
+
+## Mode boundary
+
+| Mode | Intended use | Required external input |
+|---|---|---|
+| `asr_confirmed_weak_reference` | arbitrary Japanese practice | user-confirmed Japanese text |
+| `reference` | known-sentence practice | matching reference cache and target text |
+| `kanade_asr_voice_reference` | experimental personalized playback | source bundle, Kanade worker environment |
+
+Kanade audio is playback/reference experience only and is excluded from
+pronunciation correctness.

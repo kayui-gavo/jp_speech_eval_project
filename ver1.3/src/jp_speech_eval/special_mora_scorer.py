@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from .phonology import classify_mora_sequence
+from .package_assets import resolve_asset_path
 from .special_mora_profiles import SpecialMoraThresholdProfile, load_threshold_profile
 
 
@@ -28,7 +29,7 @@ SEVERE_MAPPING_WARNINGS = {
 
 
 def default_special_mora_threshold_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "results" / "calibration" / "special_mora_thresholds.json"
+    return resolve_asset_path("results/calibration/special_mora_thresholds.json")
 
 
 @dataclass(frozen=True)

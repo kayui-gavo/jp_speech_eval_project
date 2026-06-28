@@ -7,6 +7,8 @@ from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 
+from .package_assets import resolve_asset_path
+
 
 FEATURES = (
     "f0_coverage",
@@ -19,7 +21,7 @@ FEATURES = (
 
 
 def default_config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "pitch_naturalness_v2.json"
+    return resolve_asset_path("configs/pitch_naturalness_v2.json")
 
 
 @lru_cache(maxsize=4)
