@@ -1,17 +1,19 @@
-# jp_speech_eval 1.6.0 使用说明
+# jp_speech_eval 1.6.0 快速使用说明
 
-`jp_speech_eval` 是面向日语口语练习的 Python 评价模块。当前稳定接口可以返回：
+这是一个日语口语练习评分模块，可以输出四个参考分：
 
-- 发音清晰度 `pronunciation`
-- 节奏 / 特殊拍 `rhythm`
-- 流畅度 `fluency`
-- 音高变化 `pitch`
+| 维度 | 主要参考内容 |
+|---|---|
+| 发音清晰度 | 录音是否清楚、发音是否稳定 |
+| 节奏 / 特殊拍 | mora 时长、长音、促音、拨音等 |
+| 流畅度 | 语速、停顿和发声连续性 |
+| 音高变化 | 音高起伏是否自然、平稳 |
 
-四项均为练习参考分，不是考试分数或教师级发音判定。
+这些分数用于练习参考，不是考试成绩或教师判定。
 
 ## 1. 安装
 
-从交接压缩包安装：
+推荐使用 Python 3.11。
 
 ```bash
 python3.11 -m venv .venv
@@ -20,13 +22,13 @@ python -m pip install --upgrade pip
 python -m pip install wheels/jp_speech_eval-1.6.0-py3-none-any.whl
 ```
 
-自由发话需要本地 ASR 时，安装 ASR extra：
+如果需要模块自己进行 ASR 识别，改用：
 
 ```bash
 python -m pip install "wheels/jp_speech_eval-1.6.0-py3-none-any.whl[asr]"
 ```
 
-从 GitHub 源码安装：
+从 GitHub 源码安装时：
 
 ```bash
 git clone https://github.com/kayui-gavo/jp_speech_eval_project.git
@@ -34,50 +36,53 @@ cd jp_speech_eval_project/ver1.3
 python -m pip install -e ".[asr]"
 ```
 
-支持 Python `3.10`、`3.11`、`3.12`，推荐 `3.11`。
+## 2. 先运行自带示例
 
-## 2. 任意句练习：推荐接入方式
+交接包内已经附带示例音频和参考数据：
 
-任意句必须先得到并确认日语文本。不要把未经用户确认的 ASR 结果直接当作评分目标。
+```bash
+python examples/package_api_quickstart.py
+```
+
+正常情况下会看到总参考分、四维分数、可信度和一条练习建议。
+
+## 3. 自由说话评分
+
+自由说话需要先识别文本，再让用户确认。这样可以避免把英语或 ASR 识别错误当成日语评分。
 
 ```python
 from jp_speech_eval import EvaluationRequest, SpeechEvaluationClient
 
 client = SpeechEvaluationClient()
 
+# 第一步：识别文本
+prompt = client.build_asr_confirmation("user.wav")
+if not prompt.ok:
+    raise RuntimeError(prompt.error)
+
+# 在页面上显示这段文字，让用户确认或修改
+confirmed_text = prompt.prompt["editable_text"]
+
+# 第二步：根据确认后的日语文本评分
 response = client.evaluate(
     EvaluationRequest(
         audio_path="user.wav",
         mode="asr_confirmed_weak_reference",
-        user_confirmed_text="今日は大学で勉強しました",
+        user_confirmed_text=confirmed_text,
     )
 )
 
 if not response.ok:
     raise RuntimeError(response.error)
 
-result = response.user_facing
-print(result["display_score"])
-print(result["dimension_scores"])
-print(result["dimension_confidence"])
-print(result["summary_text"])
-print(result["primary_suggestion_text"])
+print(response.user_facing["dimension_scores"])
 ```
 
-本地 ASR 确认流程：
+如果其他系统已经完成 ASR 和文本确认，可以直接从第二步开始。
 
-```python
-prompt = client.build_asr_confirmation("user.wav")
-if not prompt.ok:
-    raise RuntimeError(prompt.error)
+## 4. 固定句朗读评分
 
-# 在 UI 中显示 prompt.prompt["editable_text"]，让用户确认或修改。
-confirmed_text = prompt.prompt["editable_text"]
-```
-
-## 3. 固定句朗读
-
-固定句需要对应的 reference cache。交接包中的示例资源包含“ラーメンをください”。
+固定句除了文字，还需要同一句话的参考 cache。交接包内附带“ラーメンをください”的示例。
 
 ```python
 from jp_speech_eval import EvaluationRequest, SpeechEvalConfig, SpeechEvaluationClient
@@ -93,70 +98,44 @@ response = client.evaluate(
         target_text="ラーメンをください",
     )
 )
+
+if not response.ok:
+    raise RuntimeError(response.error)
+
+print(response.user_facing["dimension_scores"])
 ```
 
-## 4. UI 应读取哪些字段
+## 5. 页面应该读取哪些字段
 
-只从 `response.user_facing` 渲染正式结果：
+正式页面只读取：
 
 ```python
-user = response.user_facing
+result = response.user_facing
 
-overall = user.get("display_score")
-dimensions = user.get("dimension_scores", {})
-confidence = user.get("dimension_confidence", {})
+overall = result["display_score"]
+scores = result["dimension_scores"]
+confidence = result["dimension_confidence"]
+summary = result["summary_text"]
+suggestion = result["primary_suggestion_text"]
+```
 
-cards = {
-    "发音清晰度": dimensions.get("pronunciation"),
-    "节奏 / 特殊拍": dimensions.get("rhythm"),
-    "流畅度": dimensions.get("fluency"),
-    "音高变化": dimensions.get("pitch"),
+`dimension_scores` 的内容如下：
+
+```python
+{
+    "pronunciation": 78,  # 发音清晰度
+    "rhythm": 69,         # 节奏 / 特殊拍
+    "fluency": 89,        # 流畅度
+    "pitch": 78,          # 音高变化
 }
 ```
 
-主要字段：
+`dimension_confidence` 表示每一项的判断依据是否充分。它不是分数，也不代表用户说得好或不好。
 
-| 字段 | 用途 |
-|---|---|
-| `display_score` | 本次练习总参考分；内容不匹配时可能为 `None` |
-| `dimension_scores` | 四维练习分，值为 `0..100` 或 `None` |
-| `dimension_confidence` | 四维证据等级，不等同于分数 |
-| `status` | `pass`、`practice_suggestion`、`retry` 或 `debug_only` |
-| `summary_text` | 一句总结 |
-| `primary_suggestion_text` | 最多一个主要练习建议 |
-| `mode_notice` | weak-reference / fixed-reference 的限制说明 |
-| `suppressed_reasons` | 隐藏或降级的原因 |
+## 6. 接入时只要记住三条
 
-严禁在 `display_score is None` 时回退显示 `raw_result.total_score`，也不要用 raw `prosody_score` 补上缺失的 `pitch`。
+1. 自由说话必须使用用户确认后的日语文本。
+2. 页面只显示 `user_facing`，不要直接显示 `raw_result`。
+3. 分数为 `None` 时显示“无法判断”，不要改成 `0`，也不要拿内部 raw score 补上。
 
-## 5. 什么时候不显示正式分数
-
-以下情况会隐藏或降级正式结果：
-
-- 英语、Latin-dominant 或明显非日语内容
-- 固定句模式下内容明显不匹配
-- 静音、严重噪声或录音无法形成有效语音证据
-
-短句和部分低证据音频会尽量返回四维练习数字，同时通过 `dimension_confidence` 和文案标明证据限制。调用端不要把 `low` confidence 隐藏成“高可信评分”。
-
-## 6. 调试数据边界
-
-`response.raw_result` 与 `response.user_facing["debug"]` 仅用于开发、日志和人工检查。普通用户界面不要直接展示：
-
-- raw total / pronunciation / prosody / fluency score
-- F0、DTW、alignment cost、内部阈值
-- `tone_score` 或 expression proxy
-
-## 7. 最小验证
-
-```bash
-python examples/package_api_quickstart.py
-```
-
-预期输出包括总参考分和四维分。接入前建议再运行：
-
-```bash
-python -m pytest tests/test_public_api.py tests/test_package_and_ui_contract.py -q
-```
-
-更完整的交接说明见 `docs/integration_handoff_zh.md`。
+更完整的字段边界、部署建议和已知限制见 `docs/integration_handoff_zh.md`。
