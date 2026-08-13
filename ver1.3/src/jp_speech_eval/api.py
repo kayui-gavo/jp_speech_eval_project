@@ -7,16 +7,20 @@ from typing import Any, Dict, Optional
 from .asr_confirmation import build_asr_confirmation_prompt
 from .eval_modes import evaluate_mode
 from .feedback_renderer import render_user_facing_result
+from .transcript_sanity import check_asr_transcript_sanity
+
+
+FIXED_REFERENCE_REQUEST_MODES = {
+    "reference",
+    "reference_based",
+    "reference_fixed_sentence",
+    "fixed_reference",
+}
 
 
 @dataclass(frozen=True)
 class SpeechEvalConfig:
-    """Stable configuration for external pipeline integration.
-
-    This is intentionally small. Heavy experiment knobs should stay in lower
-    level modules; app or pipeline code should mostly decide the mode, audio
-    path, target/cache, and optional TTS provider.
-    """
+    """Stable configuration for external pipeline integration."""
 
     cache_path: Optional[str] = "cache/ramen_kudasai"
     scoring_config_path: Optional[str] = None
@@ -61,11 +65,7 @@ class EvaluationRequest:
 
 @dataclass(frozen=True)
 class EvaluationResponse:
-    """Public response returned to external callers.
-
-    `user_facing` is the recommended object for product UI. `raw_result` keeps
-    current internal metrics for debugging and research inspection.
-    """
+    """Public response returned to external callers."""
 
     ok: bool
     mode: str
@@ -89,18 +89,73 @@ class AsrConfirmResponse:
         return asdict(self)
 
 
-class SpeechEvaluationClient:
-    """Small public SDK for calling the Japanese speech evaluation pipeline.
+def _product_fallback_after_target_mismatch(
+    raw: Dict[str, Any],
+    request: EvaluationRequest,
+    config: SpeechEvalConfig,
+) -> Dict[str, Any]:
+    """Use broad Japanese scoring when a fixed target mismatches but ASR is valid.
 
-    Typical usage:
-
-        client = SpeechEvaluationClient(SpeechEvalConfig(cache_path="cache/ramen_kudasai"))
-        response = client.evaluate(EvaluationRequest(audio_path="user.wav", mode="reference"))
-
-    ASR-based modes should be two-step:
-        1. `build_asr_confirmation(audio_path)` to show/edit candidate text.
-        2. `evaluate(..., mode="asr_confirmed_weak_reference", user_confirmed_text=...)`.
+    The fixed-reference result is still preserved as compact debug metadata. If
+    no plausible Japanese transcript is available, keep the original result and
+    let the normal user-facing policy decide how conservative to be.
     """
+
+    if str(request.mode or "").strip() not in FIXED_REFERENCE_REQUEST_MODES:
+        return raw
+    details = raw.get("details") if isinstance(raw.get("details"), dict) else {}
+    content = details.get("content_match") if isinstance(details.get("content_match"), dict) else {}
+    if str(content.get("status") or "") not in {"fail", "failed", "content_mismatch"}:
+        return raw
+
+    transcript = str(content.get("transcript") or "").strip()
+    if not transcript:
+        return raw
+    sanity = check_asr_transcript_sanity(transcript)
+    if not sanity.ok:
+        details["transcript_sanity"] = sanity.to_dict()
+        return raw
+
+    sample_rate = request.sample_rate or config.sample_rate
+    scoring_config_path = (
+        request.scoring_config_path
+        if request.scoring_config_path is not None
+        else config.scoring_config_path
+    )
+    general = evaluate_mode(
+        "transcript_assisted_light",
+        request.audio_path,
+        transcript=transcript,
+        scoring_config_path=scoring_config_path,
+        sample_rate=sample_rate,
+    )
+    general_details = general.setdefault("details", {})
+    general_details["mode"] = "reference_mismatch_general_japanese"
+    general_details["task_target_text"] = raw.get("target_text")
+    general_details["task_content_match"] = dict(content)
+    general_details["transcript_sanity"] = sanity.to_dict()
+    general_details["fallback_reason"] = "target_mismatch_but_plausible_japanese"
+    general_details["fixed_reference_debug"] = {
+        "pronunciation_score": raw.get("pronunciation_score"),
+        "prosody_score": raw.get("prosody_score"),
+        "fluency_score": raw.get("fluency_score"),
+        "total_score": raw.get("total_score"),
+        "alignment_mode": raw.get("alignment_mode"),
+    }
+    general_details["content_match"] = {
+        "status": "general_japanese",
+        "content_verified": True,
+        "transcript": transcript,
+        "note": "broad_scoring_after_fixed_target_mismatch",
+    }
+    general["feedback"] = [
+        "目標文とは違う内容でしたが、日本語として全体の話し方を評価しました。"
+    ] + list(general.get("feedback") or [])
+    return general
+
+
+class SpeechEvaluationClient:
+    """Small public SDK for calling the Japanese speech evaluation pipeline."""
 
     def __init__(self, config: SpeechEvalConfig | None = None) -> None:
         self.config = config or SpeechEvalConfig()
@@ -145,9 +200,11 @@ class SpeechEvaluationClient:
                 tts_prompt=request.tts_prompt if request.tts_prompt is not None else self.config.tts_prompt,
                 tts_language=request.tts_language or self.config.tts_language,
             )
+            raw = _product_fallback_after_target_mismatch(raw, request, self.config)
+            effective_mode = str(raw.get("details", {}).get("mode") or request.mode)
             user_facing = render_user_facing_result(
                 raw,
-                mode=request.mode,
+                mode=effective_mode,
                 special_mora_threshold_profile=self.config.special_mora_threshold_profile,
                 enable_runtime_special_mora_shadow=self.config.enable_runtime_special_mora_shadow,
                 enable_user_facing_calibrated_special_mora=self.config.enable_user_facing_calibrated_special_mora,
@@ -163,7 +220,7 @@ class SpeechEvaluationClient:
             )
         return EvaluationResponse(
             ok=True,
-            mode=str(raw.get("details", {}).get("mode") or request.mode),
+            mode=effective_mode,
             user_facing=user_facing,
             raw_result=raw,
         )
