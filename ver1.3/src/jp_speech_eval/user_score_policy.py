@@ -11,6 +11,14 @@ def _score(value: Any, default: float = 0.0) -> float:
     return max(0.0, min(100.0, number))
 
 
+def _unit_score(value: Any, default: float = 1.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, number))
+
+
 def _round_score(value: Optional[float]) -> Optional[int]:
     if value is None:
         return None
@@ -30,16 +38,8 @@ def _is_user_facing_special_mora(decision: Mapping[str, Any]) -> bool:
 
 
 def _smooth_product_score(pronunciation: float, rhythm: float, fluency: float) -> float:
-    """Consumer-facing score mapping.
-
-    Keep the mapping continuous and monotonic. Reliability controls feedback
-    granularity; it should not create score cliffs for otherwise valid Japanese
-    speech. The pronunciation proxy remains the largest component while rhythm
-    and delivery provide useful spread for the MVP.
-    """
+    """Continuous consumer-facing score mapping without discrete caps."""
     raw = 0.58 * pronunciation + 0.22 * rhythm + 0.20 * fluency
-    # Gentle center expansion gives learners visible progress without discrete
-    # 60/65/75/80 caps. Extremes remain bounded naturally by [0, 100].
     centered = 70.0 + 1.10 * (raw - 70.0)
     return max(0.0, min(100.0, centered))
 
@@ -50,14 +50,7 @@ def apply_user_score_policy(
     mode: str = "fixed_reference",
     special_mora_decisions: Optional[List[Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Compute product-facing practice scores.
-
-    Product rule: if the utterance is valid Japanese speech, return a practice
-    score even when alignment/F0/reference evidence is weak. Reliability only
-    controls detailed feedback. Truly unusable input (no speech / severe
-    recording failure / explicit non-Japanese sanity rejection) may remain
-    unscorable.
-    """
+    """Compute product-facing practice scores with graceful degradation."""
     details = raw_result.get("details") if isinstance(raw_result.get("details"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
@@ -95,13 +88,14 @@ def apply_user_score_policy(
     mora_count = len(raw_result.get("moras") or [])
 
     reliability_level = str(reliability.get("level") or "medium")
-    reliability_overall = float(reliability.get("overall", 0.0) or 0.0)
-    alignment_confidence = float(reliability.get("alignment", 1.0) or 0.0)
-    recording_score = float(recording.get("score", reliability.get("recording_quality", 1.0)) or 1.0)
+    reliability_overall = _unit_score(reliability.get("overall"), default=0.0)
+    alignment_confidence = _unit_score(reliability.get("alignment"), default=1.0)
+    recording_value = recording.get("score")
+    if recording_value is None:
+        recording_value = reliability.get("recording_quality")
+    recording_score = _unit_score(recording_value, default=1.0)
     confidence_label = "high" if reliability_overall >= 0.85 and reliability_level != "low" else "medium" if reliability_overall >= 0.45 else "low"
 
-    # Only reject explicit unusable/non-Japanese input. A target mismatch is not
-    # a pronunciation failure; callers can show task/content feedback separately.
     sanity_ok = sanity.get("ok")
     if sanity_ok is False:
         warnings.append("transcript_sanity_failed_no_score")
@@ -131,8 +125,6 @@ def apply_user_score_policy(
             "inputs": {"mode": mode, "content_status": content_status},
         }
 
-    # Severe recording failure can still be unscorable; ordinary noisy mobile
-    # recordings receive a score with reduced confidence.
     if recording_score < 0.20:
         warnings.append("recording_unusable_no_score")
         gate_state.update({
@@ -162,8 +154,6 @@ def apply_user_score_policy(
         }
 
     if special_mora_decisions and any(_is_user_facing_special_mora(item) for item in special_mora_decisions):
-        # Local feedback should move the score only gently; the same evidence is
-        # primarily used to produce an actionable suggestion.
         pronunciation = max(0.0, pronunciation - 4.0)
         warnings.append("special_mora_soft_penalty")
 
@@ -176,8 +166,6 @@ def apply_user_score_policy(
         gate_state["target_match_ok"] = False
         gate_state["user_message_type"] = "content_mismatch_general_score"
         gate_state["reasons"].append("target_content_mismatch_general_score")
-        # Do not expose target-local pronunciation details when the user said a
-        # different Japanese sentence. Keep broad score + task feedback.
         pronunciation_clarity = None
         detail_feedback_allowed = False
         confidence_label = _confidence_at_most(confidence_label, "medium")
@@ -216,13 +204,11 @@ def apply_user_score_policy(
         warnings.append("short_utterance_broad_score_only")
         detail_feedback_allowed = False
 
-    if content_status in {"pass", "unknown"}:
+    if content_status in {"pass", "unknown", "general_japanese"}:
         content_completion = 100.0
     elif content_status in {"marginal", "partial", "uncertain"}:
         content_completion = 80.0
     else:
-        # Different Japanese content still counts as a completed speaking attempt;
-        # task success is shown separately.
         content_completion = 65.0
     practice_completion = 0.50 * content_completion + 0.30 * _score(recording_score * 100.0) + 0.20 * _score(reliability_overall * 100.0)
 
