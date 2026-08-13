@@ -60,6 +60,14 @@
     "asr_policy": "always",
     "asr_provider": "auto",
     "asr_model": "small",
+    "cascade_policy": "disabled",
+    "cascade_base_model": "base",
+    "cascade_rescue_model": "small",
+    "cascade_rescue_similarity_floor": 0.6,
     "dynamic_reference_sanity_gate": true
+  },
+  "product_score_v3": {
+    "enabled": false,
+    "candidate_only": true
   }
 }

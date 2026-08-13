@@ -68,6 +68,52 @@ def aggregate_reference_distances(distances: Iterable[float], strategy: str = "m
     raise ValueError(f"unknown reference aggregation strategy: {strategy}")
 
 
+def robust_distance_normalize(distance: float, native_distances: Iterable[float], *, mad_floor: float = 1e-4) -> Dict[str, float]:
+    """Normalise one SSL distance using native-reference median/MAD.
+
+    The values remain distances; this only puts layer 12 and layer 24 on a
+    comparable native-relative scale before a fusion experiment.  It is not a
+    learner-score mapping and must be fit on a development/native panel only.
+    """
+    values = np.asarray([float(item) for item in native_distances if np.isfinite(item)], dtype=float)
+    if not values.size:
+        raise ValueError("native distances are required for robust normalization")
+    median = float(np.median(values))
+    mad = max(float(np.median(np.abs(values - median))), float(mad_floor))
+    return {
+        "distance": float(distance),
+        "native_median": median,
+        "native_mad": mad,
+        "normalized_distance": float((float(distance) - median) / mad),
+    }
+
+
+def fuse_layer_distances(
+    distance_12: float,
+    distance_24: float,
+    *,
+    native_12: Iterable[float],
+    native_24: Iterable[float],
+    alpha: float = 0.5,
+) -> Dict[str, float]:
+    """Fuse robust-normalised WavLM layer-12 and layer-24 distances."""
+    alpha = float(np.clip(alpha, 0.0, 1.0))
+    first = robust_distance_normalize(distance_12, native_12)
+    second = robust_distance_normalize(distance_24, native_24)
+    return {
+        "alpha_layer12": alpha,
+        "distance_layer12": float(distance_12),
+        "distance_layer24": float(distance_24),
+        "normalized_distance_layer12": first["normalized_distance"],
+        "normalized_distance_layer24": second["normalized_distance"],
+        "fused_normalized_distance": float(alpha * first["normalized_distance"] + (1.0 - alpha) * second["normalized_distance"]),
+        "layer12_native_median": first["native_median"],
+        "layer12_native_mad": first["native_mad"],
+        "layer24_native_median": second["native_median"],
+        "layer24_native_mad": second["native_mad"],
+    }
+
+
 class SSLFeatureExtractor:
     """Lazy Hugging Face WavLM/HubERT extractor.
 
@@ -79,9 +125,15 @@ class SSLFeatureExtractor:
         self,
         model_id: str = DEFAULT_SSL_MODEL,
         device: Optional[str] = None,
+        local_files_only: bool = True,
     ) -> None:
         self.model_id = model_id
         self.device = device
+        # Shadows must not make an ordinary product/test invocation download a
+        # multi-GB checkpoint.  A benchmark may explicitly provide a local
+        # snapshot; an unavailable snapshot is reported as a normal shadow
+        # failure by its caller.
+        self.local_files_only = bool(local_files_only)
         self.model = None
         self.processor = None
         self.num_layers = 0
@@ -101,8 +153,12 @@ class SSLFeatureExtractor:
             # WavLM checkpoints expose an audio feature extractor, not a
             # tokenizer-backed processor.  AutoProcessor fails for the official
             # microsoft/wavlm-large checkpoint on current transformers.
-            self.processor = AutoFeatureExtractor.from_pretrained(self.model_id)
-            self.model = AutoModel.from_pretrained(self.model_id, output_hidden_states=True)
+            self.processor = AutoFeatureExtractor.from_pretrained(
+                self.model_id, local_files_only=self.local_files_only,
+            )
+            self.model = AutoModel.from_pretrained(
+                self.model_id, output_hidden_states=True, local_files_only=self.local_files_only,
+            )
         except Exception as exc:
             raise RuntimeError(f"Failed to load SSL checkpoint {self.model_id}: {exc}") from exc
         self.model.to(self.device)

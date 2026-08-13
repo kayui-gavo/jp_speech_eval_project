@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Dict
 
 import librosa
@@ -267,4 +267,62 @@ def estimate_content_match(
         verification_level="acoustic_likely" if status == "pass" else "uncertain" if status == "uncertain" else "unavailable",
         method="mfcc_dtw_reference_gate",
         note=note,
+    )
+
+
+def estimate_content_match_base_first_cascade(
+    cache: SentenceCache,
+    y_speech: np.ndarray,
+    sr: int,
+    *,
+    base_model: str = "base",
+    rescue_model: str = "small",
+    rescue_similarity_floor: float = 0.60,
+    asr_provider: str = "auto",
+) -> ContentMatch:
+    """Candidate-only base-first content verification cascade.
+
+    A base verification is accepted immediately.  A base mismatch normally
+    becomes broad fallback; ``small`` is invoked only for a transcript that is
+    materially close to the target, which is the observable conflict case in
+    the development panel.  The returned ``note`` is audit telemetry, so the
+    caller can measure rescue frequency and latency without changing the
+    meaning of :class:`ContentMatch`.
+    """
+    base = estimate_content_match(
+        cache,
+        y_speech,
+        sr,
+        use_asr=True,
+        asr_policy="always",
+        asr_model=base_model,
+        asr_provider=asr_provider,
+    )
+    if base.content_verified:
+        return replace(base, method="base_first_cascade", note=f"base_verified_direct:{base.note}")
+    if base.kana_similarity < float(rescue_similarity_floor):
+        return replace(
+            base,
+            method="base_first_cascade",
+            note=(
+                "base_mismatch_direct_broad:"
+                f"similarity={base.kana_similarity:.4f}<rescue_floor={float(rescue_similarity_floor):.4f};{base.note}"
+            ),
+        )
+    rescued = estimate_content_match(
+        cache,
+        y_speech,
+        sr,
+        use_asr=True,
+        asr_policy="always",
+        asr_model=rescue_model,
+        asr_provider=asr_provider,
+    )
+    return replace(
+        rescued,
+        method="base_first_selective_small_rescue",
+        note=(
+            "small_rescue_after_base_near_mismatch:"
+            f"base_similarity={base.kana_similarity:.4f};{rescued.note}"
+        ),
     )

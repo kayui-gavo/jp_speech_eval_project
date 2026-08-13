@@ -74,6 +74,17 @@ DEFAULT_SCORING_CONFIG: Dict[str, Any] = {
         "asr_policy": "always",
         "asr_provider": "auto",
         "asr_model": "small",
+        # v3 experiment only; the production default remains always-small.
+        "cascade_policy": "disabled",
+        "cascade_base_model": "base",
+        "cascade_rescue_model": "small",
+        "cascade_rescue_similarity_floor": 0.60,
+    },
+    "product_score_v3": {
+        # Candidate is deliberately default-off.  It never replaces v2
+        # display_score; benchmark callers opt in through scoring JSON.
+        "enabled": False,
+        "candidate_only": True,
     },
 }
 

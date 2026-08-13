@@ -8,7 +8,11 @@ from jp_speech_eval.prosody_shadows import (
 )
 from jp_speech_eval.shadow_assessment import run_assessment_shadows
 from jp_speech_eval.special_mora_shadow_v2 import compute_special_mora_v2_shadow
-from jp_speech_eval.ssl_features import aggregate_reference_distances, cosine_dtw_distance
+from jp_speech_eval.ssl_features import (
+    aggregate_reference_distances,
+    cosine_dtw_distance,
+    fuse_layer_distances,
+)
 from jp_speech_eval.unified_result import unify_evaluation_result
 
 
@@ -43,6 +47,18 @@ def test_ssl_multi_reference_aggregation_is_explicit():
     assert aggregate_reference_distances(values, "median") == 0.2
     assert aggregate_reference_distances(values, "nearest") == 0.1
     assert aggregate_reference_distances(values, "top_k_mean", top_k=2) == pytest.approx(0.15)
+
+
+def test_ssl_layer_fusion_is_native_normalized_before_weighting():
+    fused = fuse_layer_distances(
+        .24, .42,
+        native_12=[.18, .20, .22], native_24=[.30, .32, .34], alpha=.5,
+    )
+    assert fused["normalized_distance_layer12"] > 0
+    assert fused["normalized_distance_layer24"] > 0
+    assert fused["fused_normalized_distance"] == pytest.approx(
+        (fused["normalized_distance_layer12"] + fused["normalized_distance_layer24"]) / 2
+    )
 
 
 def test_local_special_mora_shadow_is_structured_and_not_user_facing():

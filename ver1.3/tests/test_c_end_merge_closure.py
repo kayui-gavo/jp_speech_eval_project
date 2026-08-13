@@ -16,14 +16,22 @@ def test_default_json_content_match_does_not_drift_from_default_config():
     config = Path(__file__).resolve().parents[1] / "configs" / "scoring_config.json"
     loaded = json.loads(config.read_text(encoding="utf-8"))["content_match"]
     default = DEFAULT_SCORING_CONFIG["content_match"]
-    for field in ("enabled", "use_asr", "asr_policy", "asr_provider", "asr_model"):
+    for field in (
+        "enabled", "use_asr", "asr_policy", "asr_provider", "asr_model",
+        "cascade_policy", "cascade_base_model", "cascade_rescue_model",
+        "cascade_rescue_similarity_floor",
+    ):
         assert loaded[field] == default[field]
 
 
 def test_language_eligibility_accepts_short_kanji_and_katakana_japanese():
-    for transcript in ("はい", "いいえ", "寿司", "東京", "ラーメン", "コーヒー", "ありがとうございます"):
+    for transcript in (
+        "はい", "いいえ", "寿司", "東京", "ラーメン", "コーヒー", "ありがとうございます",
+        "東京大学", "新宿駅東口", "日本語能力試験", "人工知能研究", "大学院入学試験",
+    ):
         result = _fallback_language_eligibility(transcript, speech_detected=True, f0_coverage=.8, evidence=_evidence("ja"))
         assert result["ok"], transcript
+        assert result["eligibility"] == "eligible"
     # Inconclusive language ID retains a conservative Japanese route rather
     # than rejecting a valid kanji-only utterance by script type.
     assert _fallback_language_eligibility("東京", speech_detected=True, f0_coverage=.8, evidence=_evidence("", None, False))["ok"]
@@ -40,7 +48,7 @@ def test_language_eligibility_rejects_non_japanese_and_nonvoice_controls():
     # keep it out of the broad Japanese scoring route.
     ambiguous = _fallback_language_eligibility("全地化普通クコ", speech_detected=True, f0_coverage=.8, evidence=_evidence("ja"))
     assert not ambiguous["ok"]
-    assert ambiguous["reason"] == "ambiguous_japanese_transcript"
+    assert ambiguous["reason"] == "joint_asr_hallucination_evidence"
     for name in ("silence", "white noise", "pink noise"):
         assert not _fallback_language_eligibility(name, speech_detected=False, f0_coverage=0.0, evidence=_evidence("ja"))["ok"]
 

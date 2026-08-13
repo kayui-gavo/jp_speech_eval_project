@@ -33,15 +33,15 @@ def _has_japanese_script(text: str) -> bool:
 
 
 def _japanese_transcript_morphology(text: str) -> Dict[str, Any]:
-    """Return a conservative lexical-coherence check for broad fallback.
+    """Return lexical evidence for broad-fallback eligibility.
 
-    The Japanese-biased ASR can turn non-Japanese speech into plausible-looking
-    kanji/kana.  Script presence alone cannot distinguish that failure from a
-    valid utterance such as ``寿司`` or ``東京``.  OpenJTalk's frontend lets us
-    distinguish one short lexical item (allowed) from a multi-token string
-    containing only content fragments and no grammatical continuation
-    (conservatively unavailable).  This is a fallback *eligibility* check,
-    never a pronunciation or target-content score.
+    This is deliberately evidence, not a grammaticality veto.  Japanese
+    fixed-reading prompts can be valid noun phrases (``東京大学`` or
+    ``大学院入学試験``), so an absence of a particle or verb cannot make the
+    utterance ineligible by itself.  The only negative signal retained here is
+    a very specific fragmented-token pattern observed in forced-Japanese ASR
+    hallucinations; it must still be combined with voice and ASR evidence by
+    :func:`_fallback_language_eligibility`.
     """
     try:
         import pyopenjtalk
@@ -50,22 +50,33 @@ def _japanese_transcript_morphology(text: str) -> Dict[str, Any]:
     except Exception as exc:
         # Preserve the existing route if the optional text frontend is not
         # available; ASR language evidence still participates in eligibility.
-        return {"available": False, "ok": True, "reason": f"frontend_unavailable:{type(exc).__name__}", "token_count": 0, "pos": []}
+        return {
+            "available": False,
+            "lexically_coherent": None,
+            "reason": f"frontend_unavailable:{type(exc).__name__}",
+            "token_count": 0,
+            "pos": [],
+        }
 
-    pos = [str(token.get("pos") or "") for token in tokens]
-    content = [item for item in pos if item and item != "記号"]
-    function_pos = {"助詞", "助動詞", "動詞", "形容詞", "副詞", "連体詞", "感動詞"}
-    # Single lexical words are legitimate fixed-reading answers (e.g. 寿司,
-    # 東京, ラーメン, コーヒー).  Multi-token fallback text needs at least one
-    # grammatical/utterance-bearing token; otherwise it is too ambiguous to
-    # turn into a broad Japanese pseudo-reference safely.
-    ok = len(content) == 1 or any(item in function_pos for item in content)
+    content_tokens = [token for token in tokens if str(token.get("pos") or "") != "記号"]
+    pos = [str(token.get("pos") or "") for token in content_tokens]
+    # Do not reject ordinary multi-token noun compounds.  This narrow pattern
+    # catches the known forced-Japanese Mandarin hallucination (a one-character
+    # prefix followed by fragmented content words) without treating ordinary
+    # nominal phrases as ungrammatical.
+    first = content_tokens[0] if content_tokens else {}
+    suspicious_fragment_sequence = (
+        len(content_tokens) >= 4
+        and str(first.get("pos") or "") == "接頭詞"
+        and len(str(first.get("string") or "")) <= 1
+    )
     return {
         "available": True,
-        "ok": ok,
-        "reason": "lexically_coherent" if ok else "ambiguous_content_word_sequence",
-        "token_count": len(content),
-        "pos": content,
+        "lexically_coherent": not suspicious_fragment_sequence,
+        "reason": "lexically_coherent" if not suspicious_fragment_sequence else "suspicious_fragment_sequence",
+        "token_count": len(content_tokens),
+        "pos": pos,
+        "tokens": [str(token.get("string") or "") for token in content_tokens],
     }
 
 
@@ -80,9 +91,10 @@ def _fallback_language_eligibility(
 
     Unforced ASR language evidence can reject a confident non-Japanese
     observation, but short-utterance language ID is not assumed infallible.
-    If it is inconclusive, lexical coherence plus Japanese-compatible text can
-    retain a conservative fallback rather than rejecting legitimate short
-    kanji- or katakana-only Japanese by script type.
+    If it is inconclusive, this returns ``uncertain`` rather than treating
+    morphology as a final veto.  Callers may retain a broad score with reduced
+    confidence for that state; only clear non-speech/non-Japanese or a joint
+    hallucination signal is ineligible.
     """
     language = str(evidence.language or "").lower()
     probability = evidence.language_probability
@@ -93,20 +105,33 @@ def _fallback_language_eligibility(
     voiced = bool(speech_detected) or float(f0_coverage) >= 0.10
     script_compatible = _has_japanese_script(transcript)
     morphology = _japanese_transcript_morphology(transcript)
+    payload = {
+        "language": language,
+        "language_probability": probability,
+        "speech_present": bool(speech_detected),
+        "voice_evidence": float(f0_coverage) >= 0.10,
+        "script_compatible": script_compatible,
+        "morphology": morphology,
+    }
     if not voiced:
-        return {"ok": False, "reason": "insufficient_voiced_speech_evidence", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
-    if evidence.available and language == "ja" and (probability is None or probability >= 0.35):
-        if not morphology["ok"]:
-            return {"ok": False, "reason": "ambiguous_japanese_transcript", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
-        return {"ok": True, "reason": "detected_japanese", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+        return {"ok": False, "eligibility": "ineligible", "reason": "insufficient_voiced_speech_evidence", **payload}
     # Short utterance language labels below 0.70 are empirically unstable on
     # this backend.  They are evidence, not a veto against short Japanese
     # words; a confident non-Japanese label remains a safety rejection.
     if evidence.available and language and language != "ja" and (probability is None or probability >= 0.70):
-        return {"ok": False, "reason": "detected_non_japanese", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
-    if script_compatible and morphology["ok"]:
-        return {"ok": True, "reason": "inconclusive_language_conservative_japanese", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
-    return {"ok": False, "reason": "no_safe_japanese_language_evidence", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+        return {"ok": False, "eligibility": "ineligible", "reason": "detected_non_japanese", **payload}
+    if (
+        evidence.available
+        and language == "ja"
+        and (probability is None or probability >= 0.35)
+        and morphology.get("lexically_coherent") is False
+    ):
+        return {"ok": False, "eligibility": "ineligible", "reason": "joint_asr_hallucination_evidence", **payload}
+    if evidence.available and language == "ja" and (probability is None or probability >= 0.35):
+        return {"ok": True, "eligibility": "eligible", "reason": "detected_japanese", **payload}
+    if script_compatible:
+        return {"ok": True, "eligibility": "uncertain", "reason": "inconclusive_language_japanese_compatible", **payload}
+    return {"ok": False, "eligibility": "ineligible", "reason": "no_safe_japanese_language_evidence", **payload}
 
 
 def _fallback_language_evidence(audio_path: str, sample_rate: int, model_name: str = "small") -> tuple[bool, AsrTranscript]:

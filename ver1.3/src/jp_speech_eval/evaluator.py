@@ -17,9 +17,10 @@ from .audio_features import (
     median_f0_by_mora,
 )
 from .config import load_scoring_config
-from .content_match import estimate_content_match
+from .content_match import estimate_content_match, estimate_content_match_base_first_cascade
 from .feedback_policy import FeedbackDecision, choose_feedback
 from .mora_evidence import build_mora_evidence
+from .product_score_v3 import build_product_score_v3_candidate
 from .recording_quality import assess_recording_quality
 from .scoring import (
     score_fluency,
@@ -355,15 +356,29 @@ def evaluate_utterance(
     ts = time.perf_counter()
     content_cfg = config.get("content_match", {})
     should_use_content_match = bool(content_cfg.get("enabled", True)) if use_content_match is None else bool(use_content_match)
-    content_match = estimate_content_match(
-        cache,
-        y_speech,
-        audio.sr,
-        use_asr=bool(content_cfg.get("use_asr", True)),
-        asr_policy=str(content_cfg.get("asr_policy", "if_acoustic_uncertain")),
-        asr_model=str(content_cfg.get("asr_model", "small")),
-        asr_provider=str(content_cfg.get("asr_provider", "auto")),
-    ) if cache and should_use_content_match else None
+    cascade_policy = str(content_cfg.get("cascade_policy", "disabled")).strip().lower()
+    if cache and should_use_content_match and cascade_policy == "base_first_selective_small_rescue":
+        content_match = estimate_content_match_base_first_cascade(
+            cache,
+            y_speech,
+            audio.sr,
+            base_model=str(content_cfg.get("cascade_base_model", "base")),
+            rescue_model=str(content_cfg.get("cascade_rescue_model", "small")),
+            rescue_similarity_floor=float(content_cfg.get("cascade_rescue_similarity_floor", 0.60)),
+            asr_provider=str(content_cfg.get("asr_provider", "auto")),
+        )
+    elif cache and should_use_content_match:
+        content_match = estimate_content_match(
+            cache,
+            y_speech,
+            audio.sr,
+            use_asr=bool(content_cfg.get("use_asr", True)),
+            asr_policy=str(content_cfg.get("asr_policy", "if_acoustic_uncertain")),
+            asr_model=str(content_cfg.get("asr_model", "small")),
+            asr_provider=str(content_cfg.get("asr_provider", "auto")),
+        )
+    else:
+        content_match = None
     timing["content_match"] = time.perf_counter() - ts
 
     ts = time.perf_counter()
@@ -532,6 +547,23 @@ def evaluate_utterance(
         "pitch_target_consistency": prosody_details.get("pitch_target_consistency", "unknown"),
     }
 
+    v3_candidate = None
+    if bool(config.get("product_score_v3", {}).get("enabled", False)):
+        # This is strictly raw-result telemetry.  The product renderer continues
+        # to consume v2 scores even when a benchmark enables this flag.
+        v3_candidate = build_product_score_v3_candidate(
+            alignment_mode=alignment_mode,
+            boundaries=boundaries,
+            reference_boundaries=cache.meta.ref_mora_boundaries if cache else None,
+            user_duration_sec=active_duration,
+            reference_duration_sec=cache.meta.ref_duration_sec if cache else None,
+            pause_info=pause_info,
+            legacy_pronunciation_score=pronunciation_score,
+            legacy_prosody_score=prosody_score,
+            f0_coverage=float(reliability.get("f0_coverage", 0.0) or 0.0),
+            alignment_confidence=float(reliability.get("alignment", 0.0) or 0.0),
+        )
+
     timing["total"] = time.perf_counter() - t0
     timing = {k: round(float(v), 6) for k, v in timing.items()}
 
@@ -614,6 +646,7 @@ def evaluate_utterance(
                 "continuous_rhythm_deviation": pron_details.get("mora_duration_cv"),
                 "special_mora_penalty": pron_details.get("special_mora_penalty"),
             },
+            "product_score_v3_candidate": v3_candidate,
             "tone": tone_details,
         },
         mora_table=mora_table,
