@@ -1,0 +1,8 @@
+sample_id,wav_path,control_type,generation,score_available,display_score,status,content_status,verification_level,asr_transcript,error
+silence,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/silence.wav,synthetic_engineering_control,numpy,False,,practice_suggestion,fail,mismatch,,
+white_noise,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/white_noise.wav,synthetic_engineering_control,numpy,False,,practice_suggestion,fail,mismatch,ご視聴ありがとうございました,
+pink_like_noise,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/pink_like_noise.wav,synthetic_engineering_control,numpy,False,,practice_suggestion,fail,mismatch,ご視聴ありがとうございました,
+tone_hum,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/tone_hum.wav,synthetic_engineering_control,numpy,False,,practice_suggestion,fail,mismatch,ん,
+burst_noise,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/burst_noise.wav,synthetic_engineering_control,numpy,False,,practice_suggestion,fail,mismatch,,
+english_tts,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/english_tts.wav,synthetic_engineering_control,macos_say:Alex,False,,practice_suggestion,fail,mismatch,This is an English test sentence.,
+mandarin_tts,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/mandarin_tts.wav,synthetic_engineering_control,macos_say:Ting-Ting,False,,practice_suggestion,fail,mismatch,全地化普通クコ,

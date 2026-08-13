@@ -67,7 +67,11 @@ DEFAULT_SCORING_CONFIG: Dict[str, Any] = {
     "content_match": {
         "enabled": True,
         "use_asr": True,
-        "asr_policy": "if_acoustic_uncertain",
+        # Content v2 hard-mismatch benchmark: duration-matched wrong Japanese
+        # sentences passed acoustic-only 49/50 times, whereas Whisper small had
+        # zero false verification on that set.  MFCC remains a diagnostic and
+        # provisional evidence source, never a text-verification substitute.
+        "asr_policy": "always",
         "asr_provider": "auto",
         "asr_model": "small",
     },

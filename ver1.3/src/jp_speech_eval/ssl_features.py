@@ -7,7 +7,7 @@ pronunciation scores.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 
@@ -29,28 +29,15 @@ def cosine_dtw_distance(reference: np.ndarray, user: np.ndarray) -> Dict[str, fl
     hyp = normalize_ssl_frames(user)
     if not len(ref) or not len(hyp):
         raise ValueError("SSL DTW requires non-empty frame sequences")
-    previous = np.full(len(hyp) + 1, np.inf, dtype=np.float64)
-    previous[0] = 0.0
-    path_lengths = np.zeros(len(hyp) + 1, dtype=np.int32)
-    for ref_frame in ref:
-        current = np.full(len(hyp) + 1, np.inf, dtype=np.float64)
-        current_lengths = np.zeros(len(hyp) + 1, dtype=np.int32)
-        costs = 1.0 - np.clip(hyp @ ref_frame, -1.0, 1.0)
-        for j, cost in enumerate(costs, start=1):
-            options = (previous[j], current[j - 1], previous[j - 1])
-            choice = int(np.argmin(options))
-            parent_length = (
-                path_lengths[j]
-                if choice == 0
-                else current_lengths[j - 1]
-                if choice == 1
-                else path_lengths[j - 1]
-            )
-            current[j] = options[choice] + float(cost)
-            current_lengths[j] = parent_length + 1
-        previous, path_lengths = current, current_lengths
-    path_length = int(path_lengths[-1])
-    cumulative = float(previous[-1])
+    # The former Python nested loop made a 20-sentence layer sweep effectively
+    # unusable. librosa's tested DTW backend preserves the same cosine cost and
+    # path-normalized definition while avoiding per-cell Python dispatch.
+    import librosa
+
+    costs = 1.0 - np.clip(ref @ hyp.T, -1.0, 1.0)
+    accumulated, path = librosa.sequence.dtw(C=costs, backtrack=True)
+    path_length = int(len(path))
+    cumulative = float(accumulated[-1, -1])
     return {
         "normalized_cumulative_distance": cumulative / max(path_length, 1),
         "cumulative_distance": cumulative,
@@ -58,6 +45,27 @@ def cosine_dtw_distance(reference: np.ndarray, user: np.ndarray) -> Dict[str, fl
         "reference_frame_count": int(len(ref)),
         "user_frame_count": int(len(hyp)),
     }
+
+
+def aggregate_reference_distances(distances: Iterable[float], strategy: str = "median", top_k: int = 2) -> float:
+    """Aggregate already-computed reference distances for audit-only studies."""
+    values = np.asarray([float(value) for value in distances if np.isfinite(value)], dtype=float)
+    if not values.size:
+        raise ValueError("at least one finite SSL distance is required")
+    strategy = str(strategy).lower()
+    if strategy == "mean":
+        return float(np.mean(values))
+    if strategy == "median":
+        return float(np.median(values))
+    if strategy == "trimmed_mean":
+        ordered = np.sort(values)
+        trim = int(len(ordered) * 0.2)
+        return float(np.mean(ordered[trim:len(ordered) - trim] if len(ordered) - 2 * trim else ordered))
+    if strategy == "nearest":
+        return float(np.min(values))
+    if strategy == "top_k_mean":
+        return float(np.mean(np.sort(values)[:max(1, min(int(top_k), len(values)))]))
+    raise ValueError(f"unknown reference aggregation strategy: {strategy}")
 
 
 class SSLFeatureExtractor:

@@ -581,6 +581,9 @@ def evaluate_utterance(
             "pronunciation": pron_details,
             "prosody": prosody_details,
             "prosody_metrics": prosody_metrics,
+            "reference_f0_by_mora": [
+                _none_if_nan(value) for value in (ref_f0_mora if ref_f0_mora is not None else [])
+            ],
             "aggregate": {
                 "weights": aggregate_weights,
                 "score_interpretation": "pronunciation_oriented_total_excludes_expression_style_when_tone_weight_is_zero",
@@ -594,6 +597,23 @@ def evaluate_utterance(
             "reference_voice": cache.meta.reference_voice if cache else None,
             "reference_config_hash": cache.meta.reference_config_hash if cache else None,
             "fluency": fluency_details,
+            # Continuous audit evidence is intentionally separate from the
+            # clamped product dimensions.  Calibration studies can therefore
+            # diagnose saturation without changing learner-facing scoring.
+            "calibration_features": {
+                "mora_duration_cv": pron_details.get("mora_duration_cv"),
+                "speech_rate_mora_per_sec": fluency_details.get("speech_rate_mora_per_sec"),
+                "distance_from_target_rate_range": min(
+                    abs(float(fluency_details.get("speech_rate_mora_per_sec", 0.0)) - float(config["fluency"]["target_mora_per_sec_min"])),
+                    abs(float(fluency_details.get("speech_rate_mora_per_sec", 0.0)) - float(config["fluency"]["target_mora_per_sec_max"])),
+                ) if not (float(config["fluency"]["target_mora_per_sec_min"]) <= float(fluency_details.get("speech_rate_mora_per_sec", 0.0)) <= float(config["fluency"]["target_mora_per_sec_max"])) else 0.0,
+                "pause_ratio": pause_info.get("pause_ratio"),
+                "pause_count": pause_info.get("pause_count"),
+                "pause_excess": max(0.0, float(pause_info.get("pause_ratio", 0.0)) - 0.18),
+                "pause_density": float(pause_info.get("pause_count", 0)) / max(float(active_duration), 1e-6),
+                "continuous_rhythm_deviation": pron_details.get("mora_duration_cv"),
+                "special_mora_penalty": pron_details.get("special_mora_penalty"),
+            },
             "tone": tone_details,
         },
         mora_table=mora_table,

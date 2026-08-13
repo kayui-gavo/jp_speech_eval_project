@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from unittest.mock import patch
 
 from jp_speech_eval.prosody_shadows import (
@@ -7,7 +8,7 @@ from jp_speech_eval.prosody_shadows import (
 )
 from jp_speech_eval.shadow_assessment import run_assessment_shadows
 from jp_speech_eval.special_mora_shadow_v2 import compute_special_mora_v2_shadow
-from jp_speech_eval.ssl_features import cosine_dtw_distance
+from jp_speech_eval.ssl_features import aggregate_reference_distances, cosine_dtw_distance
 from jp_speech_eval.unified_result import unify_evaluation_result
 
 
@@ -37,6 +38,13 @@ def test_cosine_dtw_is_zero_for_identical_embeddings():
     assert distance["reference_frame_count"] == 4
 
 
+def test_ssl_multi_reference_aggregation_is_explicit():
+    values = [0.1, 0.2, 0.9]
+    assert aggregate_reference_distances(values, "median") == 0.2
+    assert aggregate_reference_distances(values, "nearest") == 0.1
+    assert aggregate_reference_distances(values, "top_k_mean", top_k=2) == pytest.approx(0.15)
+
+
 def test_local_special_mora_shadow_is_structured_and_not_user_facing():
     payload = compute_special_mora_v2_shadow(_result(), np.ones(8000, dtype=np.float32) * 0.1, 16000)
     assert payload["available"]
@@ -62,6 +70,28 @@ def test_prosody_shadows_are_normalized_and_not_user_facing():
     assert phrase["user_facing"] is False
     assert nucleus["weak_target"] is True
     assert nucleus["user_facing"] is False
+    assert phrase["phrase_intonation_score"] is None
+
+
+def test_phrase_shadow_does_not_bridge_missing_mora_f0():
+    result = _result()
+    result["mora_table"][1]["f0_hz"] = None
+    phrase = compute_phrase_intonation_shadow(result)
+    # transitions 0->1 and 1->2 are both invalid; only 2->3 remains.
+    assert phrase["adjacent_transition_count"] == 1
+
+
+def test_accent_shadow_is_phrase_scoped_and_heiban_has_no_required_nucleus():
+    result = _result()
+    result["details"]["pitch_target_source"] = "human_checked"
+    result["details"]["accent_phrases"] = [
+        {"start_mora_index": 1, "end_mora_index": 2, "accent_position": 0},
+        {"start_mora_index": 3, "end_mora_index": 4, "accent_position": 1},
+    ]
+    nucleus = compute_accent_nucleus_shadow(result)
+    assert len(nucleus["phrases"]) == 2
+    assert nucleus["phrases"][0]["target_type"] == "heiban"
+    assert nucleus["phrases"][0]["target_correctness_candidate"] is None
 
 
 def test_accent_nucleus_uses_pitch_target_provenance_not_reference_audio_identity():

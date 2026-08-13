@@ -1,0 +1,8 @@
+sample_id,wav_path,control_type,generation
+silence,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/silence.wav,synthetic_engineering_control,numpy
+white_noise,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/white_noise.wav,synthetic_engineering_control,numpy
+pink_like_noise,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/pink_like_noise.wav,synthetic_engineering_control,numpy
+tone_hum,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/tone_hum.wav,synthetic_engineering_control,numpy
+burst_noise,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/burst_noise.wav,synthetic_engineering_control,numpy
+english_tts,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/english_tts.wav,synthetic_engineering_control,macos_say:Alex
+mandarin_tts,/private/tmp/jp_speech_eval_c_end_v2/ver1.3/outputs/content_shadow_v2_final/engineering_controls/mandarin_tts.wav,synthetic_engineering_control,macos_say:Ting-Ting

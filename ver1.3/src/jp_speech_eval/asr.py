@@ -11,6 +11,11 @@ _FASTER_WHISPER_CACHE: Dict[tuple[str, str, str], object] = {}
 _OPENAI_WHISPER_CACHE: Dict[str, object] = {}
 
 
+def _error_note(exc: Exception) -> str:
+    """Keep optional-backend errors one-line and CSV/JSONL safe."""
+    return f"{type(exc).__name__}: {' '.join(str(exc).split())}"
+
+
 @dataclass(frozen=True)
 class AsrTranscript:
     available: bool
@@ -83,7 +88,7 @@ def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
             language = getattr(info, "language", "ja") or "ja"
         return AsrTranscript(True, "faster-whisper", model_name, text, language, "ok")
     except Exception as exc:
-        return AsrTranscript(False, "faster-whisper", model_name, "", "ja", f"{type(exc).__name__}: {exc}")
+        return AsrTranscript(False, "faster-whisper", model_name, "", "ja", _error_note(exc))
 
 
 def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscript:
@@ -117,4 +122,4 @@ def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
             "ok",
         )
     except Exception as exc:
-        return AsrTranscript(False, "openai-whisper", model_name, "", "ja", f"{type(exc).__name__}: {exc}")
+        return AsrTranscript(False, "openai-whisper", model_name, "", "ja", _error_note(exc))

@@ -24,6 +24,8 @@ class ContentMatch:
     target_kana: str
     asr_provider: str
     content_verified: bool
+    acoustic_likely_match: bool
+    verification_level: str
     method: str
     note: str
 
@@ -84,6 +86,8 @@ def _empty(
         target_kana=target_kana,
         asr_provider="none",
         content_verified=False,
+        acoustic_likely_match=False,
+        verification_level="unavailable",
         method=method,
         note=note,
     )
@@ -104,7 +108,10 @@ def _asr_gate(
     transcript = transcribe_japanese(y_speech, sr, model_name=model_name, provider=provider)
     if not transcript.available:
         return ContentMatch(
-            status=acoustic_status,
+            # Acoustic similarity is useful triage evidence, but it is not a
+            # text verification claim.  In particular, a duration-matched
+            # wrong Japanese sentence can look acoustically plausible.
+            status="uncertain" if acoustic_status == "pass" else acoustic_status,
             score=round(float(acoustic_score), 4),
             dtw_cost=round(float(dtw_cost), 4),
             duration_ratio=round(float(duration_ratio), 4),
@@ -113,7 +120,9 @@ def _asr_gate(
             transcript_kana="",
             target_kana=target_kana,
             asr_provider=transcript.provider,
-            content_verified=acoustic_status == "pass",
+            content_verified=False,
+            acoustic_likely_match=acoustic_status == "pass",
+            verification_level="acoustic_likely" if acoustic_status == "pass" else "unavailable",
             method="mfcc_dtw_reference_gate",
             note=f"asr_unavailable_fallback_to_acoustic_gate: {transcript.note}",
         )
@@ -143,6 +152,10 @@ def _asr_gate(
         target_kana=target_kana,
         asr_provider=transcript.provider,
         content_verified=status == "pass",
+        acoustic_likely_match=acoustic_status == "pass",
+        verification_level=(
+            "asr_verified" if status == "pass" else "mismatch" if status == "fail" else "uncertain"
+        ),
         method="asr_kana_match+mfcc_dtw_reference_gate",
         note="asr_transcript_compared_as_kana",
     )
@@ -246,7 +259,12 @@ def estimate_content_match(
         transcript_kana="",
         target_kana=target_kana,
         asr_provider="none",
-        content_verified=status == "pass",
+        # Never promote MFCC-DTW evidence to a verified target-content claim.
+        # Keep the old acoustic status for diagnostics, while semantic clients
+        # use verification_level/content_verified.
+        content_verified=False,
+        acoustic_likely_match=status == "pass",
+        verification_level="acoustic_likely" if status == "pass" else "uncertain" if status == "uncertain" else "unavailable",
         method="mfcc_dtw_reference_gate",
         note=note,
     )

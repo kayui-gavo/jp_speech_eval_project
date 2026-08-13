@@ -118,8 +118,33 @@ def _product_fallback_after_target_mismatch(
 
     transcript = str(content.get("transcript") or "").strip()
     if not transcript:
+        reliability = details.get("reliability") if isinstance(details.get("reliability"), dict) else {}
+        if reliability and float(reliability.get("f0_coverage", 0.0) or 0.0) < 0.08:
+            details["transcript_sanity"] = {
+                "ok": False, "score": 0.0, "reason": "nonvoice_or_no_speech_without_transcript",
+                "normalized_text": "", "metrics": {"f0_coverage": reliability.get("f0_coverage", 0.0)},
+            }
+            details["scoring_ineligibility_reason"] = "NO_SPEECH_OR_NONVOICE"
         return raw
     sanity = check_asr_transcript_sanity(transcript)
+    # ASR may hallucinate fluent Japanese on stationary noise.  A broad
+    # fallback is only permitted for a minimally voiced, Japanese-script
+    # transcript.  This is an input-eligibility gate, not a content threshold:
+    # a real Japanese target mismatch still follows the same broad path.
+    reliability = details.get("reliability") if isinstance(details.get("reliability"), dict) else {}
+    f0_coverage = float(reliability.get("f0_coverage", 1.0) or 0.0)
+    has_hiragana = any("\u3040" <= char <= "\u309f" for char in transcript)
+    if sanity.ok and (not has_hiragana or f0_coverage < 0.10):
+        payload = sanity.to_dict()
+        payload.update({
+            "ok": False,
+            "score": 0.0,
+            "reason": "fallback_audio_or_language_ineligible",
+            "metrics": {**payload.get("metrics", {}), "f0_coverage": round(f0_coverage, 4), "has_hiragana": has_hiragana},
+        })
+        details["transcript_sanity"] = payload
+        details["scoring_ineligibility_reason"] = "NON_JAPANESE_OR_NONVOICE_FALLBACK"
+        return raw
     if not sanity.ok:
         details["transcript_sanity"] = sanity.to_dict()
         return raw

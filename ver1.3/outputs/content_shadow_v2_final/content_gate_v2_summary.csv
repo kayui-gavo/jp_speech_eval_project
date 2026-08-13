@@ -1,0 +1,5 @@
+system,correct_n,wrong_n,correct_false_mismatch_rate,wrong_false_verified_rate,correct_kana_median,wrong_kana_median,cold_latency_sec,warm_p50_sec,warm_p90_sec
+acoustic_only,30,50,0.0,0.98,0.0,0.0,,0.0,0.0
+faster_whisper_base,30,50,0.1667,0.0,0.9322,0.1132,1.2289,0.6577,0.7474
+faster_whisper_small,30,50,0.0667,0.0,0.9706,0.1132,2.492241,1.6544,1.8773
+faster_whisper_tiny,30,50,0.2667,0.0,0.8485,0.1079,0.957955,0.4543,0.5022

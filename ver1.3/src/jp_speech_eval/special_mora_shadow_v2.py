@@ -52,6 +52,55 @@ def _roi_stats(y: np.ndarray, sr: int, start: float, end: float) -> Dict[str, fl
     }
 
 
+def _relative_low_energy_features(
+    y: np.ndarray,
+    sr: int,
+    start: float,
+    end: float,
+    neighbor_rms: float,
+) -> Dict[str, float]:
+    """Closure evidence relative to adjacent voiced material, never ROI mean."""
+    lo = max(0, int(round(start * sr)))
+    hi = min(len(y), max(lo + 1, int(round(end * sr))))
+    roi = np.asarray(y[lo:hi], dtype=np.float32)
+    frame = max(16, int(round(0.01 * sr)))
+    values = np.asarray([
+        float(np.sqrt(np.mean(roi[i:i + frame] ** 2) + 1e-12))
+        for i in range(0, len(roi), frame)
+        if len(roi[i:i + frame])
+    ])
+    threshold = max(1e-5, float(neighbor_rms) * 0.35)
+    low = values <= threshold
+    longest = run = 0
+    for item in low:
+        run = run + 1 if item else 0
+        longest = max(longest, run)
+    lag = max(1, int(round(sr / 180.0)))
+    voiced = np.asarray([abs(float(np.dot(chunk[:-lag], chunk[lag:])) / max(float(np.linalg.norm(chunk[:-lag]) * np.linalg.norm(chunk[lag:])), 1e-12)) if len(chunk) > lag else 0.0 for chunk in (roi[i:i + frame] for i in range(0, len(roi), frame))])
+    return {
+        "minimum_frame_rms": float(np.min(values)) if values.size else 0.0,
+        "minimum_energy_to_neighbor_ratio": float(np.min(values) / max(neighbor_rms, 1e-8)) if values.size else 0.0,
+        "longest_low_energy_run_sec": float(longest * frame / sr),
+        "low_energy_fraction_relative_to_neighbor": float(np.mean(low)) if values.size else 0.0,
+        "voicing_interruption_sec": float(np.sum(voiced < 0.25) * frame / sr) if voiced.size else 0.0,
+    }
+
+
+def _nasal_context(next_mora: str) -> str:
+    initial = str(next_mora or "")[:1]
+    if initial in "パピプペポバビブベボマミムメモ":
+        return "before_bilabial"
+    if initial in "タチツテトダヂヅデドナニヌネノラリルレロ":
+        return "before_alveolar"
+    if initial in "カキクケコガギグゲゴ":
+        return "before_velar"
+    if initial in "アイウエオヤユヨワヲ":
+        return "before_vowel"
+    if not initial:
+        return "before_pause"
+    return "other"
+
+
 def compute_special_mora_v2_shadow(
     result: Mapping[str, Any],
     waveform: np.ndarray,
@@ -102,6 +151,33 @@ def compute_special_mora_v2_shadow(
             )
         neighbor_rms = [item["rms"] for item in (previous_stats, next_stats) if item is not None]
         neighbor_centroids = [item["spectral_centroid_hz"] for item in (previous_stats, next_stats) if item is not None]
+        mean_neighbor_rms = float(np.mean(neighbor_rms)) if neighbor_rms else 0.0
+        features: Dict[str, Any] = {
+            **stats,
+            "duration_to_previous_ratio": None if not previous_duration else stats["duration_sec"] / previous_duration,
+            "energy_to_neighbor_ratio": None if not neighbor_rms else stats["rms"] / max(mean_neighbor_rms, 1e-8),
+            "spectral_change_from_neighbors_hz": None if not neighbor_centroids else stats["spectral_centroid_hz"] - float(np.mean(neighbor_centroids)),
+            "boundary_displacement_sec": None,
+            "local_ssl_reference_distance": None,
+        }
+        next_mora = None if index + 1 >= len(rows) else str(rows[index + 1].get("mora") or "")
+        if special_type == "sokuon":
+            features.update({"neighbor_rms": mean_neighbor_rms, **_relative_low_energy_features(waveform, sample_rate, roi_start, roi_end, mean_neighbor_rms)})
+            features["following_consonant_context"] = next_mora
+        elif special_type == "long_vowel":
+            # A long mark prolongs the previous vowel nucleus.  Its own ROI is
+            # retained only for alignment debugging, not as the primary unit.
+            combined_start = float(rows[index - 1].get("start_sec") or roi_start) if index else roi_start
+            combined = _roi_stats(waveform, sample_rate, combined_start, roi_end)
+            features.update({
+                "combined_vowel_duration": max(0.0, roi_end - combined_start),
+                "combined_vowel_rms": combined["rms"],
+                "duration_vs_neighbor_context": (max(0.0, roi_end - combined_start) / max(previous_duration or 0.0, 1e-8)) if index else None,
+                "voicing_coverage": combined["voicing_autocorrelation"],
+                "spectral_continuity": None if previous_stats is None else abs(combined["spectral_centroid_hz"] - previous_stats["spectral_centroid_hz"]),
+            })
+        elif special_type == "moraic_nasal":
+            features["nasal_context_class"] = _nasal_context(next_mora or "")
         evidence.append({
             "type": special_type,
             "mora_index": index,
@@ -110,14 +186,7 @@ def compute_special_mora_v2_shadow(
             "roi_end": roi_end,
             "roi_valid": roi_valid,
             "alignment_mode": alignment_mode,
-            "features": {
-                **stats,
-                "duration_to_previous_ratio": None if not previous_duration else stats["duration_sec"] / previous_duration,
-                "energy_to_neighbor_ratio": None if not neighbor_rms else stats["rms"] / max(float(np.mean(neighbor_rms)), 1e-8),
-                "spectral_change_from_neighbors_hz": None if not neighbor_centroids else stats["spectral_centroid_hz"] - float(np.mean(neighbor_centroids)),
-                "boundary_displacement_sec": None,
-                "local_ssl_reference_distance": None,
-            },
+            "features": features,
             "context": {
                 "previous_mora": None if index == 0 else str(rows[index - 1].get("mora") or ""),
                 "next_mora": None if index + 1 >= len(rows) else str(rows[index + 1].get("mora") or ""),
@@ -135,7 +204,7 @@ def compute_special_mora_v2_shadow(
         "available": bool(evidence),
         "decision_available": bool(evidence) and alignment_reliable and all(item["roi_valid"] for item in evidence),
         "alignment_mode": alignment_mode,
-        "backend": "numpy_target_local_roi_v2",
+        "backend": "numpy_target_local_roi_v3",
         "evidence": evidence,
         "user_facing": False,
     }
