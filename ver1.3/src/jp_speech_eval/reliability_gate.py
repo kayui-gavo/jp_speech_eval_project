@@ -21,16 +21,14 @@ class ReliabilityGate:
         return asdict(self)
 
 
-def _pick(mapping: Mapping[str, Any], *path: str, default: Any = None) -> Any:
-    cur: Any = mapping
-    for key in path:
-        if not isinstance(cur, Mapping) or key not in cur:
-            return default
-        cur = cur[key]
-    return cur
-
-
 def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) -> ReliabilityGate:
+    """Control feedback granularity without unnecessarily suppressing scores.
+
+    C-end rule: normal Japanese speech should still receive a broad practice
+    score when alignment, F0, or reference evidence is weak. These signals only
+    decide how specific the feedback may be. Only truly unusable recordings are
+    marked retry/unscorable here.
+    """
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
     recording = details.get("recording_quality") if isinstance(details.get("recording_quality"), Mapping) else {}
@@ -42,7 +40,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     overall = float(reliability.get("overall", 0.0) or 0.0)
     f0_coverage = float(reliability.get("f0_coverage", 0.0) or 0.0)
     alignment_score = float(reliability.get("alignment", 1.0) or 0.0)
-    recording_score = float(recording.get("score", 1.0) or 1.0)
+    recording_score = float(recording.get("score", reliability.get("recording_quality", 1.0)) or 1.0)
     content_status = str(content.get("status") or "unknown")
     alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
     is_fixed_reference = policy.mode in {"reference", "reference_based", "reference_fixed_sentence", "fixed_reference"}
@@ -54,54 +52,68 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     allow_detail = True
     allow_special = policy.allow_special_mora_feedback
     allow_pitch = policy.allow_pitch_feedback and is_fixed_reference and not policy.weak_reference and not policy.demo_only
+
     if not is_fixed_reference:
         reasons.append("pitch_not_fixed_reference")
 
-    if recording_score < 0.55 or "recording_quality" in str(reliability.get("warnings", [])):
+    # Only extreme recording failure blocks the whole attempt. Mobile/noisy
+    # recordings degrade confidence and local feedback instead of removing score.
+    if recording_score < 0.20:
         return ReliabilityGate(
             reliability="unscorable",
             practice_check_result="retry",
             blocked_categories=["content", "special_mora", "pitch", "pronunciation"],
-            messages=["録音が小さい、または聞き取りにくいため、今回は詳しい評価を出せません。マイクに少し近づいて、もう一度録音してください。"],
-            reasons=["recording_quality_bad"],
+            messages=["録音をうまく確認できませんでした。マイクに少し近づいて、もう一度録音してください。"],
+            reasons=["recording_unusable"],
             allow_special_mora_feedback=False,
             allow_pitch_feedback=False,
             allow_pronunciation_detail=False,
         )
 
-    if policy.allow_content_match_score and content_status == "fail":
-        return ReliabilityGate(
-            reliability="unscorable",
-            practice_check_result="retry",
-            blocked_categories=["special_mora", "pitch", "pronunciation"],
-            messages=["目標文と違う内容に聞こえます。もう一度読んでください。"],
-            reasons=["content_mismatch"],
-            allow_special_mora_feedback=False,
-            allow_pitch_feedback=False,
-            allow_pronunciation_detail=False,
-        )
-
-    if level == "low" or overall < 0.40 or alignment_score < 0.35:
-        practice = "retry"
+    if recording_score < 0.55:
+        practice = "needs_attention"
         allow_detail = False
         allow_special = False
         allow_pitch = False
         blocked.extend(["special_mora", "pitch", "pronunciation"])
-        messages.append("今回は細かい発音判定が難しいため、もう一度録音してください。")
-        reasons.append("alignment_confidence_low")
+        messages.append("録音条件の影響があるため、今回は全体的な目安を中心に表示します。")
+        reasons.append("recording_quality_low_broad_only")
+
+    # Saying another valid Japanese sentence is task mismatch, not a reason to
+    # call the speech unscorable. Hide target-local corrections only.
+    if policy.allow_content_match_score and content_status in {"fail", "failed", "content_mismatch"}:
+        practice = "needs_attention"
+        allow_detail = False
+        allow_special = False
+        allow_pitch = False
+        blocked.extend(["special_mora", "pitch", "pronunciation"])
+        messages.append("目標文とは違う内容に聞こえますが、日本語としての全体的な話し方は評価します。")
+        reasons.append("content_mismatch_broad_score")
+
+    if level == "low" or overall < 0.40 or alignment_score < 0.35:
+        practice = "needs_attention"
+        allow_detail = False
+        allow_special = False
+        allow_pitch = False
+        blocked.extend(["special_mora", "pitch", "pronunciation"])
+        if not messages:
+            messages.append("細かい位置合わせが不安定なため、今回は全体的な話し方を中心に評価します。")
+        reasons.append("alignment_confidence_low_broad_only")
     elif overall < 0.75 or alignment_mode.endswith("fallback_equal"):
         practice = "needs_attention"
         if alignment_mode.endswith("fallback_equal"):
             allow_detail = False
             allow_special = False
             allow_pitch = False
-            blocked.extend(["special_mora", "pronunciation"])
-            messages.append("今回は音声の位置合わせが不安定なため、細かい拍ごとの発音判定は表示しません。")
-            reasons.append("fallback_alignment")
-        else:
-            messages.append("今回は一部の判定だけ参考にしてください。")
+            blocked.extend(["special_mora", "pronunciation", "pitch"])
+            if not messages:
+                messages.append("細かい拍ごとの判定は不安定ですが、全体スコアは表示します。")
+            reasons.append("fallback_alignment_broad_only")
+        elif not messages:
+            messages.append("今回は一部の細かい判定だけ参考にしてください。")
             reasons.append("medium_reliability")
 
+    # F0 reliability is dimension-local: it suppresses pitch only.
     if mora_count <= 3:
         allow_pitch = False
         blocked.append("pitch")
@@ -111,11 +123,18 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         blocked.append("pitch")
         reasons.append("low_f0_coverage")
 
+    if policy.weak_reference:
+        allow_pitch = False
+        allow_detail = False
+        blocked.extend(["pitch", "pronunciation"])
+        if practice == "ok":
+            practice = "needs_attention"
+        reasons.append("weak_reference_broad_only")
+
     if not allow_pitch and "pitch" not in blocked:
         blocked.append("pitch")
+
     reliability_label = "high" if overall >= 0.85 and level != "low" else "medium" if overall >= 0.45 else "low"
-    if policy.weak_reference and practice == "ok":
-        practice = "needs_attention"
     return ReliabilityGate(
         reliability=reliability_label,
         practice_check_result=practice,
