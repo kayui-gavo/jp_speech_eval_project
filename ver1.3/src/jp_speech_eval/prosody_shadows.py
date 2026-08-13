@@ -77,11 +77,14 @@ def compute_phrase_intonation_shadow(result: Mapping[str, Any]) -> Dict[str, Any
         if abs(user_transitions[i]) >= 0.25 or abs(reference_transitions[i]) >= 0.25
     ]
     agreement = float(np.mean(informative_agreement)) if informative_agreement else None
-    final_difference = None
-    if transitions_with_index and reference_transitions:
-        user_final = transitions_with_index[-1][1]
-        ref_final = reference_transitions[max(reference_transitions)]
-        final_difference = float(user_final - ref_final)
+    # "Final" must name the same transition in both contours.  Comparing a
+    # user transition before an F0 gap with reference's real final transition
+    # creates a fabricated difference.
+    final_common_index = max(common_transition_indices) if common_transition_indices else None
+    final_difference = (
+        float(user_transitions[final_common_index] - reference_transitions[final_common_index])
+        if final_common_index is not None else None
+    )
     return {
         "available": len(valid_values) >= 3,
         "backend": "mora_log_f0_semitone_reference_relative_v2",
@@ -96,6 +99,7 @@ def compute_phrase_intonation_shadow(result: Mapping[str, Any]) -> Dict[str, Any
         "adjacent_transition_agreement": agreement,
         "rise_fall_agreement": agreement,
         "final_movement_difference": final_difference,
+        "final_movement_transition_index": final_common_index,
         "phrase_intonation_score": None,
         "interpretation": "reference_relative_raw_shadow_features_not_lexical_correctness_or_score",
         "user_facing": False,

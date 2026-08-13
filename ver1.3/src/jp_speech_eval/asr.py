@@ -24,6 +24,7 @@ class AsrTranscript:
     text: str
     language: str
     note: str
+    language_probability: Optional[float] = None
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -61,7 +62,29 @@ def transcribe_japanese(
     )
 
 
-def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscript:
+def detect_spoken_language(
+    y: np.ndarray,
+    sr: int,
+    model_name: str = "small",
+    provider: str = "auto",
+) -> AsrTranscript:
+    """Obtain independent language evidence without forcing Japanese.
+
+    This is intentionally separate from :func:`transcribe_japanese`: fixed
+    target verification needs a Japanese-biased transcript, while broad
+    fallback eligibility needs an honest language observation.  It is only
+    invoked after a fixed-target mismatch and therefore stays off the normal
+    successful-reference path.
+    """
+    provider = provider.lower().strip()
+    if provider in {"auto", "faster-whisper", "faster_whisper"}:
+        out = _try_faster_whisper(y, sr, model_name, language=None)
+        if out.available or provider in {"faster-whisper", "faster_whisper"}:
+            return out
+    return AsrTranscript(False, provider, model_name, "", "", "language_detection_unavailable")
+
+
+def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str, language: Optional[str] = "ja") -> AsrTranscript:
     try:
         from faster_whisper import WhisperModel
         import soundfile as sf
@@ -79,14 +102,16 @@ def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
             sf.write(f.name, np.asarray(y, dtype=np.float32), sr)
             segments, info = model.transcribe(
                 f.name,
-                language="ja",
+                language=language,
                 beam_size=1,
                 vad_filter=False,
                 condition_on_previous_text=False,
             )
             text = "".join(seg.text for seg in segments).strip()
-            language = getattr(info, "language", "ja") or "ja"
-        return AsrTranscript(True, "faster-whisper", model_name, text, language, "ok")
+            detected_language = getattr(info, "language", language or "") or ""
+            probability = getattr(info, "language_probability", None)
+            probability = float(probability) if probability is not None else None
+        return AsrTranscript(True, "faster-whisper", model_name, text, detected_language, "ok", probability)
     except Exception as exc:
         return AsrTranscript(False, "faster-whisper", model_name, "", "ja", _error_note(exc))
 

@@ -264,6 +264,55 @@ def evaluate_engineering_controls(data_root: Path, out: Path) -> None:
     _write_csv(out / "engineering_negative_control_results.csv", rows)
 
 
+def run_language_eligibility_matrix(out: Path) -> None:
+    """Probe unforced faster-whisper language evidence on explicit controls."""
+    from jp_speech_eval.api import _fallback_language_eligibility
+    from jp_speech_eval.asr import detect_spoken_language
+
+    controls = {row["sample_id"]: row for row in _read_csv(out / "engineering_negative_controls.csv")}
+    japanese = ["はい", "いいえ", "寿司", "東京", "ラーメン", "コーヒー", "ありがとうございます"]
+    # The command can run independently of ``controls``; keep its generated
+    # engineering stimuli inside its own audit directory.
+    (out / "language_matrix").mkdir(parents=True, exist_ok=True)
+    rows = []
+    for index, text in enumerate(japanese, 1):
+        aiff = out / "language_matrix" / f"ja_{index:02d}.aiff"
+        wav = out / "language_matrix" / f"ja_{index:02d}.wav"
+        try:
+            # A previous interrupted system-TTS call can leave an empty AIFF;
+            # it is generated audit output, never corpus material.
+            aiff.unlink(missing_ok=True)
+            subprocess.run(["say", "-v", "Kyoko", "-o", str(aiff), text], check=True, capture_output=True, timeout=30)
+            y, sr = sf.read(str(aiff), dtype="float32")
+            _write_wav(wav, y, sr)
+            from jp_speech_eval.audio_features import extract_f0, load_audio
+            from jp_speech_eval.vad import trim_to_speech
+            audio = load_audio(str(wav), sr=16000); speech, region = trim_to_speech(audio.y, audio.sr)
+            _times, f0, _method = extract_f0(speech, audio.sr)
+            coverage = float(np.mean(np.asarray(f0) > 0)) if len(f0) else 0.0
+            evidence = detect_spoken_language(audio.y, audio.sr, model_name="small", provider="faster-whisper")
+            eligibility = _fallback_language_eligibility(text, speech_detected=bool(region.detected), f0_coverage=coverage, evidence=evidence)
+            rows.append({"category": "japanese_system_tts", "label": text, "wav_path": str(wav), "detected_language": evidence.language,
+                         "language_probability": evidence.language_probability, "detected_text": evidence.text, "f0_coverage": round(coverage, 4),
+                         "eligible": eligibility["ok"], "eligibility_reason": eligibility["reason"], "note": evidence.note})
+        except Exception as exc:
+            rows.append({"category": "japanese_system_tts", "label": text, "eligible": False, "eligibility_reason": "generation_or_detection_failed", "note": f"{type(exc).__name__}: {exc}"})
+    for name in ("english_tts", "mandarin_tts", "silence", "white_noise", "pink_like_noise"):
+        control = controls[name]
+        path = Path(control["wav_path"])
+        from jp_speech_eval.audio_features import extract_f0, load_audio
+        from jp_speech_eval.vad import trim_to_speech
+        audio = load_audio(str(path), sr=16000); speech, region = trim_to_speech(audio.y, audio.sr)
+        _times, f0, _method = extract_f0(speech, audio.sr)
+        coverage = float(np.mean(np.asarray(f0) > 0)) if len(f0) else 0.0
+        evidence = detect_spoken_language(audio.y, audio.sr, model_name="small", provider="faster-whisper")
+        eligibility = _fallback_language_eligibility(evidence.text, speech_detected=bool(region.detected), f0_coverage=coverage, evidence=evidence)
+        rows.append({"category": "synthetic_engineering_control", "label": name, "wav_path": str(path), "detected_language": evidence.language,
+                     "language_probability": evidence.language_probability, "detected_text": evidence.text, "f0_coverage": round(coverage, 4),
+                     "eligible": eligibility["ok"], "eligibility_reason": eligibility["reason"], "note": evidence.note})
+    _write_csv(out / "language_eligibility_v2_matrix.csv", rows)
+
+
 def run_calibration(data_root: Path, out: Path) -> None:
     """Controlled ladder: measurements only; never maps features to product scores."""
     from jp_speech_eval.api import EvaluationRequest, SpeechEvalConfig, SpeechEvaluationClient
@@ -357,7 +406,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA)
     parser.add_argument("--out", type=Path, default=ROOT / "outputs/content_shadow_v2")
-    parser.add_argument("command", choices=["manifest", "content", "combine-content", "controls", "negative-controls", "calibration", "wavlm", "report", "all"])
+    parser.add_argument("command", choices=["manifest", "content", "combine-content", "controls", "negative-controls", "language-matrix", "calibration", "wavlm", "report", "all"])
     parser.add_argument("--models", default="tiny,base,small")
     parser.add_argument("--layers", default="6,12,18,24")
     parser.add_argument("--input-dirs", default="")
@@ -387,6 +436,8 @@ def main() -> None:
         make_engineering_controls(out)
     if args.command in {"negative-controls", "all"}:
         evaluate_engineering_controls(args.data_root.resolve(), out)
+    if args.command in {"language-matrix", "all"}:
+        run_language_eligibility_matrix(out)
     if args.command in {"calibration", "all"}:
         run_calibration(args.data_root.resolve(), out)
     if args.command in {"wavlm", "all"}:

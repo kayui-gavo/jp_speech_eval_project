@@ -173,7 +173,10 @@ def compute_special_mora_v2_shadow(
                 "combined_vowel_duration": max(0.0, roi_end - combined_start),
                 "combined_vowel_rms": combined["rms"],
                 "duration_vs_neighbor_context": (max(0.0, roi_end - combined_start) / max(previous_duration or 0.0, 1e-8)) if index else None,
-                "voicing_coverage": combined["voicing_autocorrelation"],
+                # This is a periodicity proxy over the combined nucleus, not
+                # a ratio of voiced frames.  Keep the name honest until an
+                # actual frame-level voicing detector is added.
+                "periodicity_autocorrelation": combined["voicing_autocorrelation"],
                 "spectral_continuity": None if previous_stats is None else abs(combined["spectral_centroid_hz"] - previous_stats["spectral_centroid_hz"]),
             })
         elif special_type == "moraic_nasal":

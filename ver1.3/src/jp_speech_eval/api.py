@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .asr_confirmation import build_asr_confirmation_prompt
+from .asr import AsrTranscript, detect_spoken_language
+from .audio_features import load_audio
+from .vad import trim_to_speech
 from .eval_modes import evaluate_mode
 from .feedback_renderer import render_user_facing_result
 from .shadow_assessment import run_assessment_shadows
@@ -17,6 +20,105 @@ FIXED_REFERENCE_REQUEST_MODES = {
     "reference_fixed_sentence",
     "fixed_reference",
 }
+
+
+def _has_japanese_script(text: str) -> bool:
+    """Weak compatibility signal only; never an eligibility rule by itself."""
+    return any(
+        ("\u3040" <= char <= "\u309f")
+        or ("\u30a0" <= char <= "\u30ff")
+        or ("\u3400" <= char <= "\u9fff")
+        for char in str(text or "")
+    )
+
+
+def _japanese_transcript_morphology(text: str) -> Dict[str, Any]:
+    """Return a conservative lexical-coherence check for broad fallback.
+
+    The Japanese-biased ASR can turn non-Japanese speech into plausible-looking
+    kanji/kana.  Script presence alone cannot distinguish that failure from a
+    valid utterance such as ``寿司`` or ``東京``.  OpenJTalk's frontend lets us
+    distinguish one short lexical item (allowed) from a multi-token string
+    containing only content fragments and no grammatical continuation
+    (conservatively unavailable).  This is a fallback *eligibility* check,
+    never a pronunciation or target-content score.
+    """
+    try:
+        import pyopenjtalk
+
+        tokens = pyopenjtalk.run_frontend(str(text or ""))
+    except Exception as exc:
+        # Preserve the existing route if the optional text frontend is not
+        # available; ASR language evidence still participates in eligibility.
+        return {"available": False, "ok": True, "reason": f"frontend_unavailable:{type(exc).__name__}", "token_count": 0, "pos": []}
+
+    pos = [str(token.get("pos") or "") for token in tokens]
+    content = [item for item in pos if item and item != "記号"]
+    function_pos = {"助詞", "助動詞", "動詞", "形容詞", "副詞", "連体詞", "感動詞"}
+    # Single lexical words are legitimate fixed-reading answers (e.g. 寿司,
+    # 東京, ラーメン, コーヒー).  Multi-token fallback text needs at least one
+    # grammatical/utterance-bearing token; otherwise it is too ambiguous to
+    # turn into a broad Japanese pseudo-reference safely.
+    ok = len(content) == 1 or any(item in function_pos for item in content)
+    return {
+        "available": True,
+        "ok": ok,
+        "reason": "lexically_coherent" if ok else "ambiguous_content_word_sequence",
+        "token_count": len(content),
+        "pos": content,
+    }
+
+
+def _fallback_language_eligibility(
+    transcript: str,
+    *,
+    speech_detected: bool,
+    f0_coverage: float,
+    evidence: AsrTranscript,
+) -> Dict[str, Any]:
+    """Separate broad-mode language eligibility from target text verification.
+
+    Unforced ASR language evidence can reject a confident non-Japanese
+    observation, but short-utterance language ID is not assumed infallible.
+    If it is inconclusive, lexical coherence plus Japanese-compatible text can
+    retain a conservative fallback rather than rejecting legitimate short
+    kanji- or katakana-only Japanese by script type.
+    """
+    language = str(evidence.language or "").lower()
+    probability = evidence.language_probability
+    probability = float(probability) if probability is not None else None
+    # VAD can miss a very short but clearly periodic Japanese response (e.g.
+    # いいえ).  Treat reliable periodic voice evidence as a backup to VAD;
+    # transcript sanity and lexical coherence still protect the broad route.
+    voiced = bool(speech_detected) or float(f0_coverage) >= 0.10
+    script_compatible = _has_japanese_script(transcript)
+    morphology = _japanese_transcript_morphology(transcript)
+    if not voiced:
+        return {"ok": False, "reason": "insufficient_voiced_speech_evidence", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+    if evidence.available and language == "ja" and (probability is None or probability >= 0.35):
+        if not morphology["ok"]:
+            return {"ok": False, "reason": "ambiguous_japanese_transcript", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+        return {"ok": True, "reason": "detected_japanese", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+    # Short utterance language labels below 0.70 are empirically unstable on
+    # this backend.  They are evidence, not a veto against short Japanese
+    # words; a confident non-Japanese label remains a safety rejection.
+    if evidence.available and language and language != "ja" and (probability is None or probability >= 0.70):
+        return {"ok": False, "reason": "detected_non_japanese", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+    if script_compatible and morphology["ok"]:
+        return {"ok": True, "reason": "inconclusive_language_conservative_japanese", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+    return {"ok": False, "reason": "no_safe_japanese_language_evidence", "language": language, "language_probability": probability, "script_compatible": script_compatible, "morphology": morphology}
+
+
+def _fallback_language_evidence(audio_path: str, sample_rate: int, model_name: str = "small") -> tuple[bool, AsrTranscript]:
+    """Do not let optional language detection crash the product fallback."""
+    try:
+        audio = load_audio(audio_path, sr=sample_rate)
+        _trimmed, region = trim_to_speech(audio.y, audio.sr)
+        if not region.detected:
+            return False, AsrTranscript(False, "none", model_name, "", "", "no_speech_for_language_detection")
+        return True, detect_spoken_language(audio.y, audio.sr, model_name=model_name, provider="auto")
+    except Exception as exc:
+        return False, AsrTranscript(False, "none", model_name, "", "", f"language_detection_failed:{type(exc).__name__}")
 
 
 @dataclass(frozen=True)
@@ -127,20 +229,27 @@ def _product_fallback_after_target_mismatch(
             details["scoring_ineligibility_reason"] = "NO_SPEECH_OR_NONVOICE"
         return raw
     sanity = check_asr_transcript_sanity(transcript)
-    # ASR may hallucinate fluent Japanese on stationary noise.  A broad
-    # fallback is only permitted for a minimally voiced, Japanese-script
-    # transcript.  This is an input-eligibility gate, not a content threshold:
-    # a real Japanese target mismatch still follows the same broad path.
+    # ASR may hallucinate fluent Japanese on stationary noise.  Broad fallback
+    # eligibility therefore uses independently detected speech/language
+    # evidence, not the Japanese-biased target-verification transcript.
     reliability = details.get("reliability") if isinstance(details.get("reliability"), dict) else {}
     f0_coverage = float(reliability.get("f0_coverage", 1.0) or 0.0)
-    has_hiragana = any("\u3040" <= char <= "\u309f" for char in transcript)
-    if sanity.ok and (not has_hiragana or f0_coverage < 0.10):
+    speech_detected, language_evidence = _fallback_language_evidence(
+        str(request.audio_path), request.sample_rate or config.sample_rate
+    )
+    eligibility = _fallback_language_eligibility(
+        transcript,
+        speech_detected=speech_detected,
+        f0_coverage=f0_coverage,
+        evidence=language_evidence,
+    )
+    if sanity.ok and not eligibility["ok"]:
         payload = sanity.to_dict()
         payload.update({
             "ok": False,
             "score": 0.0,
             "reason": "fallback_audio_or_language_ineligible",
-            "metrics": {**payload.get("metrics", {}), "f0_coverage": round(f0_coverage, 4), "has_hiragana": has_hiragana},
+            "metrics": {**payload.get("metrics", {}), "f0_coverage": round(f0_coverage, 4), **eligibility},
         })
         details["transcript_sanity"] = payload
         details["scoring_ineligibility_reason"] = "NON_JAPANESE_OR_NONVOICE_FALLBACK"
@@ -167,6 +276,7 @@ def _product_fallback_after_target_mismatch(
     general_details["task_target_text"] = raw.get("target_text")
     general_details["task_content_match"] = dict(content)
     general_details["transcript_sanity"] = sanity.to_dict()
+    general_details["fallback_language_eligibility"] = eligibility
     general_details["fallback_reason"] = "target_mismatch_but_plausible_japanese"
     general_details["fixed_reference_debug"] = {
         "pronunciation_score": raw.get("pronunciation_score"),

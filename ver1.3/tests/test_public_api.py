@@ -104,7 +104,10 @@ class PublicApiTest(unittest.TestCase):
         }
         broad = _raw_result("transcript_assisted_light")
         broad["details"]["content_match"] = {"status": "unknown"}
-        with patch("jp_speech_eval.api.evaluate_mode", side_effect=[fixed, broad]):
+        language = type("Language", (), {"available": True, "language": "ja", "language_probability": 0.9})()
+        with patch("jp_speech_eval.api.evaluate_mode", side_effect=[fixed, broad]), patch(
+            "jp_speech_eval.api._fallback_language_evidence", return_value=(True, language)
+        ):
             response = evaluate_speech(EvaluationRequest(audio_path="user.wav", mode="reference"))
         self.assertTrue(response["ok"])
         self.assertEqual(response["mode"], "reference_mismatch_general_japanese")

@@ -14,11 +14,15 @@ MFCC acoustic-only uses `acoustic_likely_match` only; it never sets `content_ver
 - Manifest: 30 correct pairs and 50 same/cross-speaker duration-matched wrong-target pairs (`0.90–1.10` for every hard negative).
 - Decision: **always faster-whisper small**. It had the lowest correct-target false-mismatch rate (6.67%) while every ASR model had 0/50 wrong-target false verification. Tiny/base remain useful latency baselines, not the default verification policy.
 - New semantic contract: `content_verified=true` is emitted only at `verification_level=asr_verified`; MFCC-only evidence is `acoustic_likely_match=true`, never a verification claim.
+- Final rerun on this branch (`small`, 30 correct / 50 hard wrong): **2/30** correct-target mismatches (6.67%) and **0/50** wrong-target false verifications. Cold latency was 6.375 s and warm p50/p90 were 2.806/3.319 s on this machine.
 
 ## Engineering negative controls
 
 - Generated and labelled `synthetic_engineering_control`: silence, white/pink noise, tone, burst noise, English system TTS, Mandarin system TTS.
-- After the fallback eligibility repair, silence, white noise, tone, burst noise, English TTS, and Mandarin TTS produce no normal Japanese practice score. Pink-like noise is also rejected after the final `f0_coverage < 0.10` fallback guard; its first run exposed the ASR-hallucination bug.
+- Target verification and broad-fallback eligibility are deliberately separate. Target verification remains Japanese-biased; the fallback additionally requires speech/VAD evidence, transcript sanity, independently requested ASR language evidence, and conservative lexical coherence. It does **not** use a `has_hiragana` rule.
+- On this machine, unforced faster-whisper language ID is not reliable by itself for short system English/Mandarin controls: it can report `ja`. The English transcript is rejected by transcript sanity; the Mandarin hallucination (`全地化普通クコ`) is rejected as an ambiguous multi-token content-fragment sequence. This is a safety eligibility decision, not a pronunciation judgment.
+- The exact short-form matrix is covered by regression tests and a system-TTS evidence replay: `はい`, `いいえ`, `寿司`, `東京`, `ラーメン`, `コーヒー`, and `ありがとうございます` all remain eligible. The system voice caused low-confidence `en` labels for `いいえ` and `ラーメン`; those do not veto Japanese eligibility, while a confident non-Japanese label does.
+- After the fallback eligibility repair, silence, white noise, pink-like noise, tone, burst noise, English TTS, and Mandarin TTS produce no normal Japanese practice score. The synthetic suite is intentionally retained as an engineering control, not represented as human negative-speech data.
 - This is only an engineering control suite. It is not presented as human English/Mandarin/noise data; real negative controls remain a coverage gap.
 
 ## Product calibration ladder
@@ -52,6 +56,12 @@ MFCC acoustic-only uses `acoustic_likely_match` only; it never sets `content_ver
 - Sokuon uses neighbor-relative low-energy/closure evidence; long vowels use a combined vowel nucleus; moraic nasals report context classes only.
 - Phrase intonation no longer emits an arbitrary /100 mapping and no longer bridges missing-F0 morae. Accent analysis is per accent phrase and only computes target correctness for strong target provenance.
 
-## Merge gate
+## Merge and release gates
 
-**PASS WITH ISSUES for the content-gate repair, but BLOCK MERGE for score-calibration closeout.** The hard mismatch semantic regression is repaired by always-ASR small and engineering negatives are rejected; production score ceiling/non-monotonic channel behavior remains unresolved and shadows remain non-production.
+### MERGE GATE — PASS WITH ISSUES
+
+The branch is safe to merge as a content-gate/architecture repair: default configuration now agrees on always-ASR, content verification has the always-ASR small benchmark evidence, engineering negative controls are rejected by the complete fallback path, and shadows remain default-off and outside ProductScore. The test suite is the merge verification authority.
+
+### RELEASE / SCORE-CALIBRATION GATE — BLOCKED
+
+This is intentionally a separate later release blocker, not a reason to retain safe content fixes outside `main`: display-score ceiling remains, `fallback_equal` can create artificial CV≈0, rhythm/fluency inputs remain saturated in parts of the ladder, and pronunciation is still partly a timing proxy. No score mapping, ProductScore weight, special-mora threshold, or shadow-to-user-score connection was changed in this branch.

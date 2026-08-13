@@ -57,7 +57,7 @@
   "content_match": {
     "enabled": true,
     "use_asr": true,
-    "asr_policy": "if_acoustic_uncertain",
+    "asr_policy": "always",
     "asr_provider": "auto",
     "asr_model": "small",
     "dynamic_reference_sanity_gate": true
