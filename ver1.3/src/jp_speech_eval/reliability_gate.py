@@ -16,6 +16,7 @@ class ReliabilityGate:
     allow_special_mora_feedback: bool = True
     allow_pitch_feedback: bool = False
     allow_pronunciation_detail: bool = True
+    dimension_reliability: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -44,7 +45,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     recording_score = _clip01(recording.get("score", reliability.get("recording_quality", 1.0)))
     content_status = str(content.get("status") or "unknown")
     alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
-    is_fixed_reference = policy.mode in {"reference", "reference_based", "reference_fixed_sentence", "fixed_reference"}
+    is_fixed_reference = policy.fixed_reference
 
     if is_fixed_reference:
         core_reliability = 0.30 * endpoint_score + 0.35 * alignment_score + 0.20 * recording_score + 0.15 * evidence_score
@@ -55,7 +56,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     reasons: List[str] = []
     blocked: List[str] = []
     practice = "ok"
-    allow_detail = True
+    allow_detail = is_fixed_reference and not policy.weak_reference and not policy.demo_only
     allow_special = policy.allow_special_mora_feedback
     allow_pitch = policy.allow_pitch_feedback and is_fixed_reference and not policy.weak_reference and not policy.demo_only
 
@@ -72,6 +73,13 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
             allow_special_mora_feedback=False,
             allow_pitch_feedback=False,
             allow_pronunciation_detail=False,
+            dimension_reliability={
+                "audio": recording_score,
+                "content": 0.0,
+                "alignment": alignment_score,
+                "pitch": f0_coverage,
+                "special_mora": evidence_score,
+            },
         )
 
     if recording_score < 0.55:
@@ -89,6 +97,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         blocked.extend(["special_mora", "pitch"])
         messages.append("目標文とは違う内容に聞こえますが、日本語としての全体的な話し方は評価します。")
         reasons.append("content_mismatch_broad_score")
+        allow_detail = False
 
     if is_fixed_reference:
         if core_reliability < 0.40 or alignment_score < 0.35:
@@ -99,6 +108,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
             if not messages:
                 messages.append("細かい位置合わせが不安定なため、今回は全体的な話し方を中心に評価します。")
             reasons.append("alignment_confidence_low_broad_only")
+            allow_detail = False
         elif core_reliability < 0.75 or alignment_mode.endswith("fallback_equal"):
             practice = "needs_attention"
             if alignment_mode.endswith("fallback_equal"):
@@ -108,6 +118,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
                 if not messages:
                     messages.append("細かい拍ごとの判定は不安定ですが、全体スコアは表示します。")
                 reasons.append("fallback_alignment_broad_only")
+                allow_detail = False
             elif not messages:
                 messages.append("今回は一部の細かい判定だけ参考にしてください。")
                 reasons.append("medium_reliability")
@@ -128,6 +139,7 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         if practice == "ok":
             practice = "needs_attention"
         reasons.append("weak_reference_broad_only")
+        allow_detail = False
 
     if not allow_pitch and "pitch" not in blocked:
         blocked.append("pitch")
@@ -142,4 +154,11 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
         allow_special_mora_feedback=allow_special,
         allow_pitch_feedback=allow_pitch,
         allow_pronunciation_detail=allow_detail,
+        dimension_reliability={
+            "audio": recording_score,
+            "content": 1.0 if content_status in {"pass", "unknown", "general_japanese"} else 0.5,
+            "alignment": alignment_score if is_fixed_reference else 1.0,
+            "pitch": f0_coverage,
+            "special_mora": evidence_score if is_fixed_reference else 0.0,
+        },
     )

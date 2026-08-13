@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import jp_speech_eval
 from jp_speech_eval import EvaluationRequest, SpeechEvalConfig, SpeechEvaluationClient
+from jp_speech_eval.scoring_policy import policy_from_result
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +88,23 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertFalse(dims["pitch_accent"]["available"])
         self.assertIsNone(dims["pitch_accent"]["value"])
         self.assertEqual(response.raw_result["prosody_score"], 80)
+
+    def test_public_practice_score_has_single_authoritative_value(self) -> None:
+        raw = _raw_result()
+        raw["total_score"] = 3
+        client = SpeechEvaluationClient(SpeechEvalConfig(cache_path="cache/ramen_kudasai"))
+        with patch("jp_speech_eval.api.evaluate_mode", return_value=raw):
+            response = client.evaluate(EvaluationRequest(audio_path="user.wav", mode="reference"))
+        policy = response.user_facing["debug"]["user_score_policy"]
+        self.assertEqual(response.user_facing["display_score"], policy["display_score"])
+        self.assertEqual(response.user_facing["practice_score"]["value"], policy["display_score"])
+
+    def test_broad_mode_cannot_claim_lexical_pitch_or_target_local_mora(self) -> None:
+        policy = policy_from_result(_raw_result(), mode="reference_mismatch_general_japanese")
+        self.assertTrue(policy.broad_mode)
+        self.assertFalse(policy.fixed_reference)
+        self.assertFalse(policy.allow_pitch_feedback)
+        self.assertFalse(policy.allow_special_mora_feedback)
 
     def test_demo_ui_default_modes_hide_diagnostic_tools(self) -> None:
         import scripts.debug_ui as debug_ui

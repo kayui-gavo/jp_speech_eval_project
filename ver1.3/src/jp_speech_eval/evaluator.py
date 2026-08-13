@@ -479,19 +479,14 @@ def evaluate_utterance(
         score_adjustments.append(
             "整体可靠性不足，本次综合分仅作练习参考。"
         )
-    if content_match and content_match.status == "fail":
-        pronunciation_score = 0
-        prosody_score = 0
-        fluency_score = 0
-        tone_score = 0
-        total_score = 0
-        reliability["score_is_diagnostic"] = True
-        reliability["level"] = "low"
-        reliability["overall"] = min(float(reliability.get("overall", 0.0)), 0.25)
-    elif content_match and content_match.status == "uncertain":
-        total_score = min(int(total_score), 50)
-        reliability["score_is_diagnostic"] = True
-        reliability["level"] = "low"
+    target_local_score_valid = not (
+        content_match and content_match.status in {"fail", "uncertain"}
+    )
+    if not target_local_score_valid:
+        reliability["target_local_score_valid"] = False
+        score_adjustments.append(
+            "内容一致は局所診断の可否にのみ使用し、音響スコアは保持しました。"
+        )
 
     observed_pitch = prosody_details.get("observed_pitch", ["?"] * len(text_info.moras))
     mora_table: List[MoraRow] = []
@@ -563,6 +558,7 @@ def evaluate_utterance(
                 "content_verified": False,
                 "note": "no_sentence_cache_available_for_content_match",
             },
+            "target_local_score_valid": target_local_score_valid,
             "reliability": reliability,
             "technical_feedback": {
                 "score_adjustments": score_adjustments,

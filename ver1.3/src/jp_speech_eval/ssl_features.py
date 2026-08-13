@@ -1,216 +1,146 @@
-"""
-HuBERT self-supervised learning features for Japanese speech evaluation.
+"""Lazy self-supervised speech features for audit-only pronunciation shadows.
 
-This module extracts multilayer representations from HuBERT models,
-following the Prosodic ABX framework from Sun & McIntosh (INTERSPEECH 2026).
-
-Recommendation: HuBERT-Large(ZH) or HuBERT-Large-Japanese provides
-best performance on cross-linguistic prosodic tasks.
+Nothing in this module is loaded by the product score path unless the explicit
+SSL shadow flag is enabled.  Distances are research measurements, not /100
+pronunciation scores.
 """
 
 from __future__ import annotations
 
-import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 
-try:
-    import torch
-    from transformers import AutoModel, AutoProcessor, HubertModel
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    warnings.warn(
-        "torch and transformers not available. Install with: "
-        "pip install torch transformers"
-    )
+
+DEFAULT_SSL_MODEL = "microsoft/wavlm-large"
 
 
-class HuBERTFeatureExtractor:
+def normalize_ssl_frames(features: np.ndarray) -> np.ndarray:
+    frames = np.asarray(features, dtype=np.float32)
+    if frames.ndim != 2:
+        raise ValueError("SSL features must have shape (frames, dimensions)")
+    norms = np.linalg.norm(frames, axis=1, keepdims=True)
+    return frames / np.maximum(norms, 1e-8)
+
+
+def cosine_dtw_distance(reference: np.ndarray, user: np.ndarray) -> Dict[str, float | int]:
+    """Return normalized cumulative cosine DTW distance and path length."""
+    ref = normalize_ssl_frames(reference)
+    hyp = normalize_ssl_frames(user)
+    if not len(ref) or not len(hyp):
+        raise ValueError("SSL DTW requires non-empty frame sequences")
+    previous = np.full(len(hyp) + 1, np.inf, dtype=np.float64)
+    previous[0] = 0.0
+    path_lengths = np.zeros(len(hyp) + 1, dtype=np.int32)
+    for ref_frame in ref:
+        current = np.full(len(hyp) + 1, np.inf, dtype=np.float64)
+        current_lengths = np.zeros(len(hyp) + 1, dtype=np.int32)
+        costs = 1.0 - np.clip(hyp @ ref_frame, -1.0, 1.0)
+        for j, cost in enumerate(costs, start=1):
+            options = (previous[j], current[j - 1], previous[j - 1])
+            choice = int(np.argmin(options))
+            parent_length = (
+                path_lengths[j]
+                if choice == 0
+                else current_lengths[j - 1]
+                if choice == 1
+                else path_lengths[j - 1]
+            )
+            current[j] = options[choice] + float(cost)
+            current_lengths[j] = parent_length + 1
+        previous, path_lengths = current, current_lengths
+    path_length = int(path_lengths[-1])
+    cumulative = float(previous[-1])
+    return {
+        "normalized_cumulative_distance": cumulative / max(path_length, 1),
+        "cumulative_distance": cumulative,
+        "path_length": path_length,
+        "reference_frame_count": int(len(ref)),
+        "user_frame_count": int(len(hyp)),
+    }
+
+
+class SSLFeatureExtractor:
+    """Lazy Hugging Face WavLM/HubERT extractor.
+
+    Instantiation is cheap. The optional torch/transformers dependencies and
+    model checkpoint are loaded only on the first extraction call.
     """
-    Extract HuBERT features from audio at multiple layers.
-    
-    Usage:
-        extractor = HuBERTFeatureExtractor(model_id="facebook/hubert-large-ls60-japanese")
-        features_by_layer = extractor.extract_all_layers(audio_array, sr=16000)
-        # features_by_layer[layer_idx] -> shape (n_frames, hidden_dim)
-    """
-    
+
     def __init__(
         self,
-        model_id: str = "facebook/hubert-large-ls60-japanese",
+        model_id: str = DEFAULT_SSL_MODEL,
         device: Optional[str] = None,
-    ):
-        """
-        Initialize HuBERT extractor.
-        
-        Args:
-            model_id: Hugging Face model ID. Recommended:
-                - "facebook/hubert-large-ls60-japanese" (Japanese-pretrained)
-                - "facebook/hubert-large-ls60" (English)
-                - "facebook/hubert-large-xlsr-53" (multilingual)
-            device: "cuda", "cpu", or None (auto-detect)
-        """
-        if not TORCH_AVAILABLE:
-            raise RuntimeError("torch and transformers required. Install them first.")
-        
+    ) -> None:
         self.model_id = model_id
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         self.model = None
         self.processor = None
-        self._load_model()
-    
+        self.num_layers = 0
+        self._torch = None
+
     def _load_model(self) -> None:
-        """Load HuBERT model and processor."""
+        if self.model is not None:
+            return
+        try:
+            import torch
+            from transformers import AutoModel, AutoProcessor
+        except ImportError as exc:
+            raise RuntimeError("SSL shadow requires optional torch and transformers") from exc
+        self._torch = torch
+        self.device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
         try:
             self.processor = AutoProcessor.from_pretrained(self.model_id)
             self.model = AutoModel.from_pretrained(self.model_id, output_hidden_states=True)
-            self.model.to(self.device)
-            self.model.eval()
-            
-            # Infer number of layers
-            if hasattr(self.model, 'config'):
-                self.num_layers = self.model.config.num_hidden_layers
-            else:
-                self.num_layers = 24  # Default for large models
-        except Exception as e:
-            raise RuntimeError(f"Failed to load {self.model_id}: {e}")
-    
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load SSL checkpoint {self.model_id}: {exc}") from exc
+        self.model.to(self.device)
+        self.model.eval()
+        self.num_layers = int(getattr(self.model.config, "num_hidden_layers", 0))
+
     def extract_all_layers(
         self,
         audio: np.ndarray,
         sr: int = 16000,
         normalize: bool = True,
     ) -> Dict[int, np.ndarray]:
-        """
-        Extract features from all HuBERT layers.
-        
-        Args:
-            audio: Audio waveform, shape (n_samples,). Should be normalized to [-1, 1].
-            sr: Sample rate.
-            normalize: If True, normalize to log-scale with mean/std.
-        
-        Returns:
-            {layer_idx: features} where features shape is (n_frames, hidden_dim)
-        """
-        if self.model is None:
-            self._load_model()
-        
-        # Ensure audio is on correct device and dtype
-        audio = np.asarray(audio, dtype=np.float32)
-        if np.max(np.abs(audio)) > 1.0:
-            audio = audio / (np.max(np.abs(audio)) + 1e-8)
-        
-        # Process with HuBERT processor
-        try:
-            inputs = self.processor(audio, sampling_rate=sr, return_tensors="pt")
-            input_values = inputs["input_values"].to(self.device)
-        except Exception as e:
-            raise ValueError(f"Failed to process audio: {e}")
-        
-        # Forward pass
-        with torch.no_grad():
-            outputs = self.model(input_values, output_hidden_states=True)
-        
-        # Extract features from each layer
-        all_layers = {}
-        for layer_idx, hidden_state in enumerate(outputs.hidden_states):
-            # hidden_state: (batch=1, frames, hidden_dim)
-            feat = hidden_state.squeeze(0).cpu().numpy()  # (frames, hidden_dim)
-            
-            if normalize:
-                # Normalize per frame (optional)
-                feat = (feat - np.mean(feat, axis=1, keepdims=True)) / (
-                    np.std(feat, axis=1, keepdims=True) + 1e-8
-                )
-            
-            all_layers[layer_idx] = feat
-        
-        return all_layers
-    
-    def extract_layer(
-        self,
-        audio: np.ndarray,
-        layer_idx: int,
-        sr: int = 16000,
-    ) -> np.ndarray:
-        """
-        Extract features from a single layer.
-        
-        Args:
-            audio: Audio waveform.
-            layer_idx: Layer index (0 to num_layers-1).
-            sr: Sample rate.
-        
-        Returns:
-            Features shape (n_frames, hidden_dim).
-        """
-        all_layers = self.extract_all_layers(audio, sr, normalize=True)
-        return all_layers[layer_idx]
-    
-    def get_frame_times(
-        self,
-        audio_length: int,
-        sr: int = 16000,
-    ) -> np.ndarray:
-        """
-        Get time stamps for each frame.
-        
-        HuBERT typically has a hop_length of 320 samples (20ms at 16kHz).
-        
-        Args:
-            audio_length: Length of audio array.
-            sr: Sample rate.
-        
-        Returns:
-            Frame times in seconds, shape (n_frames,).
-        """
+        self._load_model()
+        waveform = np.asarray(audio, dtype=np.float32).reshape(-1)
+        peak = float(np.max(np.abs(waveform))) if waveform.size else 0.0
+        if peak > 1.0:
+            waveform = waveform / peak
+        inputs = self.processor(waveform, sampling_rate=sr, return_tensors="pt")
+        with self._torch.no_grad():
+            outputs = self.model(
+                inputs["input_values"].to(self.device),
+                output_hidden_states=True,
+            )
+        layers: Dict[int, np.ndarray] = {}
+        for index, hidden in enumerate(outputs.hidden_states):
+            value = hidden.squeeze(0).detach().cpu().numpy()
+            layers[index] = normalize_ssl_frames(value) if normalize else value
+        return layers
+
+    def extract_layer(self, audio: np.ndarray, layer_idx: int, sr: int = 16000) -> np.ndarray:
+        layers = self.extract_all_layers(audio, sr=sr, normalize=True)
+        if layer_idx not in layers:
+            raise ValueError(f"SSL layer {layer_idx} is unavailable; got {sorted(layers)}")
+        return layers[layer_idx]
+
+    def get_frame_times(self, audio_length: int, sr: int = 16000) -> np.ndarray:
         hop_length = 320
-        n_frames = (audio_length + sr // 2) // hop_length
-        return np.arange(n_frames) * (hop_length / sr)
+        return np.arange((audio_length + sr // 2) // hop_length) * (hop_length / sr)
+
+
+# Backward-compatible research name; it now supports WavLM as the valid default.
+HuBERTFeatureExtractor = SSLFeatureExtractor
 
 
 def extract_ssl_features(
     audio: np.ndarray,
     sr: int = 16000,
-    model_id: str = "facebook/hubert-large-ls60-japanese",
+    model_id: str = DEFAULT_SSL_MODEL,
     layers: Optional[List[int]] = None,
 ) -> Dict[int, np.ndarray]:
-    """
-    Convenience function to extract SSL features.
-    
-    Args:
-        audio: Audio array.
-        sr: Sample rate.
-        model_id: HuBERT model ID.
-        layers: Specific layers to extract. If None, extract all.
-    
-    Returns:
-        {layer_idx: features}.
-    """
-    extractor = HuBERTFeatureExtractor(model_id=model_id)
-    all_layers = extractor.extract_all_layers(audio, sr)
-    
-    if layers is None:
-        return all_layers
-    else:
-        return {k: all_layers[k] for k in layers if k in all_layers}
-
-
-if __name__ == "__main__":
-    # Example usage
-    import librosa
-    
-    print("Loading example audio...")
-    audio, sr = librosa.load(librosa.ex("brahms"), sr=16000, mono=True, duration=3)
-    
-    print("Extracting HuBERT features...")
-    extractor = HuBERTFeatureExtractor(
-        model_id="facebook/hubert-large-ls60-japanese"
-    )
-    
-    features = extractor.extract_all_layers(audio, sr)
-    print(f"Extracted {len(features)} layers")
-    for layer_idx, feat in features.items():
-        print(f"  Layer {layer_idx}: {feat.shape}")
+    extracted = SSLFeatureExtractor(model_id=model_id).extract_all_layers(audio, sr)
+    return extracted if layers is None else {key: extracted[key] for key in layers if key in extracted}

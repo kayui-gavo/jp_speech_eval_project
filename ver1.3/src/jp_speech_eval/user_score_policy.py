@@ -84,7 +84,7 @@ def apply_user_score_policy(
         "asr_pseudo_reference",
         "kanade_asr_voice_reference",
     }
-    demo_only = bool(details.get("demo_only")) or str(mode).startswith("kanade_voice_reference")
+    demo_only = bool(details.get("demo_only")) or str(mode).startswith("kanade")
     mora_count = len(raw_result.get("moras") or [])
 
     reliability_level = str(reliability.get("level") or "medium")
@@ -123,6 +123,31 @@ def apply_user_score_policy(
             "scoring_gate": gate_state,
             "detail_feedback_allowed": False,
             "inputs": {"mode": mode, "content_status": content_status},
+        }
+
+    if demo_only:
+        gate_state.update({
+            "score_available": False,
+            "user_message_type": "demo_only",
+            "reasons": ["demo_only_no_practice_score"],
+        })
+        return {
+            "display_score": None,
+            "display_score_before_cap": None,
+            "display_score_after_cap": None,
+            "display_cap_applied": False,
+            "display_cap_reason": "",
+            "pronunciation_clarity_score": None,
+            "rhythm_fluency_score": None,
+            "practice_completion_score": None,
+            "confidence_label": "low",
+            "main_message_key": "",
+            "score_policy_warnings": ["demo_only_no_practice_score"],
+            "score_caps": score_caps,
+            "score_available": False,
+            "scoring_gate": gate_state,
+            "detail_feedback_allowed": False,
+            "inputs": {"mode": mode, "demo_only": True},
         }
 
     if recording_score < 0.20:
@@ -166,7 +191,6 @@ def apply_user_score_policy(
         gate_state["target_match_ok"] = False
         gate_state["user_message_type"] = "content_mismatch_general_score"
         gate_state["reasons"].append("target_content_mismatch_general_score")
-        pronunciation_clarity = None
         detail_feedback_allowed = False
         confidence_label = _confidence_at_most(confidence_label, "medium")
 

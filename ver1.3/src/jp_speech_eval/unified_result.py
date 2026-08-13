@@ -57,6 +57,14 @@ def _pick(d: Mapping[str, Any], *path: str, default: Any = None) -> Any:
     return cur
 
 
+def _first_not_none(*values: Any) -> Any:
+    """Return the first present value while preserving valid zero/False values."""
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def _flatten_selected(result: Dict[str, Any]) -> Dict[str, Any]:
     details = result.get("details", {}) if isinstance(result.get("details"), Mapping) else {}
     prosody = result.get("prosody_metrics") or details.get("prosody_metrics") or details.get("prosody") or {}
@@ -76,18 +84,18 @@ def _flatten_selected(result: Dict[str, Any]) -> Dict[str, Any]:
     features: Dict[str, Any] = {
         "duration_sec": result.get("duration_sec"),
         "raw_duration_sec": endpointing.get("raw_duration"),
-        "speech_duration_sec": endpointing.get("speech_duration") or acoustic.get("speech_duration_sec"),
+        "speech_duration_sec": _first_not_none(endpointing.get("speech_duration"), acoustic.get("speech_duration_sec")),
         "speech_ratio": endpointing.get("speech_ratio"),
         "leading_silence_sec": endpointing.get("leading_silence"),
         "trailing_silence_sec": endpointing.get("trailing_silence"),
-        "pause_ratio": pause.get("pause_ratio") or acoustic.get("pause_ratio"),
-        "pause_count": pause.get("pause_count") or acoustic.get("pause_count"),
+        "pause_ratio": _first_not_none(pause.get("pause_ratio"), acoustic.get("pause_ratio")),
+        "pause_count": _first_not_none(pause.get("pause_count"), acoustic.get("pause_count")),
         "voiced_ratio": acoustic.get("voiced_ratio"),
         "f0_mean_hz": acoustic.get("f0_mean_hz"),
         "f0_std_hz": acoustic.get("f0_std_hz"),
-        "relative_log_f0_range": acoustic.get("relative_log_f0_range") or tone.get("pitch_range_log"),
-        "energy_mean": recording.get("energy_mean") or _pick(tone, "energy", "mean"),
-        "energy_cv": recording.get("energy_cv") or _pick(tone, "energy", "cv"),
+        "relative_log_f0_range": _first_not_none(acoustic.get("relative_log_f0_range"), tone.get("pitch_range_log")),
+        "energy_mean": _first_not_none(recording.get("energy_mean"), _pick(tone, "energy", "mean")),
+        "energy_cv": _first_not_none(recording.get("energy_cv"), _pick(tone, "energy", "cv")),
         "recording_quality_score": recording.get("score"),
         "recording_snr_db": recording.get("snr_db"),
         "recording_noise_rms": recording.get("noise_rms"),
@@ -100,14 +108,14 @@ def _flatten_selected(result: Dict[str, Any]) -> Dict[str, Any]:
         "mean_mora_energy_coverage": evidence.get("mean_energy_coverage"),
         "mean_mora_f0_coverage": evidence.get("mean_f0_coverage"),
         "special_mora_judgement_available_count": evidence.get("special_mora_judgement_available_count"),
-        "mora_count": structure.get("mora_count") or len(result.get("moras") or []),
+        "mora_count": _first_not_none(structure.get("mora_count"), len(result.get("moras") or [])),
         "long_vowel_count": structure.get("long_vowel_count"),
         "sokuon_count": structure.get("sokuon_count"),
         "nasal_count": structure.get("nasal_count"),
         "special_mora_count": structure.get("special_mora_count"),
         "special_mora_density": structure.get("special_mora_density"),
-        "speech_rate_mora_per_sec": fluency.get("speech_rate_mora_per_sec") or structure.get("mora_rate"),
-        "avg_mora_duration_sec": fluency.get("avg_mora_duration_sec") or structure.get("avg_mora_duration_sec"),
+        "speech_rate_mora_per_sec": _first_not_none(fluency.get("speech_rate_mora_per_sec"), structure.get("mora_rate")),
+        "avg_mora_duration_sec": _first_not_none(fluency.get("avg_mora_duration_sec"), structure.get("avg_mora_duration_sec")),
         "normalized_f0_range": structure.get("normalized_f0_range"),
         "normalized_f0_slope": structure.get("normalized_f0_slope"),
         "f0_direction_change_rate": structure.get("f0_direction_change_rate"),
@@ -125,16 +133,16 @@ def _flatten_selected(result: Dict[str, Any]) -> Dict[str, Any]:
         "contour_rmse": prosody.get("contour_rmse"),
         "transition_agreement": prosody.get("transition_agreement"),
         "final_intonation_match": prosody.get("final_intonation_match"),
-        "hl_match_rate": prosody.get("hl_match_rate") or prosody.get("hl_match"),
+        "hl_match_rate": _first_not_none(prosody.get("hl_match_rate"), prosody.get("hl_match")),
         "pitch_target_source": prosody.get("pitch_target_source"),
         "pitch_target_consistency": prosody.get("pitch_target_consistency"),
-        "alignment_mode": result.get("alignment_mode") or alignment.get("mode"),
+        "alignment_mode": _first_not_none(result.get("alignment_mode"), alignment.get("mode")),
         "alignment_boundary_cv": alignment.get("boundary_duration_cv"),
         "dtw_cost": content.get("dtw_cost"),
         "duration_ratio": content.get("duration_ratio"),
         "kana_similarity": content.get("kana_similarity"),
         "content_match_status": content.get("status"),
-        "asr_provider": content.get("asr_provider") or _pick(details, "asr", "provider"),
+        "asr_provider": _first_not_none(content.get("asr_provider"), _pick(details, "asr", "provider")),
     }
     return features
 
@@ -181,7 +189,7 @@ def unify_evaluation_result(
         "target_text": target_text if target_text is not None else raw.get("target_text"),
         "kana": raw.get("kana"),
         "mora_count": len(raw.get("moras") or []),
-        "asr_transcript": asr_transcript or _pick(details, "asr", "text") or _pick(details, "content_match", "transcript"),
+        "asr_transcript": _first_not_none(asr_transcript, _pick(details, "asr", "text"), _pick(details, "content_match", "transcript")),
         "cache_prefix": raw.get("cache_prefix"),
         "alignment_mode": raw.get("alignment_mode"),
         "reference_source": details.get("reference_source"),

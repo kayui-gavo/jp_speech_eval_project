@@ -62,3 +62,9 @@ These are for inspection, not normal C-end display.
 - Weak-reference results must keep a weak-reference notice visible.
 - Kanade results must keep a playback-only notice visible.
 - Debug panels should be hidden behind a developer/teacher toggle.
+# Authority note
+
+The learner-facing total has one authority:
+`apply_user_score_policy() -> display_score -> practice_score.value`.
+`raw_result.total_score` is debug/research output and is never a UI fallback.
+Unavailable target-local detail does not imply an unavailable practice score.

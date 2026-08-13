@@ -95,6 +95,36 @@ class PublicApiTest(unittest.TestCase):
         self.assertIn("practice_score", response["user_facing"])
         self.assertGreaterEqual(response["user_facing"]["practice_score"]["value"], 80)
 
+    def test_plausible_japanese_target_mismatch_routes_to_broad_mode(self) -> None:
+        fixed = _raw_result()
+        fixed["details"]["content_match"] = {
+            "status": "fail",
+            "transcript": "今日はいい天気です",
+        }
+        broad = _raw_result("transcript_assisted_light")
+        broad["details"]["content_match"] = {"status": "unknown"}
+        with patch("jp_speech_eval.api.evaluate_mode", side_effect=[fixed, broad]):
+            response = evaluate_speech(EvaluationRequest(audio_path="user.wav", mode="reference"))
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["mode"], "reference_mismatch_general_japanese")
+        self.assertIsNotNone(response["user_facing"]["practice_score"]["value"])
+        match = response["raw_result"]["details"]["content_match"]
+        self.assertFalse(match["content_verified"])
+        self.assertTrue(match["japanese_content_plausible"])
+        self.assertIn("目標文とは違う", response["raw_result"]["feedback"][0])
+        dims = {item["key"]: item for item in response["user_facing"]["score_dimensions"]}
+        self.assertFalse(dims["pitch_accent"]["available"])
+
+    def test_nonsense_target_mismatch_does_not_enter_broad_fallback(self) -> None:
+        fixed = _raw_result()
+        fixed["details"]["content_match"] = {"status": "fail", "transcript": "ああああああ"}
+        with patch("jp_speech_eval.api.evaluate_mode", return_value=fixed) as evaluate:
+            response = evaluate_speech(EvaluationRequest(audio_path="user.wav", mode="reference"))
+        self.assertTrue(response["ok"])
+        self.assertEqual(evaluate.call_count, 1)
+        self.assertEqual(response["mode"], "reference_based")
+        self.assertIsNone(response["user_facing"]["practice_score"]["value"])
+
 
 if __name__ == "__main__":
     unittest.main()

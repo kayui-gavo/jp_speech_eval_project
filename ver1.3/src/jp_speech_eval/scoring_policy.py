@@ -6,6 +6,22 @@ from typing import Any, Dict, Mapping
 from .target_specs import PITCH_FEEDBACK_LEVELS, verified_level_from_source
 
 
+FIXED_REFERENCE_MODES = {
+    "reference",
+    "reference_based",
+    "reference_fixed_sentence",
+    "fixed_reference",
+}
+
+BROAD_MODES = {
+    "reference_free_acoustic",
+    "acoustic",
+    "transcript_assisted",
+    "transcript_assisted_light",
+    "reference_mismatch_general_japanese",
+}
+
+
 @dataclass(frozen=True)
 class ScoringPolicy:
     mode: str
@@ -19,6 +35,8 @@ class ScoringPolicy:
     allow_special_mora_feedback: bool
     allow_total_score_display: bool
     exclude_from_pronunciation_score: bool
+    fixed_reference: bool
+    broad_mode: bool
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -40,23 +58,28 @@ def policy_from_result(result: Mapping[str, Any], *, mode: str | None = None) ->
         "kanade_asr_voice_reference",
     }
     demo_only = bool(details.get("demo_only")) or mode_name.startswith("kanade")
+    fixed_reference = mode_name in FIXED_REFERENCE_MODES
+    broad_mode = mode_name in BROAD_MODES or not fixed_reference
     exclude = demo_only or bool(details.get("exclude_from_pronunciation_score"))
     allow_pitch = (
-        verified_level in PITCH_FEEDBACK_LEVELS
+        fixed_reference
+        and verified_level in PITCH_FEEDBACK_LEVELS
         and not weak_reference
         and not demo_only
     )
-    allow_pron = "limited" if weak_reference or demo_only else "standard"
+    allow_pron = "limited" if weak_reference or demo_only or broad_mode else "standard"
     return ScoringPolicy(
         mode=mode_name,
         target_source=target_source,
         verified_level=verified_level,
         weak_reference=weak_reference,
         demo_only=demo_only,
-        allow_content_match_score=not weak_reference and not demo_only,
+        allow_content_match_score=fixed_reference and not weak_reference and not demo_only,
         allow_pronunciation_feedback=allow_pron,
         allow_pitch_feedback=allow_pitch,
-        allow_special_mora_feedback=not demo_only,
+        allow_special_mora_feedback=fixed_reference and not weak_reference and not demo_only,
         allow_total_score_display=False,
         exclude_from_pronunciation_score=exclude,
+        fixed_reference=fixed_reference,
+        broad_mode=broad_mode,
     )

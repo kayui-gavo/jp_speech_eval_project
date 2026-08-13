@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from .asr_confirmation import build_asr_confirmation_prompt
 from .eval_modes import evaluate_mode
 from .feedback_renderer import render_user_facing_result
+from .shadow_assessment import run_assessment_shadows
 from .transcript_sanity import check_asr_transcript_sanity
 
 
@@ -38,6 +39,13 @@ class SpeechEvalConfig:
     enable_runtime_special_mora_shadow: bool = True
     enable_user_facing_calibrated_special_mora: bool = False
     enable_weak_reference_special_mora_hint: bool = False
+    enable_ssl_shadow: bool = False
+    ssl_shadow_model: str = "microsoft/wavlm-large"
+    ssl_shadow_layer: int = 12
+    ssl_shadow_timeout_sec: float = 30.0
+    enable_special_mora_v2_shadow: bool = False
+    enable_phrase_intonation_shadow: bool = False
+    enable_accent_nucleus_shadow: bool = False
 
 
 @dataclass(frozen=True)
@@ -144,7 +152,8 @@ def _product_fallback_after_target_mismatch(
     }
     general_details["content_match"] = {
         "status": "general_japanese",
-        "content_verified": True,
+        "content_verified": False,
+        "japanese_content_plausible": True,
         "transcript": transcript,
         "note": "broad_scoring_after_fixed_target_mismatch",
     }
@@ -201,6 +210,18 @@ class SpeechEvaluationClient:
                 tts_language=request.tts_language or self.config.tts_language,
             )
             raw = _product_fallback_after_target_mismatch(raw, request, self.config)
+            run_assessment_shadows(
+                raw,
+                user_audio_path=request.audio_path,
+                sample_rate=request.sample_rate or self.config.sample_rate,
+                enable_ssl_shadow=self.config.enable_ssl_shadow,
+                ssl_model_id=self.config.ssl_shadow_model,
+                ssl_layer=self.config.ssl_shadow_layer,
+                ssl_timeout_sec=self.config.ssl_shadow_timeout_sec,
+                enable_special_mora_v2_shadow=self.config.enable_special_mora_v2_shadow,
+                enable_phrase_intonation_shadow=self.config.enable_phrase_intonation_shadow,
+                enable_accent_nucleus_shadow=self.config.enable_accent_nucleus_shadow,
+            )
             effective_mode = str(raw.get("details", {}).get("mode") or request.mode)
             user_facing = render_user_facing_result(
                 raw,

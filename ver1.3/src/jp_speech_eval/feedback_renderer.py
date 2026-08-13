@@ -76,85 +76,6 @@ def _as_score(value: Any, default: float = 0.0) -> float:
     return max(0.0, min(100.0, number))
 
 
-def _weighted_available(scores: Mapping[str, Any], weights: Mapping[str, float]) -> Optional[float]:
-    total = 0.0
-    denom = 0.0
-    for key, weight in weights.items():
-        if weight <= 0:
-            continue
-        value = scores.get(key)
-        if value is None or value == "":
-            continue
-        total += _as_score(value) * weight
-        denom += weight
-    if denom <= 0:
-        return None
-    return total / denom
-
-
-def _display_score(
-    result: Mapping[str, Any],
-    policy: ScoringPolicy,
-    gate: Any,
-    *,
-    special_mora_score: Optional[float] = None,
-) -> Optional[int]:
-    if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
-        return None
-    pronunciation = _as_score(result.get("pronunciation_score"))
-    fluency = _as_score(result.get("fluency_score"))
-    prosody = _as_score(result.get("prosody_score"))
-    details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
-    content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
-    fluency_details = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
-    pronunciation_details = details.get("pronunciation") if isinstance(details.get("pronunciation"), Mapping) else {}
-    prosody_details = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
-    content_score = 100.0 if str(content.get("status") or "unknown") in {"pass", "unknown"} else 35.0
-    scores = {
-        "content_score": content_score,
-        "mora_clarity_score": pronunciation,
-        "rhythm_timing_score": fluency_details.get("rhythm_timing_score", fluency),
-        "phrase_intonation_score": prosody_details.get("final_intonation_score"),
-        "delivery_fluency_score": fluency_details.get("delivery_fluency_score", fluency),
-    }
-    if policy.demo_only:
-        return None
-    if policy.weak_reference:
-        display = _weighted_available(scores, {
-            "content_score": 0.25,
-            "mora_clarity_score": 0.30,
-            "rhythm_timing_score": 0.15,
-            "delivery_fluency_score": 0.30,
-        })
-        if display is None:
-            display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
-        if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
-            display = max(display, 85.0)
-        return int(round(display))
-    if not gate.allow_pitch_feedback:
-        display = _weighted_available(scores, {
-            "content_score": 0.25,
-            "mora_clarity_score": 0.30,
-            "rhythm_timing_score": 0.20,
-            "delivery_fluency_score": 0.25,
-        })
-        if display is None:
-            display = 0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody
-        if gate.reliability == "high" and pronunciation >= 90 and fluency >= 60:
-            display = max(display, 85.0)
-        return int(round(display))
-    display = _weighted_available(scores, {
-        "content_score": 0.25,
-        "mora_clarity_score": 0.25,
-        "rhythm_timing_score": 0.20,
-        "phrase_intonation_score": 0.10,
-        "delivery_fluency_score": 0.20,
-    })
-    if display is not None:
-        return int(round(display))
-    return int(round(0.55 * pronunciation + 0.35 * fluency + 0.10 * prosody))
-
-
 def _mode_notice(policy: ScoringPolicy, gate: Any) -> str:
     if policy.demo_only and "kanade" in policy.mode:
         return user_message("notice.kanade")
@@ -186,34 +107,34 @@ def _score_dimensions(result: Mapping[str, Any], gate: Any, user_score: Mapping[
     rhythm = fluency.get("rhythm_timing_score", result.get("fluency_score"))
     delivery = fluency.get("delivery_fluency_score", result.get("fluency_score"))
     pitch_value = prosody.get("pitch_accent_score", result.get("prosody_score"))
-    detail_allowed = bool(user_score.get("detail_feedback_allowed", True)) and gate.practice_check_result != "retry"
+    score_available = bool(user_score.get("score_available")) and gate.practice_check_result != "retry"
     return [
         _score_dimension(
             "pronunciation_clarity",
             "発音の明瞭さ",
             user_score.get("pronunciation_clarity_score"),
-            available=user_score.get("pronunciation_clarity_score") is not None,
+            available=score_available and user_score.get("pronunciation_clarity_score") is not None,
             source_field="pronunciation_clarity_score",
         ),
         _score_dimension(
             "mora_rhythm",
             "拍のリズム",
             rhythm,
-            available=detail_allowed,
+            available=score_available,
             source_field="rhythm_timing_score",
         ),
         _score_dimension(
             "delivery_fluency",
             "読み方のなめらかさ",
             delivery,
-            available=detail_allowed,
+            available=score_available,
             source_field="delivery_fluency_score",
         ),
         _score_dimension(
             "pitch_accent",
             "高低アクセント",
             pitch_value,
-            available=detail_allowed and bool(gate.allow_pitch_feedback),
+            available=score_available and bool(gate.allow_pitch_feedback),
             source_field="pitch_accent_score",
         ),
     ]
@@ -224,12 +145,8 @@ def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -
         return "retry"
     if policy.demo_only:
         return "debug_only"
-    if policy.weak_reference and "confirmed" not in policy.mode:
-        return "debug_only"
-    if not gate.allow_pronunciation_detail:
-        return "debug_only"
-    if gate.reliability == "low":
-        return "debug_only"
+    if gate.practice_check_result == "needs_attention":
+        return "practice_suggestion"
     if focus and focus.get("category") not in {"demo", "weak_reference"}:
         return "practice_suggestion"
     return "pass"
@@ -363,7 +280,7 @@ def render_user_facing_result(
         practice = "needs_attention"
     else:
         practice = gate.practice_check_result
-    display_score = user_score.get("display_score")
+    display_score = user_score.get("display_score") if user_score.get("score_available") else None
     if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
         display_score = None
     status = _status(policy, gate, focus)
@@ -376,8 +293,8 @@ def render_user_facing_result(
     elif len(messages) > 1 and status == "practice_suggestion":
         primary = messages[1]
     practice_score = PracticeScore(
-        value=display_score if status != "debug_only" else None,
-        label=practice_score_label(display_score if status != "debug_only" else None, status),
+        value=display_score,
+        label=practice_score_label(display_score, status),
         explanation=practice_score_explanation(mode_notice),
     )
 

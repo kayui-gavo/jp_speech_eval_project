@@ -60,7 +60,7 @@ def test_moderately_bad_recording_keeps_score():
 
 
 def test_unusable_recording_can_still_be_unscorable():
-    policy = apply_user_score_policy(_result(details={"recording_quality": {"score": 0.1}}))
+    policy = apply_user_score_policy(_result(details={"recording_quality": {"score": 0.0}}))
     assert policy["display_score"] is None
     assert policy["score_available"] is False
 
@@ -68,7 +68,7 @@ def test_unusable_recording_can_still_be_unscorable():
 def test_content_mismatch_keeps_general_score_but_hides_target_detail():
     policy = apply_user_score_policy(_result(details={"content_match": {"status": "fail"}}))
     assert policy["display_score"] is not None
-    assert policy["pronunciation_clarity_score"] is None
+    assert policy["pronunciation_clarity_score"] is not None
     assert policy["detail_feedback_allowed"] is False
     assert policy["scoring_gate"]["target_match_ok"] is False
 

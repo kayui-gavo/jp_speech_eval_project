@@ -133,7 +133,7 @@ class ProductGuardrailsTest(unittest.TestCase):
         rendered = render_user_facing_result(result, special_mora_threshold_profile="v1_debug", enable_user_facing_calibrated_special_mora=True)
         self.assertIsNone(rendered["focus_feedback"])
         reasons = {item["suppression_reason"] for item in rendered["debug"]["special_mora_decisions"]}
-        self.assertTrue({"legacy_threshold_metadata", "debug_only_by_profile"}.intersection(reasons))
+        self.assertTrue({"legacy_threshold_metadata", "debug_only_by_profile", "missing_or_invalid_threshold_metadata"}.intersection(reasons))
 
     def test_auto_pyopenjtalk_blocks_pitch_feedback(self) -> None:
         result = _result(details={"pitch_target_source": "auto_pyopenjtalk", "verified_level": "auto_pyopenjtalk"})
@@ -160,8 +160,11 @@ class ProductGuardrailsTest(unittest.TestCase):
         )
         rendered = render_user_facing_result(result)
         joined = "\n".join(rendered["user_messages"])
-        self.assertIsNone(rendered["display_score"])
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertEqual(rendered["practice_score"]["value"], rendered["display_score"])
         self.assertFalse(rendered["debug"]["reliability_gate"]["allow_pitch_feedback"])
+        self.assertFalse(rendered["detail_feedback_allowed"])
+        self.assertNotEqual(rendered["status"], "debug_only")
         self.assertEqual(rendered["debug"]["prosody_score"], 99)
         self.assertNotIn("韵律", joined)
         self.assertNotIn("アクセント", joined)
@@ -215,12 +218,17 @@ class ProductGuardrailsTest(unittest.TestCase):
         rows = score_special_mora_timing(result)
         self.assertTrue(all(row.status == "uncertain" for row in rows if row.type in {"long_vowel", "moraic_nasal"}))
 
-    def test_equal_fallback_hides_user_facing_score(self) -> None:
+    def test_equal_fallback_keeps_broad_score_and_hides_local_detail(self) -> None:
         rendered = render_user_facing_result(_result(alignment_mode="cached_dtw_fallback_equal"))
-        self.assertIsNone(rendered["display_score"])
-        self.assertIsNone(rendered["pronunciation_clarity_score"])
-        self.assertIn("alignment_fallback_no_display_score", rendered["score_policy_warnings"])
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertIsNotNone(rendered["pronunciation_clarity_score"])
+        self.assertIn("alignment_fallback_broad_score_only", rendered["score_policy_warnings"])
         self.assertFalse(rendered["detail_feedback_allowed"])
+        dims = {item["key"]: item for item in rendered["score_dimensions"]}
+        self.assertTrue(dims["pronunciation_clarity"]["available"])
+        self.assertTrue(dims["mora_rhythm"]["available"])
+        self.assertTrue(dims["delivery_fluency"]["available"])
+        self.assertFalse(dims["pitch_accent"]["available"])
 
     def test_runtime_missing_threshold_metadata_is_debug_uncertain(self) -> None:
         import tempfile
@@ -447,7 +455,7 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertEqual(rendered["practice_score"]["value"], rendered["display_score"])
         self.assertIn("練習用の目安", rendered["practice_score"]["explanation"])
 
-    def test_weak_reference_downweights_prosody_proxy(self) -> None:
+    def test_weak_reference_keeps_broad_score_but_blocks_strict_pitch(self) -> None:
         result = _result(
             total_score=65,
             pronunciation_score=92,
@@ -462,11 +470,13 @@ class ProductGuardrailsTest(unittest.TestCase):
             },
         )
         rendered = render_user_facing_result(result, mode="asr_pseudo_reference")
-        self.assertIsNone(rendered["display_score"])
-        self.assertIn("weak_reference_no_display_score", rendered["score_policy_warnings"])
+        self.assertIsNotNone(rendered["display_score"])
+        self.assertIn("weak_reference_broad_score_only", rendered["score_policy_warnings"])
         self.assertTrue(rendered["debug"]["weak_reference"])
-        self.assertEqual(rendered["status"], "debug_only")
-        self.assertIsNone(rendered["practice_score"]["value"])
+        self.assertNotEqual(rendered["status"], "debug_only")
+        self.assertEqual(rendered["practice_score"]["value"], rendered["display_score"])
+        dims = {item["key"]: item for item in rendered["score_dimensions"]}
+        self.assertFalse(dims["pitch_accent"]["available"])
 
     def test_confirmed_weak_reference_downgrades_tts_pitch_proxy(self) -> None:
         fake_cache = Mock()
@@ -544,7 +554,7 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertEqual(rendered["practice_score"]["label"], "録音を確認")
         self.assertIsNone(rendered["display_score"])
         self.assertIsNone(rendered["pronunciation_clarity_score"])
-        self.assertIn("recording_quality_bad", rendered["suppressed_reasons"])
+        self.assertIn("recording_unusable", rendered["suppressed_reasons"])
 
     def test_kanade_mode_is_debug_only_playback_notice(self) -> None:
         rendered = render_user_facing_result(
@@ -750,7 +760,7 @@ class ProductGuardrailsTest(unittest.TestCase):
         for expected in sorted(ALLOWED_EXPECTED_BEHAVIORS):
             rows.append({
                 "sample_id": expected,
-                "audio_path": "data/ramen.wav",
+                "audio_path": "assets/reference_cache/ramen_kudasai_aivis.ref.wav",
                 "target_text": "ラーメンをください",
                 "audio_type": "self_recording_clear",
                 "reference_type": "tts_reference",

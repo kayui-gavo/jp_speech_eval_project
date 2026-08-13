@@ -12,6 +12,10 @@ using the Prosodic ABX framework.
 import sys
 from pathlib import Path
 
+# Manual/optional integration smoke script. Ordinary pytest must not download a
+# multi-gigabyte SSL checkpoint or treat boolean return values as unit tests.
+__test__ = False
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -38,10 +42,10 @@ def test_hubert_extraction():
         return False
     
     # Extract HuBERT features
-    print("\n2. Initializing HuBERT-Large-Japanese...")
+    print("\n2. Initializing WavLM-Large...")
     try:
         extractor = HuBERTFeatureExtractor(
-            model_id="facebook/hubert-large-ls60-japanese"
+            model_id="microsoft/wavlm-large"
         )
         print(f"   ✓ Model loaded ({extractor.num_layers} layers)")
     except Exception as e:
