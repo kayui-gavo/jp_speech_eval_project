@@ -9,20 +9,23 @@ from typing import Any, Dict, List, Optional
 
 DEFAULT_USER_FACING_MESSAGES: Dict[str, str] = {
     "status.pass": "全体としてよくできています。",
-    "status.practice_suggestion": "全体としては問題ありません。より自然にするための練習ポイントがあります。",
-    "status.retry": "録音が短すぎるか，音声がはっきり取れていません。もう一度録音してください。",
-    "status.debug_only": "このモードでは，厳密な発音判定は行わず，練習用の参考として表示しています。",
-    "notice.fixed_verified": "fixed-reference mode: verified target に基づく練習確認です。",
-    "notice.fixed_limited": "fixed-reference mode: 信頼できる内容・リズム・流暢さを中心に確認します。",
-    "notice.weak_reference": "認識された文をもとにした参考判定です。厳密な発音評価ではありません。",
+    "status.practice_suggestion": "今回の結果をもとに、次に意識するとよいポイントがあります。",
+    "status.retry": "録音をうまく確認できませんでした。もう一度録音してください。",
+    "status.debug_only": "このモードは参考表示です。",
+    "notice.fixed_verified": "目標文と参考音声をもとに、発音・リズム・流暢さ・抑揚を確認します。",
+    "notice.fixed_limited": "今回は信頼できる項目を中心に評価しています。",
+    "notice.general_japanese": "目標文との細かい比較ではなく、日本語としての全体的な話し方を評価しています。",
+    "notice.general_japanese_fallback": "目標文とは違う内容でしたが、日本語としての全体的な話し方を評価しています。",
+    "notice.weak_reference": "確認した文をもとにした練習用の目安です。細かいアクセント判定は行いません。",
     "notice.kanade": "これはあなたの声に近い参考音です。声の似ている度合いは採点していません。",
     "special_mora.mild_long": "より自然にするなら，「{mora}」を少し長めに意識するとよいです。",
-    "score_policy.alignment_limited_score_cap": "今回は音声の細かい位置合わせが不安定なため，詳しい発音スコアは表示しません。",
-    "score_policy.clear_recording_but_pronunciation_needs_practice": "録音ははっきりしています。ただし，発音の明瞭さにはまだ改善の余地があります。まずは参考音声をゆっくり聞きながら練習してみましょう。",
-    "score_policy.content_match_failed_no_pronunciation_score": "目標文との一致が不足しているため，今回は発音スコアを表示しません。",
+    "score_policy.clear_recording_but_pronunciation_needs_practice": "録音ははっきりしています。発音をもう少し整えると、さらに聞き取りやすくなります。",
+    "score_policy.content_mismatch_general_score": "目標文とは違う内容でしたが、日本語としての全体的な話し方は評価しています。",
+    "score_policy.broad_score_only": "今回は細かい判定よりも、全体的な話し方を中心に評価しています。",
+    "score_policy.invalid_or_non_japanese": "今回は日本語として安定して確認できませんでした。もう一度話してみてください。",
+    "score_policy.recording_unusable_no_score": "録音をうまく確認できませんでした。マイクに少し近づいて、もう一度録音してください。",
     "score_policy.demo_only_no_pronunciation_score": "このモードは参考音声のデモです。発音の正しさは採点していません。",
-    "score_policy.short_sentence_overall_only": "文が短いため，今回は全体的な練習コメントを中心に表示します。細かい発音の断定は控えます。",
-    "score_policy.weak_reference_practice_feedback": "確認した文をもとにした練習用フィードバックです。厳密な発音採点ではありません。",
+    "score_policy.weak_reference_practice_feedback": "確認した文をもとにした練習用フィードバックです。細かいアクセント判定は控えています。",
 }
 
 
@@ -40,10 +43,10 @@ class PracticeScore:
 
 @dataclass(frozen=True)
 class UserFacingResult:
-    """Safe response contract for consumer UI.
+    """Consumer UI response contract.
 
-    Raw scores and acoustic diagnostics may exist in `debug`, but UI should
-    prefer these fields to avoid presenting proxy metrics as scientific truth.
+    Raw acoustic/debug values remain available under `debug`, while the main
+    fields are designed for a stable practice experience.
     """
 
     mode: str
@@ -84,11 +87,7 @@ def default_user_facing_messages_path() -> Path:
 
 @lru_cache(maxsize=4)
 def load_user_facing_messages(path: str | Path | None = None) -> Dict[str, str]:
-    """Load learner-facing copy.
-
-    Missing config files fall back to conservative defaults so API callers do
-    not fail when the demo is embedded in another pipeline.
-    """
+    """Load learner-facing copy with local defaults as a safe fallback."""
 
     messages = dict(DEFAULT_USER_FACING_MESSAGES)
     message_path = Path(path) if path is not None else default_user_facing_messages_path()
@@ -119,16 +118,20 @@ def practice_score_label(value: Optional[int], status: str) -> str:
         return "録音を確認"
     if value is None:
         return "判定できません"
-    if value >= 85:
+    if value >= 90:
+        return "とても良い"
+    if value >= 80:
         return "良好"
     if value >= 70:
         return "もう少し"
-    return "録音を確認"
+    if value >= 55:
+        return "練習中"
+    return "要練習"
 
 
 def practice_score_explanation(mode_notice: str) -> str:
     return (
-        "このスコアは，今回の録音について，内容・リズム・流暢さなどをもとにした"
-        "練習用の目安です。発音能力そのものを厳密に評価するものではありません。"
+        "このスコアは、今回の録音について、発音・リズム・流暢さなどをもとにした"
+        "練習用の目安です。正式な試験スコアではありません。"
         f" {mode_notice}".strip()
     )
