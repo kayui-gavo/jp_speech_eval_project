@@ -63,8 +63,16 @@ def compute_accent_nucleus_shadow(result: Mapping[str, Any]) -> Dict[str, Any]:
     strength = float(np.max(drops)) if predicted is not None else None
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
-    source = str(details.get("pitch_target_source") or details.get("reference_source") or "unknown")
-    weak_target = source in {"auto_pyopenjtalk", "pyopenjtalk", "unknown"}
+    metrics = result.get("prosody_metrics") if isinstance(result.get("prosody_metrics"), Mapping) else {}
+    source = str(
+        details.get("pitch_target_source")
+        or metrics.get("hl_target_source")
+        or metrics.get("pitch_target_source")
+        or "unknown"
+    )
+    normalized_source = source.lower()
+    strong_sources = {"human_checked", "ojad_checked", "ojad_reviewed", "manual_verified"}
+    weak_target = normalized_source not in strong_sources
     return {
         "available": bool(np.sum(valid) >= 3 and predicted is not None),
         "phrase": result.get("target_text"),

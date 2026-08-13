@@ -1,0 +1,34 @@
+{
+  "audit": "C-end v2 real-audio acceptance",
+  "date": "2026-08-14",
+  "platform": "macOS-15.1-arm64",
+  "python": "3.11.3",
+  "baseline_commit": "5528de10e17675e715bd64653f5cd8da6d98d5e6",
+  "candidate_start_commit": "3006bab0ea9c7c940b18a104a9cc7e4a0d2863d8",
+  "production_environment": {
+    "numpy": "1.26.4",
+    "librosa": "0.11.0",
+    "soundfile": "0.13.1",
+    "faster_whisper": "1.2.1",
+    "asr_checkpoint": "Systran/faster-whisper-small",
+    "asr_checkpoint_preexisting": true
+  },
+  "ssl_isolated_environment": {
+    "location": "/private/tmp/cend_ssl_deps",
+    "numpy": "2.4.6",
+    "torch": "2.13.0",
+    "transformers": "5.15.0",
+    "model_id": "microsoft/wavlm-large",
+    "model_revision": "c1423ed94bb01d80a3f5ce5bc39f6026a0f4828c",
+    "model_cache_size": "1.2G",
+    "device": "cpu",
+    "layer": 12,
+    "sampling_rate_hz": 16000
+  },
+  "data": {
+    "jvs": "existing local JVS parallel100",
+    "janon": "existing local JANON",
+    "controlled_edits": "existing Tier 0 Batch 3 assets",
+    "negative_control_coverage": "GAP_NO_LABELLED_NON_JAPANESE_SILENCE_OR_PURE_NOISE_AUDIO"
+  }
+}

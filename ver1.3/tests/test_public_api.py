@@ -97,6 +97,7 @@ class PublicApiTest(unittest.TestCase):
 
     def test_plausible_japanese_target_mismatch_routes_to_broad_mode(self) -> None:
         fixed = _raw_result()
+        fixed["cache_prefix"] = "/tmp/fixed-target"
         fixed["details"]["content_match"] = {
             "status": "fail",
             "transcript": "今日はいい天気です",
@@ -111,6 +112,10 @@ class PublicApiTest(unittest.TestCase):
         match = response["raw_result"]["details"]["content_match"]
         self.assertFalse(match["content_verified"])
         self.assertTrue(match["japanese_content_plausible"])
+        self.assertEqual(
+            response["raw_result"]["details"]["fixed_reference_debug"]["cache_prefix"],
+            "/tmp/fixed-target",
+        )
         self.assertIn("目標文とは違う", response["raw_result"]["feedback"][0])
         dims = {item["key"]: item for item in response["user_facing"]["score_dimensions"]}
         self.assertFalse(dims["pitch_accent"]["available"])

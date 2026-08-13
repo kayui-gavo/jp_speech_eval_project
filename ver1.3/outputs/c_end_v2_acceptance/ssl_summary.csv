@@ -1,0 +1,5 @@
+sample_id,relation,effective_mode,ssl_available,ssl_cosine_dtw,mfcc_content_dtw,ssl_latency_ms,qualitative_order_note
+native_jvs001_s001,self,reference_based,true,0.078961,0.0832,6955.655,closest
+learner_chf1_i74,different_speaker_same_target,reference_based,true,0.245396,2.9380,259.446,farther_than_self
+native_jvs002_s001,different_native_speaker_same_target,reference_based,true,0.268505,3.0143,1121.720,slightly_farther_than_learner_not_expected
+mismatch_jvs_s002_as_ramen,different_target,reference_mismatch_general_japanese,true,0.569631,3.6581,738.972,farthest

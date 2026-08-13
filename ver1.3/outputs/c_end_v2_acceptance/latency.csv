@@ -1,0 +1,8 @@
+path,run,sample_id,wall_latency_sec,component_latency_ms,note
+production,cold,native_jvs001_s001,2.095147,,includes process imports and feature initialization
+production,warm_median,all_40,0.352642,,median across acceptance matrix
+production,warm_p90,all_40,0.612477,,empirical p90 across acceptance matrix
+production_asr_fallback,warm,mismatch_jvs_s002_as_ramen,4.632006,,includes faster-whisper ASR
+ssl_shadow,cold,native_jvs001_s001,8.643864,7186.781,model cached on disk but loaded into memory
+ssl_shadow,warm,native_jvs001_s001,1.422800,1322.456,same process and same audio second call
+local_shadows,warm,native_jvs002_s001,0.160011,9.714,special-mora plus phrase plus nucleus; component sum is approximate

@@ -45,6 +45,16 @@ def test_local_special_mora_shadow_is_structured_and_not_user_facing():
     assert all("features" in item for item in payload["evidence"])
 
 
+def test_local_special_mora_shadow_does_not_claim_precise_decision_on_equal_fallback():
+    result = _result()
+    result["alignment_mode"] = "cached_dtw_fallback_equal"
+    payload = compute_special_mora_v2_shadow(result, np.ones(8000, dtype=np.float32) * 0.1, 16000)
+    assert payload["available"]
+    assert payload["decision_available"] is False
+    assert all(item["evidence_confidence"] == "low" for item in payload["evidence"])
+    assert all(item["shadow_decision"] == "unavailable_alignment_or_roi_unreliable" for item in payload["evidence"])
+
+
 def test_prosody_shadows_are_normalized_and_not_user_facing():
     phrase = compute_phrase_intonation_shadow(_result())
     nucleus = compute_accent_nucleus_shadow(_result())
@@ -52,6 +62,16 @@ def test_prosody_shadows_are_normalized_and_not_user_facing():
     assert phrase["user_facing"] is False
     assert nucleus["weak_target"] is True
     assert nucleus["user_facing"] is False
+
+
+def test_accent_nucleus_uses_pitch_target_provenance_not_reference_audio_identity():
+    result = _result()
+    result["details"].pop("pitch_target_source")
+    result["details"]["reference_source"] = "jvs_native_external_reference_wav"
+    result["prosody_metrics"] = {"hl_target_source": "openjtalk_accent_phrase_chain"}
+    nucleus = compute_accent_nucleus_shadow(result)
+    assert nucleus["target_source"] == "openjtalk_accent_phrase_chain"
+    assert nucleus["weak_target"] is True
 
 
 def test_disabled_shadows_do_not_load_audio_or_change_scores():
@@ -69,6 +89,26 @@ def test_shadow_failure_isolated_from_product_score():
         run_assessment_shadows(result, user_audio_path="missing.wav", enable_ssl_shadow=True)
     assert result["total_score"] == 77
     assert result["details"]["shadow"]["ssl_pronunciation"]["available"] is False
+
+
+def test_ssl_shadow_can_reuse_preserved_fixed_reference_after_broad_fallback(tmp_path):
+    prefix = tmp_path / "reference"
+    prefix.with_suffix(".ref.wav").write_bytes(b"fixture")
+    result = _result()
+    result["details"]["fixed_reference_debug"] = {"cache_prefix": str(prefix)}
+
+    class Extractor:
+        def extract_layer(self, waveform, layer, sr):
+            return np.eye(2, dtype=np.float32)
+
+    with patch("jp_speech_eval.shadow_assessment._audio", return_value=(np.ones(32), 16000)):
+        run_assessment_shadows(
+            result,
+            user_audio_path="user.wav",
+            enable_ssl_shadow=True,
+            ssl_extractor=Extractor(),
+        )
+    assert result["details"]["shadow"]["ssl_pronunciation"]["available"] is True
 
 
 def test_unified_result_preserves_zero_values():

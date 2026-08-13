@@ -84,13 +84,16 @@ class SSLFeatureExtractor:
             return
         try:
             import torch
-            from transformers import AutoModel, AutoProcessor
+            from transformers import AutoFeatureExtractor, AutoModel
         except ImportError as exc:
             raise RuntimeError("SSL shadow requires optional torch and transformers") from exc
         self._torch = torch
         self.device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
         try:
-            self.processor = AutoProcessor.from_pretrained(self.model_id)
+            # WavLM checkpoints expose an audio feature extractor, not a
+            # tokenizer-backed processor.  AutoProcessor fails for the official
+            # microsoft/wavlm-large checkpoint on current transformers.
+            self.processor = AutoFeatureExtractor.from_pretrained(self.model_id)
             self.model = AutoModel.from_pretrained(self.model_id, output_hidden_states=True)
         except Exception as exc:
             raise RuntimeError(f"Failed to load SSL checkpoint {self.model_id}: {exc}") from exc
@@ -110,9 +113,10 @@ class SSLFeatureExtractor:
         if peak > 1.0:
             waveform = waveform / peak
         inputs = self.processor(waveform, sampling_rate=sr, return_tensors="pt")
+        model_inputs = {key: value.to(self.device) for key, value in inputs.items()}
         with self._torch.no_grad():
             outputs = self.model(
-                inputs["input_values"].to(self.device),
+                **model_inputs,
                 output_hidden_states=True,
             )
         layers: Dict[int, np.ndarray] = {}

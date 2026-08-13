@@ -58,6 +58,9 @@ def compute_special_mora_v2_shadow(
     sample_rate: int,
 ) -> Dict[str, Any]:
     rows = result.get("mora_table") or []
+    alignment_mode = str(result.get("alignment_mode") or "")
+    alignment_reliable = not alignment_mode.endswith("fallback_equal")
+    audio_duration = len(waveform) / max(sample_rate, 1)
     evidence: List[Dict[str, Any]] = []
     for index, row in enumerate(rows):
         if not isinstance(row, Mapping):
@@ -66,11 +69,14 @@ def compute_special_mora_v2_shadow(
         special_type = SPECIAL_TYPES.get(surface)
         if not special_type:
             continue
+        roi_start = float(row.get("start_sec") or 0.0)
+        roi_end = float(row.get("end_sec") or 0.0)
+        roi_valid = 0.0 <= roi_start < roi_end <= audio_duration + (1.0 / max(sample_rate, 1))
         stats = _roi_stats(
             waveform,
             sample_rate,
-            float(row.get("start_sec") or 0.0),
-            float(row.get("end_sec") or 0.0),
+            roi_start,
+            roi_end,
         )
         previous_duration = None
         previous_stats = None
@@ -100,8 +106,10 @@ def compute_special_mora_v2_shadow(
             "type": special_type,
             "mora_index": index,
             "surface_mora": surface,
-            "roi_start": float(row.get("start_sec") or 0.0),
-            "roi_end": float(row.get("end_sec") or 0.0),
+            "roi_start": roi_start,
+            "roi_end": roi_end,
+            "roi_valid": roi_valid,
+            "alignment_mode": alignment_mode,
             "features": {
                 **stats,
                 "duration_to_previous_ratio": None if not previous_duration else stats["duration_sec"] / previous_duration,
@@ -114,13 +122,19 @@ def compute_special_mora_v2_shadow(
                 "previous_mora": None if index == 0 else str(rows[index - 1].get("mora") or ""),
                 "next_mora": None if index + 1 >= len(rows) else str(rows[index + 1].get("mora") or ""),
             },
-            "evidence_confidence": "low" if stats["duration_sec"] <= 0 else "medium",
-            "shadow_decision": "evidence_only",
+            "evidence_confidence": "medium" if roi_valid and alignment_reliable else "low",
+            "shadow_decision": (
+                "evidence_only"
+                if roi_valid and alignment_reliable
+                else "unavailable_alignment_or_roi_unreliable"
+            ),
             "interpretation": "local_acoustic_evidence_not_phone_correctness",
             "user_facing": False,
         })
     return {
         "available": bool(evidence),
+        "decision_available": bool(evidence) and alignment_reliable and all(item["roi_valid"] for item in evidence),
+        "alignment_mode": alignment_mode,
         "backend": "numpy_target_local_roi_v2",
         "evidence": evidence,
         "user_facing": False,

@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 
+_SSL_EXTRACTOR_CACHE: Dict[str, Any] = {}
+
+
 def _failure(backend: str, exc: Exception, elapsed: float) -> Dict[str, Any]:
     return {
         "available": False,
@@ -50,11 +53,20 @@ def run_assessment_shadows(
 
             waveform, sr = _audio(user_audio_path, sample_rate)
             cache_prefix = result.get("cache_prefix")
+            if not cache_prefix:
+                fixed_debug = details.get("fixed_reference_debug")
+                if isinstance(fixed_debug, Mapping):
+                    cache_prefix = fixed_debug.get("cache_prefix")
             reference_path = Path(f"{cache_prefix}.ref.wav") if cache_prefix else None
             if reference_path is None or not reference_path.exists():
                 raise FileNotFoundError("fixed-reference audio is unavailable")
             reference, reference_sr = _audio(str(reference_path), sample_rate)
-            extractor = ssl_extractor or SSLFeatureExtractor(model_id=ssl_model_id)
+            extractor = ssl_extractor
+            if extractor is None:
+                extractor = _SSL_EXTRACTOR_CACHE.get(ssl_model_id)
+                if extractor is None:
+                    extractor = SSLFeatureExtractor(model_id=ssl_model_id)
+                    _SSL_EXTRACTOR_CACHE[ssl_model_id] = extractor
             user_features = extractor.extract_layer(waveform, ssl_layer, sr)
             reference_features = extractor.extract_layer(reference, ssl_layer, reference_sr)
             distance = cosine_dtw_distance(reference_features, user_features)

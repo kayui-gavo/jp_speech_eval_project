@@ -149,6 +149,7 @@ def _product_fallback_after_target_mismatch(
         "fluency_score": raw.get("fluency_score"),
         "total_score": raw.get("total_score"),
         "alignment_mode": raw.get("alignment_mode"),
+        "cache_prefix": raw.get("cache_prefix"),
     }
     general_details["content_match"] = {
         "status": "general_japanese",
