@@ -28,105 +28,81 @@ def _result(**overrides):
     return result
 
 
-def test_bad_pronunciation_cannot_be_lifted_to_high_display_score():
-    policy = apply_user_score_policy(_result(pronunciation_score=55, prosody_score=98, fluency_score=98))
-    assert policy["display_score"] <= 65
-    assert policy["pronunciation_clarity_score"] <= 55
-    assert policy["display_score"] <= policy["pronunciation_clarity_score"] + 5
-    assert policy["display_score_before_cap"] > policy["display_score_after_cap"]
-    assert policy["display_cap_applied"] is True
-    assert "pronunciation_margin_cap" in policy["display_cap_reason"]
-    assert policy["main_message_key"] == "clear_recording_but_pronunciation_needs_practice"
+def test_product_score_is_continuous_and_available_for_normal_case():
+    low = apply_user_score_policy(_result(pronunciation_score=55))
+    mid = apply_user_score_policy(_result(pronunciation_score=70))
+    high = apply_user_score_policy(_result(pronunciation_score=88))
+    assert low["display_score"] is not None
+    assert low["display_score"] < mid["display_score"] < high["display_score"]
+    assert high["display_cap_applied"] is False
 
 
-def test_pronunciation_under_70_cannot_be_lifted_above_75():
-    policy = apply_user_score_policy(_result(pronunciation_score=66, prosody_score=100, fluency_score=100))
-    assert policy["display_score"] <= 75
-    assert policy["display_score"] <= policy["pronunciation_clarity_score"] + 5
-
-
-def test_fallback_alignment_caps_display_and_pronunciation_clarity():
+def test_fallback_alignment_keeps_broad_score_but_hides_detail():
     policy = apply_user_score_policy(_result(alignment_mode="cached_dtw_fallback_equal"))
-    assert policy["display_score"] is None
-    assert policy["pronunciation_clarity_score"] is None
-    assert "alignment_fallback_cap" in policy["score_policy_warnings"]
-    assert "alignment_fallback_no_display_score" in policy["score_policy_warnings"]
+    assert policy["display_score"] is not None
     assert policy["detail_feedback_allowed"] is False
+    assert "alignment_fallback_broad_score_only" in policy["score_policy_warnings"]
     assert policy["scoring_gate"]["alignment_ok"] is False
-    assert policy["scoring_gate"]["score_available"] is False
 
 
-def test_low_alignment_hides_display_and_pronunciation_clarity():
-    policy = apply_user_score_policy(_result(details={"reliability": {"level": "medium", "overall": 0.7, "alignment": 0.3}}))
-    assert policy["display_score"] is None
-    assert policy["pronunciation_clarity_score"] is None
-    assert "low_alignment_no_display_score" in policy["score_policy_warnings"]
+def test_low_alignment_keeps_score_but_lowers_confidence():
+    policy = apply_user_score_policy(_result(details={"reliability": {"level": "low", "overall": 0.3, "alignment": 0.2}}))
+    assert policy["display_score"] is not None
     assert policy["detail_feedback_allowed"] is False
-
-
-def test_bad_recording_hides_display_score():
-    policy = apply_user_score_policy(_result(details={"recording_quality": {"score": 0.4}}))
-    assert policy["display_score"] is None
-    assert policy["pronunciation_clarity_score"] is None
-    assert "recording_quality_no_display_score" in policy["score_policy_warnings"]
-    assert policy["scoring_gate"]["recording_ok"] is False
-
-
-def test_content_failed_hides_pronunciation_score():
-    policy = apply_user_score_policy(_result(details={"content_match": {"status": "fail"}}))
-    assert policy["display_score"] is None
-    assert policy["pronunciation_clarity_score"] is None
     assert policy["confidence_label"] == "low"
+
+
+def test_moderately_bad_recording_keeps_score():
+    policy = apply_user_score_policy(_result(details={"recording_quality": {"score": 0.4}}))
+    assert policy["display_score"] is not None
+    assert policy["detail_feedback_allowed"] is False
+    assert "recording_quality_low_confidence_score" in policy["score_policy_warnings"]
+
+
+def test_unusable_recording_can_still_be_unscorable():
+    policy = apply_user_score_policy(_result(details={"recording_quality": {"score": 0.1}}))
+    assert policy["display_score"] is None
+    assert policy["score_available"] is False
+
+
+def test_content_mismatch_keeps_general_score_but_hides_target_detail():
+    policy = apply_user_score_policy(_result(details={"content_match": {"status": "fail"}}))
+    assert policy["display_score"] is not None
+    assert policy["pronunciation_clarity_score"] is None
+    assert policy["detail_feedback_allowed"] is False
     assert policy["scoring_gate"]["target_match_ok"] is False
 
 
-def test_fluency_and_prosody_cannot_lift_failed_content_case():
-    policy = apply_user_score_policy(
-        _result(
-            pronunciation_score=95,
-            prosody_score=100,
-            fluency_score=100,
-            details={
-                "content_match": {"status": "fail"},
-                "fluency": {"rhythm_timing_score": 100, "delivery_fluency_score": 100},
-            },
-        )
-    )
-    assert policy["display_score"] is None
-    assert policy["pronunciation_clarity_score"] is None
-
-
-def test_weak_reference_hides_display_score_and_confidence_limited():
+def test_weak_reference_keeps_practice_score():
     policy = apply_user_score_policy(
         _result(details={"weak_reference": True}),
         mode="asr_confirmed_weak_reference",
     )
-    assert policy["display_score"] is None
-    assert policy["display_score_after_cap"] is None
-    assert policy["display_cap_applied"] is True
-    assert "weak_reference_no_display_score" in policy["display_cap_reason"]
-    assert policy["confidence_label"] in {"low", "medium"}
-    assert "weak_reference_no_display_score" in policy["score_policy_warnings"]
-
-
-def test_short_sentence_caps_detail_display():
-    policy = apply_user_score_policy(_result(moras=["ア", "メ", "ガ"]))
-    assert policy["display_score"] <= 80
+    assert policy["display_score"] is not None
     assert policy["detail_feedback_allowed"] is False
-    assert "short_sentence_cap" in policy["score_policy_warnings"]
+    assert policy["confidence_label"] in {"low", "medium"}
+    assert "weak_reference_broad_score_only" in policy["score_policy_warnings"]
+
+
+def test_short_sentence_keeps_score_but_hides_detail():
+    policy = apply_user_score_policy(_result(moras=["ア", "メ", "ガ"]))
+    assert policy["display_score"] is not None
+    assert policy["detail_feedback_allowed"] is False
+    assert "short_utterance_broad_score_only" in policy["score_policy_warnings"]
 
 
 def test_special_mora_user_hint_is_only_a_soft_penalty():
+    baseline = apply_user_score_policy(_result(pronunciation_score=86))
     policy = apply_user_score_policy(
         _result(pronunciation_score=86),
         special_mora_decisions=[{"type": "long_vowel", "user_feedback_allowed": True}],
     )
-    assert policy["pronunciation_clarity_score"] == 80
+    assert policy["display_score"] < baseline["display_score"]
+    assert policy["pronunciation_clarity_score"] == 82
     assert "special_mora_soft_penalty" in policy["score_policy_warnings"]
 
 
-def test_missing_special_mora_decisions_do_not_zero_display_score():
-    policy = apply_user_score_policy(_result(pronunciation_score=88, prosody_score=86, fluency_score=87), special_mora_decisions=[])
-    assert policy["display_score"] is not None
-    assert policy["display_score"] >= 85
-    assert "special_mora_soft_penalty" not in policy["score_policy_warnings"]
+def test_explicit_non_japanese_sanity_rejection_is_unscorable():
+    policy = apply_user_score_policy(_result(details={"transcript_sanity": {"ok": False}}))
+    assert policy["display_score"] is None
+    assert policy["score_available"] is False
