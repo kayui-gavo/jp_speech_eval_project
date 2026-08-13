@@ -54,26 +54,30 @@ def reference_relative_timing_features(
     unavailable local measurements prevents their near-zero CV from looking
     like unusually good articulation or rhythm evidence.
     """
+    ref_duration = float(reference_duration_sec or 0.0)
+    user_duration = float(user_duration_sec or 0.0)
+    global_rate_log_ratio = (
+        float(np.log(max(user_duration, 1e-6) / max(ref_duration, 1e-6)))
+        if user_duration > 0 and ref_duration > 0
+        else None
+    )
     mode = str(alignment_mode or "")
     if mode.endswith("fallback_equal") or "fallback_equal" in mode:
         return {
             "available": False,
             "evidence_source": "synthetic_equal_boundaries",
             "reason": "fallback_equal_has_no_local_timing_evidence",
-            "rate_log_ratio": None,
+            "global_timing_available": global_rate_log_ratio is not None,
+            "local_timing_available": False,
+            "global_rate_log_ratio": global_rate_log_ratio,
+            # Compatibility alias. Consumers must use the explicit global key.
+            "rate_log_ratio": global_rate_log_ratio,
             "warp_slope_cv": None,
             "warp_local_deviation": None,
             "pause_duration_difference": None,
             "pause_position_difference": None,
         }
 
-    ref_duration = float(reference_duration_sec or 0.0)
-    user_duration = float(user_duration_sec or 0.0)
-    rate_log_ratio = (
-        float(np.log(max(user_duration, 1e-6) / max(ref_duration, 1e-6)))
-        if user_duration > 0 and ref_duration > 0
-        else None
-    )
     user = _durations(boundaries)
     ref = _durations(reference_boundaries or [])
     n = min(len(user), len(ref))
@@ -82,7 +86,10 @@ def reference_relative_timing_features(
             "available": False,
             "evidence_source": "reference_alignment_missing",
             "reason": "insufficient_matched_mora_boundaries",
-            "rate_log_ratio": rate_log_ratio,
+            "global_timing_available": global_rate_log_ratio is not None,
+            "local_timing_available": False,
+            "global_rate_log_ratio": global_rate_log_ratio,
+            "rate_log_ratio": global_rate_log_ratio,
             "warp_slope_cv": None,
             "warp_local_deviation": None,
             "pause_duration_difference": None,
@@ -100,7 +107,10 @@ def reference_relative_timing_features(
         "available": True,
         "evidence_source": "reference_relative_mora_boundaries",
         "reason": "",
-        "rate_log_ratio": rate_log_ratio,
+        "global_timing_available": global_rate_log_ratio is not None,
+        "local_timing_available": True,
+        "global_rate_log_ratio": global_rate_log_ratio,
+        "rate_log_ratio": global_rate_log_ratio,
         "warp_slope_cv": warp_slope_cv,
         "warp_local_deviation": warp_local_deviation,
         # Reference pause segmentation is intentionally not invented from
@@ -124,6 +134,16 @@ def _weighted_candidate(dimensions: Mapping[str, DimensionEvidence]) -> Dict[str
     denominator = sum(weights[key] for key in available)
     value = None if denominator <= 0 else sum(weights[key] * float(item.value) for key, item in available.items()) / denominator
     confidence = 0.0 if denominator <= 0 else sum(weights[key] * item.confidence for key, item in available.items()) / denominator
+    coverage = sum(weights[key] for key in available)
+    names = list(available)
+    if not names:
+        scope = "unavailable"
+    elif names == ["fluency"]:
+        scope = "continuity_only"
+    elif len(names) == len(weights):
+        scope = "full"
+    else:
+        scope = "partial"
     return {
         "value": None if value is None else round(_clip(value), 4),
         "available": bool(available),
@@ -131,6 +151,11 @@ def _weighted_candidate(dimensions: Mapping[str, DimensionEvidence]) -> Dict[str
         "weights_requested": weights,
         "weights_effective": {key: round(weights[key] / denominator, 4) for key in available} if denominator else {},
         "unavailable_dimensions": [key for key in weights if key not in available],
+        "dimensions_available": names,
+        "evidence_coverage": round(float(coverage), 4),
+        "score_scope": scope,
+        # This is a research eligibility criterion, not a user no-score gate.
+        "ab_candidate_eligible": bool(len(names) >= 2 and coverage >= .45),
     }
 
 
@@ -182,12 +207,20 @@ def build_product_score_v3_candidate(
     else:
         rhythm = DimensionEvidence(None, False, 0.0, str(timing.get("evidence_source")), str(timing.get("reason")))
 
-    rate_log = timing.get("rate_log_ratio")
+    rate_log = timing.get("global_rate_log_ratio")
     pause_ratio = float(pause_info.get("pause_ratio", 0.0) or 0.0)
     pause_count = int(pause_info.get("pause_count", 0) or 0)
     # Separate continuous delivery continuity from rhythm's local warp term.
-    fluency_value = _clip(100.0 - 12.0 * abs(float(rate_log or 0.0)) - 115.0 * pause_ratio - 2.5 * pause_count)
-    fluency = DimensionEvidence(fluency_value, True, 0.85, "continuous_rate_pause_continuity", "")
+    rate_penalty = None if rate_log is None else 12.0 * abs(float(rate_log))
+    timing["fluency_global_rate_penalty"] = rate_penalty
+    fluency_value = _clip(100.0 - (rate_penalty or 0.0) - 115.0 * pause_ratio - 2.5 * pause_count)
+    fluency = DimensionEvidence(
+        fluency_value,
+        True,
+        .85 if rate_penalty is not None else .65,
+        "continuous_rate_pause_continuity" if rate_penalty is not None else "pause_continuity_without_global_rate",
+        "" if rate_penalty is not None else "global_rate_unavailable_rate_component_omitted",
+    )
 
     if f0_coverage >= 0.50 and legacy_prosody_score is not None and alignment_ok:
         intonation = DimensionEvidence(_clip(float(legacy_prosody_score)), True, min(1.0, f0_coverage), "existing_reference_relative_f0_shadow_input", "")

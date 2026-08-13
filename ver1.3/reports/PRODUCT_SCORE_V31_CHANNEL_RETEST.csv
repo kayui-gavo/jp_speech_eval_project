@@ -1,0 +1,7 @@
+condition,v2_total_score,v2_delta_from_clean,v3_candidate,v3_delta_from_clean,score_scope,evidence_coverage,ab_candidate_eligible,alignment_available,used_equal_fallback,failure_reason,fake_local_timing_used
+clean,84,0.0,75.9655,0.0,partial,0.55,True,True,False,,False
+codec,83,-1.0,67.075,-8.8905,continuity_only,0.2,False,False,True,boundary_health_unstable,False
+bandlimit,80,-4.0,72.4901,-3.4754,partial,0.55,True,True,False,,False
+gain,84,0.0,76.0633,0.0978,partial,0.55,True,True,False,,False
+rir,81,-3.0,75.1911,-0.7744,partial,0.55,True,True,False,,False
+noise_15db,88,4.0,78.135,2.1695,partial,0.55,True,True,False,,False

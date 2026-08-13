@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from jp_speech_eval.product_score_v3 import (
@@ -41,6 +43,8 @@ def test_fallback_equal_never_becomes_perfect_local_timing_evidence():
     assert not candidate["dimensions"]["rhythm"]["available"]
     assert not candidate["dimensions"]["intonation"]["available"]
     assert candidate["dimensions"]["pronunciation"]["value"] is None
+    assert features["global_timing_available"]
+    assert features["global_rate_log_ratio"] == pytest.approx(0.0)
 
 
 def test_v3_reweights_available_dimensions_instead_of_imputing_80():
@@ -50,6 +54,29 @@ def test_v3_reweights_available_dimensions_instead_of_imputing_80():
     assert "pronunciation" in aggregate["unavailable_dimensions"]
     assert sum(aggregate["weights_effective"].values()) == pytest.approx(1.0, abs=2e-4)
     assert candidate["dimensions"]["rhythm"]["source"] == "reference_relative_warp"
+    assert aggregate["score_scope"] == "partial"
+    assert aggregate["evidence_coverage"] == pytest.approx(.55)
+    assert aggregate["ab_candidate_eligible"]
+
+
+def test_local_alignment_missing_uses_real_global_rate_not_perfect_rate():
+    candidate = _candidate(
+        alignment_mode="cached_dtw_fallback_equal",
+        user_duration_sec=1.2,
+        reference_duration_sec=.6,
+        pause_info={"pause_ratio": 0.0, "pause_count": 0, "pause_total": 0.0},
+    )
+    timing = candidate["timing_features"]
+    assert timing["global_rate_log_ratio"] == pytest.approx(math.log(2.0))
+    assert candidate["dimensions"]["fluency"]["value"] < 100
+
+
+def test_single_dimension_candidate_has_continuity_scope_but_not_ab_eligibility():
+    candidate = _candidate(alignment_mode="cached_dtw_fallback_equal", f0_coverage=.1)
+    aggregate = candidate["product_score_v3_candidate"]
+    assert aggregate["score_scope"] == "continuity_only"
+    assert aggregate["evidence_coverage"] == pytest.approx(.20)
+    assert not aggregate["ab_candidate_eligible"]
 
 
 def test_local_distortion_changes_rhythm_more_than_uniform_tempo():

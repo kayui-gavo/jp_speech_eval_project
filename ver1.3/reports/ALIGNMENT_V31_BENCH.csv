@@ -1,0 +1,29 @@
+condition,variant,vad_detected,vad_speech_duration_sec,method,available,used_equal_fallback,failure_reason,normalized_dtw_cost,path_length,path_coverage,path_slope_cv,boundary_health_unstable,latency_ms,warning
+clean,A_mfcc,True,6.975,cached_dtw_mfcc_band_0.25,True,False,,2.629896277363691,796,1.0,0.2574444756962665,False,398.99,
+clean,B_mfcc_delta,True,6.975,cached_dtw_mfcc_delta_band_0.25,True,False,,5.070489213160088,795,1.0,0.2658839252369185,False,29.09,
+clean,C_logmel,True,6.975,cached_dtw_logmel_band_0.25,True,False,,3.063495452654418,790,1.0,0.16731217520234076,False,46.55,
+clean,D_mfcc_wide_second_pass,True,6.975,cached_dtw_mfcc_band_0.25,True,False,,2.629896277363691,796,1.0,0.2574444756962665,False,37.01,
+codec,A_mfcc,True,6.975,cached_dtw_mfcc_band_0.25,False,True,boundary_health_unstable,,,,,False,35.14,
+codec,B_mfcc_delta,True,6.975,cached_dtw_mfcc_delta_band_0.25,False,True,boundary_health_unstable,,,,,False,40.49,
+codec,C_logmel,True,6.975,cached_dtw_logmel_band_0.25,False,True,boundary_health_unstable,,,,,False,34.16,
+codec,D_mfcc_wide_second_pass,True,6.975,cached_dtw_mfcc_band_0.25,False,True,boundary_health_unstable;second_pass:boundary_health_unstable,,,,,False,94.07,
+bandlimit,A_mfcc,True,6.935,cached_dtw_mfcc_band_0.25,True,False,,2.9961419727214076,790,1.0,0.24156617570531264,False,28.3,
+bandlimit,B_mfcc_delta,True,6.935,cached_dtw_mfcc_delta_band_0.25,True,False,,5.396453726331571,791,1.0,0.24118539614794784,False,39.22,
+bandlimit,C_logmel,True,6.935,cached_dtw_logmel_band_0.25,True,False,,4.148501215002866,780,1.0,0.11935972275035509,False,35.28,
+bandlimit,D_mfcc_wide_second_pass,True,6.935,cached_dtw_mfcc_band_0.25,True,False,,2.9961419727214076,790,1.0,0.24156617570531264,False,38.8,
+gain,A_mfcc,True,6.975,cached_dtw_mfcc_band_0.25,True,False,,2.629622972270927,796,1.0,0.2574444756962665,False,28.82,
+gain,B_mfcc_delta,True,6.975,cached_dtw_mfcc_delta_band_0.25,True,False,,5.070053278670873,795,1.0,0.2658839252369185,False,40.35,
+gain,C_logmel,True,6.975,cached_dtw_logmel_band_0.25,True,False,,3.0635750424113275,790,1.0,0.16731217520234076,False,32.04,
+gain,D_mfcc_wide_second_pass,True,6.975,cached_dtw_mfcc_band_0.25,True,False,,2.629622972270927,796,1.0,0.2574444756962665,False,29.04,
+rir,A_mfcc,True,7.185,cached_dtw_mfcc_band_0.25,True,False,,2.8807792281047218,821,1.0,0.5086524813302031,False,31.23,
+rir,B_mfcc_delta,True,7.185,cached_dtw_mfcc_delta_band_0.25,False,True,boundary_health_unstable,,,,,False,36.03,
+rir,C_logmel,True,7.185,cached_dtw_logmel_band_0.25,False,True,boundary_health_unstable,,,,,False,52.5,
+rir,D_mfcc_wide_second_pass,True,7.185,cached_dtw_mfcc_band_0.25,True,False,,2.8807792281047218,821,1.0,0.5086524813302031,False,36.72,
+noise_15db,A_mfcc,True,6.945,cached_dtw_mfcc_band_0.25,True,False,,3.2546686137156278,798,1.0,0.3461668807873707,False,36.53,
+noise_15db,B_mfcc_delta,True,6.945,cached_dtw_mfcc_delta_band_0.25,False,True,boundary_health_unstable,,,,,False,41.09,
+noise_15db,C_logmel,True,6.945,cached_dtw_logmel_band_0.25,False,True,boundary_health_unstable,,,,,False,38.94,
+noise_15db,D_mfcc_wide_second_pass,True,6.945,cached_dtw_mfcc_band_0.25,True,False,,3.2546686137156278,798,1.0,0.3461668807873707,False,30.23,
+wrong_target,A_mfcc,True,7.115,cached_dtw_mfcc_band_0.25,False,True,boundary_health_unstable,,,,,False,28.26,wrong target: apparent alignment is not content verification
+wrong_target,B_mfcc_delta,True,7.115,cached_dtw_mfcc_delta_band_0.25,False,True,boundary_health_unstable,,,,,False,45.05,wrong target: apparent alignment is not content verification
+wrong_target,C_logmel,True,7.115,cached_dtw_logmel_band_0.25,False,True,boundary_health_unstable,,,,,False,34.47,wrong target: apparent alignment is not content verification
+wrong_target,D_mfcc_wide_second_pass,True,7.115,cached_dtw_mfcc_band_0.25,False,True,boundary_health_unstable;second_pass:boundary_health_unstable,,,,,False,74.47,wrong target: apparent alignment is not content verification

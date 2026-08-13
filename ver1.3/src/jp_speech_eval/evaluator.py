@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .alignment import estimate_mora_boundaries, estimate_mora_boundaries_equal
+from .alignment import AlignmentResult, estimate_mora_boundaries, estimate_mora_boundaries_equal
 from .audio_features import (
     detect_pauses,
     extract_f0,
@@ -382,19 +382,34 @@ def evaluate_utterance(
     timing["content_match"] = time.perf_counter() - ts
 
     ts = time.perf_counter()
-    boundaries = estimate_mora_boundaries(
+    requested_alignment_mode = alignment_mode
+    alignment_result: AlignmentResult = estimate_mora_boundaries(
         text=text_info.text,
         y_trim=y_speech,
         sr=audio.sr,
         mora_count=len(text_info.moras),
         mode=alignment_mode,
         cache=cache,
+        return_result=True,
     )
+    boundaries = alignment_result.boundaries
     boundary_health = _boundary_health(boundaries)
-    if alignment_mode == "cached_dtw" and boundary_health["is_unstable"]:
+    if alignment_result.available and boundary_health["is_unstable"]:
         boundaries = estimate_mora_boundaries_equal(active_duration, len(text_info.moras))
-        alignment_mode = "cached_dtw_fallback_equal"
+        alignment_result = replace(
+            alignment_result,
+            boundaries=boundaries,
+            method=f"{alignment_result.method}_evaluator_equal_fallback",
+            available=False,
+            confidence=0.0,
+            used_equal_fallback=True,
+            failure_reason="evaluator_boundary_health_unstable",
+        )
         boundary_health = _boundary_health(boundaries)
+    if alignment_result.used_equal_fallback:
+        alignment_mode = "cached_dtw_fallback_equal" if cache is not None else "dtw_fallback_equal"
+    elif requested_alignment_mode == "cached_dtw" or cache is not None:
+        alignment_mode = "cached_dtw"
     boundary_cv = float(boundary_health["cv"])
     timing["alignment"] = time.perf_counter() - ts
 
@@ -561,7 +576,7 @@ def evaluate_utterance(
             legacy_pronunciation_score=pronunciation_score,
             legacy_prosody_score=prosody_score,
             f0_coverage=float(reliability.get("f0_coverage", 0.0) or 0.0),
-            alignment_confidence=float(reliability.get("alignment", 0.0) or 0.0),
+            alignment_confidence=float(alignment_result.confidence),
         )
 
     timing["total"] = time.perf_counter() - t0
@@ -601,14 +616,23 @@ def evaluate_utterance(
             "mora_evidence": mora_evidence,
             "mora_evidence_summary": mora_evidence_summary,
             "alignment": {
+                "method": alignment_result.method,
+                "available": alignment_result.available,
+                "confidence": round(float(alignment_result.confidence), 4),
+                "used_equal_fallback": alignment_result.used_equal_fallback,
+                "failure_reason": alignment_result.failure_reason or None,
+                "normalized_dtw_cost": alignment_result.normalized_dtw_cost,
+                "path_length": alignment_result.path_length,
+                "path_coverage": alignment_result.path_coverage,
+                "path_slope_cv": alignment_result.path_slope_cv,
+                "feature_kind": alignment_result.feature_kind,
+                "band_rad": alignment_result.band_rad,
                 "boundary_duration_cv": boundary_cv,
                 "min_mora_duration_sec": round(float(boundary_health["min_duration"]), 4),
                 "first_mora_duration_sec": round(float(boundary_health["first_duration"]), 4),
                 "max_mora_duration_sec": round(float(boundary_health["max_duration"]), 4),
                 "mode": alignment_mode,
-                "note": "fallback_equal_used_when_cached_dtw_boundary_cv_is_too_high"
-                if alignment_mode == "cached_dtw_fallback_equal"
-                else "cached_alignment_used",
+                "requested_mode": requested_alignment_mode,
             },
             "pronunciation": pron_details,
             "prosody": prosody_details,
