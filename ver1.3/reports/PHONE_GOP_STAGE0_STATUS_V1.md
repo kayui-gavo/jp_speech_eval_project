@@ -3,163 +3,198 @@
 Date: 2026-08-15
 Branch: `free-assessment-integration-v1`
 Human recording gate: **BLOCKED**
+Product score impact: **NONE — PHONE EVIDENCE REMAINS SHADOW/RESEARCH ONLY**
 
 ## Why this status file exists
 
-Human recording must not be used to discover basic model/API/metric bugs. Stage 0 therefore uses synthetic tests, bundled/reference audio, pinned models, target-frontend snapshots, automatic perturbations and automatic batch analysis before any new human recording is requested.
+Human recording must not be used to discover basic model/API/metric bugs. Stage 0 therefore exhausts synthetic tests, bundled/reference audio, pinned models, frozen target-frontends, automatic perturbations, published-algorithm regression tests and already-public native audio before asking anyone to record new material.
 
-The most important Stage-0 rule is now explicit: **raw segmentation-free CTC feature signs are diagnostics/features, not a pronunciation-error decision rule.** A clean phone is not required to beat every substitution/deletion alternative in isolation.
+The central scientific rule is explicit: **raw segmentation-free CTC features are features, not pronunciation-error decisions.** An individual negative LPR, a low `Occ(i)`, or a noncanonical sequence having higher posterior must never be translated directly into “this phone is wrong” or a `/100` score.
 
-## Fresh CI status
+## Current CI baseline
 
-The current Stage-0 branch has passed clean Python 3.11 CI after the phone-candidate adapter additions. Ordinary tests have reached **233 passed with 6 existing deprecation/audio-backend warnings**. Heavy model preflight has successfully run the pinned Beatrice backend and a separately pinned DistilHuBERT dual-CTC phone candidate on bundled audio.
+The last completed normalized-feature CI run passed:
 
-This is code/engineering evidence only. It does not open the human recording gate.
+- Python 3.11 clean environment;
+- **238 tests passed**;
+- 6 existing deprecation/audio-backend warnings;
+- pinned Beatrice, DistilHuBERT and WavLM model preflights all succeeded;
+- paper-aligned SD alternative-graph/`Occ(i)` features were finite on correct and deliberately wrong targets for all three backbones.
 
-## Literature correction: FGOP-SF features are not per-alternative thresholds
+Later JVS native-anchor helper tests are being added on top of this baseline; they do not change product scoring.
 
-The implementation is aligned conceptually with:
+## Literature-aligned feature semantics
 
-- Xinwei Cao, Zijian Fan, Torbjørn Svendsen, Giampiero Salvi, **“Segmentation-Free Goodness of Pronunciation”**, arXiv:2507.16838, accepted/published in IEEE TASLP 2026, DOI 10.1109/TASLPRO.2026.3654852.
+Primary reference:
 
-That work distinguishes a scalar segmentation-free GOP from **feature vectors derived from segmentation-free CTC sequence evidence**. The feature approach retains canonical log posterior (LPP) and log-posterior ratios (LPRs) against substitution/deletion alternatives, then uses those jointly in a downstream pronunciation-assessment/MDD model. Its normalized feature form also includes an activation/occupancy statistic `Occ(i)` computed from the alternative-graph forward variables.
+- Xinwei Cao, Zijian Fan, Torbjørn Svendsen, Giampiero Salvi, **“Segmentation-Free Goodness of Pronunciation”**, arXiv:2507.16838 / IEEE TASLP 2026, DOI `10.1109/TASLPRO.2026.3654852`.
+- Authors' public implementation: `frank613/CTC-based-GOP/taslpro26`.
 
-Therefore our earlier provisional interpretation—treating `best_noncanonical_log_posterior_ratio < 0` on clean speech as a Stage-0 failure by itself—was too strong. The code may still report how many positions have a higher-posterior noncanonical alternative, but this is **descriptive evidence only**. It must not be interpreted as “that phone is wrong”, used as a direct clean-speech pass/fail criterion, or mapped to `/100`.
+The paper/code distinguishes several related objects:
 
-Our current enumerated extractor remains an intentionally transparent approximation of the paper's feature family. It does **not** yet implement the paper's joint alternative graph or its `Occ(i)` normalization, and it does not claim normalized-method equivalence.
+1. canonical CTC sequence log posterior (`LPP`);
+2. log-posterior ratios against deletion/substitution alternatives (`LPR` feature vector);
+3. an SD alternative-graph denominator for segmentation-free GOP;
+4. normalized forward occupancy/activation `Occ(i)` from the wildcard state.
 
-## Real pinned Beatrice smoke test
+The project now keeps those semantics separate. `Occ(i)` is graph occupancy, **not a physical phone duration**. The `{LPP,LPR,Occ}` family requires a labeled downstream criterion before it can be interpreted as learner phone correctness.
 
-GitHub Actions successfully loaded:
+## Two alignment-free implementations now coexist deliberately
 
-- model: `prj-beatrice/japanese-hubert-base-phoneme-ctc-v4`
-- revision: `f5fe07043bcb0b77a86faf72ac6d8fc1ae558f99`
-- target frontend: `pyopenjtalk-plus 0.4.1.post8`
-- bundled audio: `assets/reference_cache/ramen_kudasai_aivis.ref.wav`
-- correct target phones: `r a a m e N o k u d a s a i`
-- wrong target: `コーヒーをください。`
+### Transparent enumerated feature extractor
 
-Useful engineering findings:
+`src/jp_speech_eval/segmentation_free_gop.py`
 
-- all 14 canonical phones received finite evidence;
-- pilot target inventory was covered by the backend vocabulary;
-- no `pau`/`sil` leaked into segmental competitors after Japanese-specific filtering;
-- correct-target sequence log posterior/frame: approximately `-0.3392540`;
-- wrong-target sequence log posterior/frame: approximately `-0.8654185`;
-- correct-minus-wrong gap: approximately `+0.5261644`;
-- mild 0.8x/1.2x amplitude gain perturbations were tiny relative to the correct-vs-wrong target gap.
+Method: `enumerated_fgop_ctc_sf_sd_features_v1`
 
-Thus target mismatch had much greater effect than mild gain change on this bundled reference. This is engineering sanity evidence, not L2 pronunciation validity or `/100` calibration.
+It computes:
 
-## Forced CTC support remains unsuitable as physical phone segmentation
+- exact canonical CTC posterior;
+- every one-phone substitution posterior;
+- one-phone deletion posterior;
+- LPRs;
+- best noncanonical alternative as a diagnostic;
+- canonical-vs-summed-enumerated-SD ratio.
 
-On the bundled correct target, `single_frame_support_ratio = 0.8571428571`. The unconstrained greedy phone sequence was only `k u d a s a i`, rather than the full canonical `r a a m e N o k u d a s a i`.
+It requires no forced phone boundaries and has no product mapping.
 
-Therefore frame-local forced-Viterbi GOP/logit features remain diagnostics. CTC support frames are not physical phone boundaries or physical phone durations. The generic extractor records mean-vs-max competitor provenance separately and labels support duration explicitly.
+### Published SD normalized-forward implementation
 
-## Enumerated segmentation-free SD preflight: what it does and does not mean
+`src/jp_speech_eval/segmentation_free_gop_norm.py`
 
-`src/jp_speech_eval/segmentation_free_gop.py` evaluates exact CTC posterior of the canonical sequence and enumerated one-phone substitution/deletion alternatives without forced phone boundaries.
+Method: `paper_sd_norm_forward_v1`
 
-On the Aivis `ラーメンをください` reference, Beatrice produced 7/14 positions where one noncanonical SD alternative had higher sequence posterior than the canonical sequence, concentrated in `ラーメンを`. The largest negative best-alternative LPR was approximately `-4.425`.
+It independently re-implements the normalized arbitrary-token forward recursion from the authors' public TASLP-2026 code and returns:
 
-After literature alignment, the interpretation is now:
+- SD alternative-graph log posterior;
+- `GOP-SF-SD`-style log ratio;
+- `Occ(i)`.
 
-- this pattern **does not prove seven pronunciation errors**;
-- it **does not by itself invalidate** the feature family;
-- it demonstrates why raw LPR sign must not be promoted directly to local learner feedback;
-- the entire `{LPP, LPR(·)}` vector should be treated as a research feature pending labeled criterion validation;
-- identical repeated phones remain intrinsically ambiguous for one-position deletion alternatives when the resulting sequence is identical.
+Regression tests freeze the public-algorithm outputs on deterministic synthetic probability grids, including repeated-phone context. This closes the earlier “`Occ(i)` not implemented” Stage-0 gap.
 
-Whole-target discrimination remains useful: correct target is much better explained than the deliberately wrong target. Local phone correctness, however, remains **unmapped and unvalidated**.
+## Forced CTC frames remain diagnostic only
 
-## Independent compact candidate: DistilHuBERT dual CTC
+On the bundled Aivis `ラーメンをください` reference, Beatrice has `single_frame_support_ratio ≈ 0.857`, and its unconstrained greedy phone sequence covers only part of the canonical sequence.
 
-A second Japanese phone-CTC backbone has now been integrated as a pinned shadow adapter:
+Therefore forced-Viterbi support frames are **not** accepted as physical phone segmentation or duration. They remain secondary diagnostics only.
 
-- model: `TylorShine/distilhubert-hiragana-ctc`
-- immutable revision: `01ffc3e5b0e49ba34180d50c48ea4111aa041cfd`
-- product role: **research/shadow only**
-- score mapping: **disabled**
+## Three-backbone bundled-audio result
 
-The candidate repository currently omits `preprocessor_config.json`. To avoid mutable/arbitrary defaults, the adapter explicitly reproduces the pinned base `ntu-spml/distilhubert` waveform-preprocessing contract: 16 kHz, one waveform feature, zero padding, no waveform normalization, no attention mask. The provenance is recorded in every result.
+Bundled audio:
 
-On the same bundled Aivis reference:
+`assets/reference_cache/ramen_kudasai_aivis.ref.wav`
 
-- correct canonical CTC log posterior: approximately `-32.2533`;
-- deliberately wrong target canonical log posterior: approximately `-44.9798`;
-- correct-minus-wrong sequence log-posterior gap: approximately `+12.7264`;
-- mild 0.8x/1.2x gain changes altered the canonical value only slightly;
-- 7 target positions again had a higher-posterior noncanonical alternative.
+Correct target:
 
-The last item is **not a direct failure criterion**. Its main value is that two independently trained Japanese phone-CTC backbones reproduce similar raw LPR structure on the same TTS sample, reinforcing the decision not to interpret an individual LPR sign as phone correctness.
+`ラーメンをください。`
 
-A second WavLM dual-CTC backbone is also being benchmarked as a research-only comparison. Because its licensing is less attractive for a C-end default, it is not a preferred product dependency even if its research behavior is useful.
+Deliberately wrong target:
 
-## Current alignment-free implementation
+`コーヒーをください。`
 
-`src/jp_speech_eval/segmentation_free_gop.py` implements `enumerated_fgop_ctc_sf_sd_features_v1`:
+Pinned backbones:
 
-- exact CTC posterior of the canonical sequence (LPP);
-- exact CTC posterior for every one-phone substitution at each position;
-- exact deletion posterior;
-- canonical/alternative log-posterior ratios (LPR);
-- best noncanonical alternative/type as a diagnostic;
-- canonical-vs-summed-SD-alternative log ratio;
-- no forced phone boundaries;
-- no insertion in the fixed feature vector;
-- no `Occ(i)` activation/occupancy normalization yet;
-- no optimized/joint alternative graph yet;
-- no downstream learned MDD classifier/regressor yet;
-- no `/100` mapping.
+- Beatrice: `prj-beatrice/japanese-hubert-base-phoneme-ctc-v4@f5fe07043bcb0b77a86faf72ac6d8fc1ae558f99`
+- DistilHuBERT dual CTC: `TylorShine/distilhubert-hiragana-ctc@01ffc3e5b0e49ba34180d50c48ea4111aa041cfd`
+- WavLM dual CTC: `TylorShine/wavlm-base-plus-hiragana-ctc@47fa985035342365bcec4948bd821aaf58dd778a`
 
-The method name deliberately does not claim full normalized/optimized paper equivalence.
+Within each backbone, the correct phone sequence is substantially better supported than the unrelated target. Raw sequence log-posterior gaps are approximately:
 
-## Target frontend is frozen before recording
+- Beatrice: `+28.939`;
+- DistilHuBERT: `+12.726`;
+- WavLM: `+8.668`.
 
-A clean GitHub Actions environment generated the current pilot target set with `pyopenjtalk-plus 0.4.1.post8`: 21 unique target texts with exact text/kana/phone/mora snapshot frozen in:
+These raw values are **not cross-model comparable scales**. Their useful role is within-model target discrimination and perturbation comparison.
+
+Mild `0.8x` / `1.2x` amplitude gain changes are far smaller than the correct-vs-wrong target effect on this sample.
+
+## Published normalized-forward result on the three backbones
+
+The paper-aligned SD graph/`Occ(i)` path now runs successfully on all three models.
+
+For the correct vs wrong target respectively, mean normalized SD-GOP values are approximately:
+
+- Beatrice: `-1.484` vs `-4.222`;
+- DistilHuBERT: `-2.425` vs `-4.254`;
+- WavLM: `-2.735` vs `-3.801`.
+
+Again, absolute values are not compared between models. Within every backbone, the known correct target has the less-negative aggregate normalized evidence.
+
+All `Occ(i)` values were finite; correct-target ranges were approximately:
+
+- Beatrice: `1.35e-6` to `2.385`;
+- DistilHuBERT: `4.08e-11` to `2.529`;
+- WavLM: `4.58e-11` to `2.752`.
+
+Near-zero occupancy is **not** called a phone error and is not called a duration failure.
+
+A useful structural sanity check also appears automatically: the correct and wrong targets share the suffix `ください`, and normalized evidence for the shared suffix is nearly unchanged while the differing prefix carries almost all of the target-discrimination effect. This supports the feature implementation's target-local behavior, but still does not establish learner phone correctness.
+
+## Independent compact candidate
+
+DistilHuBERT dual CTC is retained as the preferred compact second engineering backbone. Its repository lacks `preprocessor_config.json`, so the adapter explicitly reproduces the pinned base `ntu-spml/distilhubert` waveform preprocessing contract rather than accepting mutable/default preprocessing. Provenance is stored in the research result.
+
+WavLM remains a useful research comparison but is not presumed to be a product dependency.
+
+## Frozen Japanese target frontend
+
+The planned Stage-0 target set is frozen with `pyopenjtalk-plus 0.4.1.post8` in:
 
 `data/audit/phone_target_snapshot_v1.csv`
 
-A regression test regenerates those targets and requires exact equality. This prevents dictionary/frontend updates from silently changing canonical phones after recording starts.
+The snapshot fixes exact text/kana/phone/mora sequences for 21 unique targets and is regression-tested so later dictionary/frontend changes cannot silently change canonical labels.
+
+## Official JVS native-anchor preflight now replaces a new-user-recording request
+
+The next automatic test uses the three small human-native sample clips linked directly by the official JVS corpus project page (`jvs001`, `jvs002`, `jvs003`, same `VOICEACTRESS100_001` text).
+
+New scripts:
+
+- `scripts/download_official_jvs_samples.py`
+- `scripts/run_official_jvs_phone_ctc_anchor_preflight.py`
+
+Policy:
+
+- JVS audio is downloaded ephemerally into `outputs/`;
+- downloaded WAV files are deleted before artifact collection;
+- audio is never committed to this repository and never uploaded as a workflow artifact;
+- only hashes/metadata and derived JSON diagnostics are retained;
+- no new user recording is requested.
+
+The native-anchor criterion is intentionally modest: for each of the three human native speakers and each of the three phone-CTC backbones, compare the known target sequence with a deterministic **same-phone-count rotated phone sequence**. This removes the trivial phone-count/length confound of comparing targets with different numbers of phones. JVS001 also receives `0.8x`/`1.2x` gain controls.
+
+This is still not a local phone-error benchmark because these samples do not provide phone-correctness labels.
 
 ## Human-time protection automation
 
-The repository contains:
+Current machine-only infrastructure includes:
 
-- `scripts/generate_phone_target_snapshot.py` — target/frontend regression candidate generation;
-- `scripts/run_phone_gop_preflight.py` — pinned Beatrice correct/wrong target and gain controls;
-- `scripts/run_segmentation_free_gop_preflight.py` — alignment-free enumerated SD features;
-- `scripts/resolve_phone_ctc_candidate_revision.py` — resolves immutable Hugging Face revisions before remote custom code is trusted;
-- `scripts/run_dual_ctc_candidate_preflight.py` — pinned alternative phone-CTC correct/wrong/gain shadow preflight;
-- `scripts/benchmark_phone_gop_existing_data.py` — runs only audio already present in the research workspace and skips unavailable corpus paths;
-- `src/jp_speech_eval/phone_gop_batch_analysis.py` and `scripts/analyze_phone_gop_manual_batch.py` — grouped N1/N2/E analysis infrastructure for later labeled evaluation.
+- frozen target frontend generation/regression;
+- pinned Beatrice backend preflight;
+- pinned alternative-model revision resolution;
+- DistilHuBERT/WavLM dual-CTC adapters;
+- enumerated alignment-free LPP/LPR extraction;
+- published SD normalized-forward + `Occ(i)` extraction;
+- automatic grouped phone-GOP batch analysis;
+- existing-data-only benchmark runner with skip-on-missing behavior;
+- official-JVS ephemeral downloader and native-anchor benchmark.
 
-Missing external corpus files are skipped. No script automatically asks for replacement/new human recordings.
+No missing corpus file automatically turns into a request for a new human recording.
 
 ## Current Stage-0 gates before human recording
 
 1. **PASS** — full repository tests in fresh Python 3.11 CI.
 2. **PASS** — frozen `pyopenjtalk-plus 0.4.1.post8` target snapshot regression.
-3. **PASS** — pinned Beatrice backend loads, yields finite evidence, separates correct/wrong target, and is much less sensitive to mild gain than target mismatch.
-4. **PASS (infrastructure)** — segmentation-free `{LPP,LPR}` feature extraction exists without forced phone boundaries.
-5. **PASS (scientific correction)** — negative individual LPR is no longer treated as a direct pronunciation-error or clean-speech failure criterion.
-6. **PASS** — a second pinned compact Japanese phone-CTC backbone (DistilHuBERT dual CTC) can run through the same shadow preflight.
-7. **PENDING** — implement/verify the paper-faithful alternative-graph/`Occ(i)` normalization before claiming FGOP-SF-Norm equivalence.
-8. **PENDING** — run the feature family on already-available native/learner human audio wherever corpus files exist; missing paths skip.
-9. **PENDING** — obtain a genuinely labeled criterion for local pronunciation correctness before learning a phone error classifier/regressor or interpreting features as correctness.
-10. **BLOCKED by design** — a separate readiness decision must explicitly promote the human recording gate. Backend/model smoke PASS alone can never do so.
-
-## Next automatic work
-
-The machine-only priority is now:
-
-1. finish the Beatrice / DistilHuBERT / WavLM dual-CTC comparison on bundled audio;
-2. inspect/port the published segmentation-free GOP reference implementation if accessible, especially alternative-graph forward computation and `Occ(i)` normalization;
-3. regression-test any graph implementation against exact enumerated sequence probabilities on tiny synthetic cases;
-4. run those features over existing human native/learner data wherever already available;
-5. only after the metric semantics and labeled criterion are clear decide whether any new human recording is worth the user's time.
+3. **PASS** — pinned Beatrice backend loads and separates correct/wrong target on bundled audio.
+4. **PASS** — alignment-free enumerated `{LPP,LPR}` feature extraction.
+5. **PASS** — individual LPR sign is explicitly prohibited as a direct error rule.
+6. **PASS** — pinned DistilHuBERT and WavLM independent phone-CTC comparisons run successfully.
+7. **PASS** — published SD normalized-forward/`Occ(i)` algorithm implemented, regression-tested, and finite on all three real model backbones.
+8. **RUNNING/NEXT** — official JVS three-speaker native-anchor test across the three backbones.
+9. **PENDING** — run the feature family over already-available learner/native corpora wherever the files are actually present.
+10. **PENDING** — obtain a genuinely labeled criterion before learning a local phone-correctness classifier/regressor or mapping any phone feature to a user score.
+11. **BLOCKED by design** — human recording requires a separate explicit readiness promotion; model smoke tests alone can never open the gate.
 
 ## Product policy
 
-No Stage-0 phone-GOP code directly changes the C-end clarity `/100`. Phone evidence remains shadow-only. It may later be fused with WavLM/reference evidence and ASR intelligibility for `明瞭さ` only after Japanese L2 criterion validity is demonstrated.
+No Stage-0 phone-GOP code directly changes C-end `明瞭さ`, overall score, or any `/100` mapping. Phone evidence remains shadow-only. Product promotion requires Japanese L2 criterion validity, not merely model availability or plausible-looking acoustic features.
