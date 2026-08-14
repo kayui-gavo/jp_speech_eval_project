@@ -1,5 +1,7 @@
 # Human Pronunciation Calibration Protocol v1 (pre-registration)
 
+> Superseded before rating collection by [Protocol v1.1](HUMAN_PRONUNCIATION_CALIBRATION_PROTOCOL_V11.md). This v1 document is retained as the initial seed-study record only.
+
 ## Status and scope
 
 This protocol is frozen before collecting listener ratings. It governs validation of the existing `ssl_pronunciation_evidence_index`; it does **not** define a ProductScore mapping, change WavLM layers/distances, or enable ProductScore v3.

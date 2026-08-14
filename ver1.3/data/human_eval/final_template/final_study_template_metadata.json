@@ -1,0 +1,12 @@
+{
+  "study_stage": "final_template_unpopulated",
+  "assignment_generated": false,
+  "rating_collection_started": false,
+  "projected_unique_clip_count_if_seed_is_retained": 154,
+  "required_new_real_learner_clips": 56,
+  "required_total_learner_clean_clips": 70,
+  "required_total_learner_speakers": 10,
+  "required_complete_channel_sets_for_promotion": 15,
+  "current_complete_channel_sets": 14,
+  "generation_rule": "Populate only after each new learner audio path exists and source metadata is verified."
+}

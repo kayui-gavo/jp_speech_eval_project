@@ -18,11 +18,18 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path("/Users/ryukayuiii/Documents/jp_speech_eval_project")
 OUT = ROOT / "data/human_eval"
+PILOT_OUT = OUT / "pilot"
+FINAL_TEMPLATE_OUT = OUT / "final_template"
 TARGETS = ("うっとうしい", "がっしり", "さっさと", "ばっちり", "オイル", "バグ", "酸味")
 CHANNEL_CONDITIONS = ("clean", "rir", "noise_15db", "codec")
 LISTENER_SLOTS = tuple(f"LS{i:02d}" for i in range(1, 11))
 RATINGS_PER_CLIP = 5
 RANDOM_SEED = 33017
+PILOT_STUDY_STAGE = "pilot_seed"
+FINAL_STUDY_STAGE = "final_calibration"
+FINAL_MIN_LEARNER_CLIPS = 70
+FINAL_MIN_LEARNER_SPEAKERS = 10
+FINAL_MIN_CHANNEL_SETS = 15
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -30,12 +37,13 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def write_csv(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+def write_csv(path: Path, rows: Iterable[dict[str, Any]], *, fieldnames: list[str] | None = None) -> None:
     rows = list(rows)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]) if rows else [], lineterminator="\n")
-        if rows:
+        names = fieldnames or (list(rows[0]) if rows else [])
+        writer = csv.DictWriter(handle, fieldnames=names, lineterminator="\n")
+        if names:
             writer.writeheader()
             writer.writerows(rows)
 
@@ -190,11 +198,13 @@ def master_manifest() -> list[dict[str, Any]]:
             raise FileNotFoundError(row["audio_path"])
         row["blind_sample_id"] = blind_sample_id(row["sample_id"])
         row["audio_asset_id"] = asset_id(row["sample_id"])
+        row["study_stage"] = PILOT_STUDY_STAGE
     return rows
 
 
 def blind_manifest(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{
+        "study_stage": PILOT_STUDY_STAGE,
         "sample_id": row["blind_sample_id"],
         "audio_asset_id": row["audio_asset_id"],
         "target_id": row["target_id"],
@@ -228,8 +238,10 @@ def _schedule(items: list[dict[str, Any]], rng: random.Random) -> list[dict[str,
     return ordered
 
 
-def assignments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Balanced ten-slot plan: five ratings per clip plus one duplicate per slot."""
+def assignments(rows: list[dict[str, Any]], *, hidden_duplicates_per_rater: int = 1, study_stage: str = PILOT_STUDY_STAGE) -> list[dict[str, Any]]:
+    """Balanced ten-slot plan with non-adjacent hidden repeat presentations."""
+    if hidden_duplicates_per_rater < 1:
+        raise ValueError("at least one duplicate is required for a study assignment")
     by_slot: dict[str, list[dict[str, Any]]] = {slot: [] for slot in LISTENER_SLOTS}
     for index, row in enumerate(rows):
         for offset in range(RATINGS_PER_CLIP):
@@ -238,12 +250,20 @@ def assignments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     for slot_index, slot in enumerate(LISTENER_SLOTS):
         assigned = list(by_slot[slot])
-        duplicate = assigned[(slot_index * 7) % len(assigned)]
-        assigned.append({**duplicate, "duplicate_of_sample_id": duplicate["sample_id"]})
+        selected: list[dict[str, Any]] = []
+        groups = ("native_anchor", "learner_candidate", "channel_control")
+        for duplicate_index in range(hidden_duplicates_per_rater):
+            preferred_group = groups[duplicate_index % len(groups)]
+            candidates = [row for row in assigned if row["speaker_group_hidden"] == preferred_group and row not in selected]
+            candidates = candidates or [row for row in assigned if row not in selected]
+            duplicate = candidates[(slot_index * 7 + duplicate_index * 11) % len(candidates)]
+            selected.append(duplicate)
+            assigned.append({**duplicate, "duplicate_of_sample_id": duplicate["sample_id"]})
         for order, row in enumerate(_schedule(assigned, rng), start=1):
             duplicate_of = row.get("duplicate_of_sample_id", "")
             presentation_id = f"{slot}_P{order:03d}"
             output.append({
+                "study_stage": study_stage,
                 "assignment_id": f"A_{presentation_id}",
                 "listener_slot_id": slot,
                 "presentation_id": presentation_id,
@@ -257,6 +277,34 @@ def assignments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "duplicate_of_sample_id": blind_sample_id(duplicate_of) if duplicate_of else "",
             })
     return output
+
+
+def complete_channel_set_ids(rows: list[dict[str, Any]]) -> set[str]:
+    """Return only channel sets that contain the entire four-condition quartet."""
+    conditions_by_pair: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        if row.get("pair_id"):
+            conditions_by_pair[row["pair_id"]].add(str(row.get("condition", "")))
+    expected = set(CHANNEL_CONDITIONS)
+    return {pair_id for pair_id, conditions in conditions_by_pair.items() if conditions == expected}
+
+
+def final_assignment_from_real_manifest(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build final assignment only after all required real learner audio exists.
+
+    This guard deliberately refuses the pilot/seed rows.  It prevents a
+    template or recruitment target from being mistaken for a final cohort.
+    """
+    if any(row.get("study_stage") != FINAL_STUDY_STAGE for row in rows):
+        raise ValueError("final assignment blocked: manifest is not marked final_calibration")
+    learners = [row for row in rows if row.get("speaker_group_hidden") == "learner_candidate" and row.get("is_clean") == "true"]
+    speakers = {row.get("speaker_id_anonymized") for row in learners}
+    missing_audio = [row.get("sample_id", "") for row in learners if not row.get("audio_path") or not (DATA_ROOT / str(row["audio_path"])).exists()]
+    if len(learners) < FINAL_MIN_LEARNER_CLIPS or len(speakers) < FINAL_MIN_LEARNER_SPEAKERS or missing_audio:
+        raise ValueError("final assignment blocked: required real learner audio cohort is incomplete")
+    if len(complete_channel_set_ids(rows)) < FINAL_MIN_CHANNEL_SETS:
+        raise ValueError("final assignment blocked: fewer than 15 complete channel sets")
+    return assignments(rows, hidden_duplicates_per_rater=5, study_stage=FINAL_STUDY_STAGE)
 
 
 def learner_recording_needed() -> list[dict[str, Any]]:
@@ -276,7 +324,9 @@ def learner_recording_needed() -> list[dict[str, Any]]:
 
 def schema() -> dict[str, Any]:
     return {
+        "schema_kind": "study_contract",
         "schema_version": "human_pronunciation_rating_v1",
+        "study_stage": PILOT_STUDY_STAGE,
         "primary_construct": "pronunciation_accuracy",
         "primary_instruction_ja": "画面に示された語を基準として、発音そのものがどの程度正確に実現されているかを評価してください。話す速さ、声の高さ、感情表現、録音音質は、可能な限り評価に含めないでください。",
         "accuracy_scale": {str(score): label for score, label in enumerate(["非常に不正確", "不正確", "やや不正確", "中程度", "やや正確", "正確", "非常に正確"], start=1)},
@@ -298,13 +348,80 @@ def schema() -> dict[str, Any]:
     }
 
 
+def formal_json_schema() -> dict[str, Any]:
+    """Machine-validatable companion to the human-readable study contract."""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "Human pronunciation accuracy rating v1",
+        "type": "object",
+        "required": ["rater_id", "sample_id", "presentation_id", "analyzable_yes_no", "pronunciation_accuracy_1to7", "timestamp"],
+        "properties": {
+            "rater_id": {"type": "string", "minLength": 1},
+            "sample_id": {"type": "string", "pattern": "^clip_"},
+            "presentation_id": {"type": "string", "minLength": 1},
+            "analyzable_yes_no": {"enum": ["yes", "no"]},
+            "pronunciation_accuracy_1to7": {"type": ["integer", "null"], "minimum": 1, "maximum": 7},
+            "optional_comment": {"type": ["string", "null"]},
+            "timestamp": {"type": "string", "format": "date-time"},
+        },
+        "allOf": [{
+            "if": {"properties": {"analyzable_yes_no": {"const": "yes"}}, "required": ["analyzable_yes_no"]},
+            "then": {"properties": {"pronunciation_accuracy_1to7": {"type": "integer", "minimum": 1, "maximum": 7}}, "required": ["pronunciation_accuracy_1to7"]},
+        }, {
+            "if": {"properties": {"analyzable_yes_no": {"const": "no"}}, "required": ["analyzable_yes_no"]},
+            "then": {"properties": {"pronunciation_accuracy_1to7": {"type": ["integer", "null"], "minimum": 1, "maximum": 7}}},
+        }],
+    }
+
+
+def final_template(rows: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any], dict[str, Any]]:
+    fields = list(rows[0]) + ["learner_audio_present"]
+    metadata = {
+        "study_stage": "final_template_unpopulated",
+        "assignment_generated": False,
+        "rating_collection_started": False,
+        "projected_unique_clip_count_if_seed_is_retained": len(rows) + 56,
+        "required_new_real_learner_clips": 56,
+        "required_total_learner_clean_clips": FINAL_MIN_LEARNER_CLIPS,
+        "required_total_learner_speakers": FINAL_MIN_LEARNER_SPEAKERS,
+        "required_complete_channel_sets_for_promotion": FINAL_MIN_CHANNEL_SETS,
+        "current_complete_channel_sets": len(complete_channel_set_ids(rows)),
+        "generation_rule": "Populate only after each new learner audio path exists and source metadata is verified.",
+    }
+    assignment_plan = {
+        "study_stage": FINAL_STUDY_STAGE,
+        "assignment_generated": False,
+        "ratings_per_clip": RATINGS_PER_CLIP,
+        "minimum_hidden_duplicates_per_rater": 5,
+        "preferred_hidden_duplicate_fraction_of_workload": "0.05_to_0.10",
+        "duplicate_constraints": ["different_presentation_id", "same_underlying_sample", "not_adjacent", "not_disclosed", "cross_target_when_possible", "include_native_learner_and_channel_samples"],
+        "generation_guard": "final_assignment_from_real_manifest requires 70 real learner clean clips across 10 speakers and 15 complete channel sets",
+    }
+    return fields, metadata, assignment_plan
+
+
 def main() -> None:
     rows = master_manifest()
-    write_csv(OUT / "pronunciation_listener_manifest_v1.csv", rows)
-    write_csv(OUT / "pronunciation_listener_blind_v1.csv", blind_manifest(rows))
-    write_csv(OUT / "listener_assignment_v1.csv", assignments(rows))
-    write_csv(OUT / "learner_recording_needed.csv", learner_recording_needed())
-    (OUT / "human_rating_schema.json").write_text(json.dumps(schema(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_csv(PILOT_OUT / "pronunciation_listener_manifest_v1.csv", rows)
+    write_csv(PILOT_OUT / "pronunciation_listener_blind_v1.csv", blind_manifest(rows))
+    write_csv(PILOT_OUT / "listener_assignment_v1.csv", assignments(rows))
+    (PILOT_OUT / "human_rating_schema.json").parent.mkdir(parents=True, exist_ok=True)
+    (PILOT_OUT / "human_rating_schema.json").write_text(json.dumps(schema(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (PILOT_OUT / "human_rating_json_schema_v1.json").write_text(json.dumps(formal_json_schema(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    fields, metadata, assignment_plan = final_template(rows)
+    write_csv(FINAL_TEMPLATE_OUT / "pronunciation_listener_manifest_final_template.csv", [], fieldnames=fields)
+    write_csv(FINAL_TEMPLATE_OUT / "learner_recording_needed.csv", learner_recording_needed())
+    (FINAL_TEMPLATE_OUT / "final_study_template_metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (FINAL_TEMPLATE_OUT / "final_assignment_plan.json").write_text(json.dumps(assignment_plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (PILOT_OUT / "pilot_study_metadata.json").write_text(json.dumps({
+        "study_stage": PILOT_STUDY_STAGE,
+        "rating_collection_started": False,
+        "unique_clip_count": len(rows),
+        "base_ratings_per_clip": RATINGS_PER_CLIP,
+        "hidden_duplicates_per_listener_slot": 1,
+        "repeatability_status": "insufficient_for_stable_per_rater_repeatability",
+        "complete_channel_sets": len(complete_channel_set_ids(rows)),
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

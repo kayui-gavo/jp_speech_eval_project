@@ -26,8 +26,8 @@ class PronunciationCalibration:
     normalizer: Optional[str] = None
     mapping: None = None
     mapping_version: Optional[str] = None
-    human_dataset_version: str = "pronunciation_listener_manifest_v1"
-    valid_target_scope: str = "same_target_multi_reference_only"
+    human_dataset_version: str = "human_pronunciation_study_v1_1"
+    valid_target_scope: str = "janon_7target_isolated_word_validation_v1"
     calibration_confidence: Optional[float] = None
     production_enabled: bool = False
 

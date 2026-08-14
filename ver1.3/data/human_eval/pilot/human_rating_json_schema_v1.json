@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Human pronunciation accuracy rating v1",
+  "type": "object",
+  "required": [
+    "rater_id",
+    "sample_id",
+    "presentation_id",
+    "analyzable_yes_no",
+    "pronunciation_accuracy_1to7",
+    "timestamp"
+  ],
+  "properties": {
+    "rater_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sample_id": {
+      "type": "string",
+      "pattern": "^clip_"
+    },
+    "presentation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "analyzable_yes_no": {
+      "enum": [
+        "yes",
+        "no"
+      ]
+    },
+    "pronunciation_accuracy_1to7": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 7
+    },
+    "optional_comment": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "analyzable_yes_no": {
+            "const": "yes"
+          }
+        },
+        "required": [
+          "analyzable_yes_no"
+        ]
+      },
+      "then": {
+        "properties": {
+          "pronunciation_accuracy_1to7": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 7
+          }
+        },
+        "required": [
+          "pronunciation_accuracy_1to7"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "analyzable_yes_no": {
+            "const": "no"
+          }
+        },
+        "required": [
+          "analyzable_yes_no"
+        ]
+      },
+      "then": {
+        "properties": {
+          "pronunciation_accuracy_1to7": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 7
+          }
+        }
+      }
+    }
+  ]
+}

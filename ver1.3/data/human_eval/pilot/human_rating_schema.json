@@ -1,5 +1,7 @@
 {
+  "schema_kind": "study_contract",
   "schema_version": "human_pronunciation_rating_v1",
+  "study_stage": "pilot_seed",
   "primary_construct": "pronunciation_accuracy",
   "primary_instruction_ja": "画面に示された語を基準として、発音そのものがどの程度正確に実現されているかを評価してください。話す速さ、声の高さ、感情表現、録音音質は、可能な限り評価に含めないでください。",
   "accuracy_scale": {

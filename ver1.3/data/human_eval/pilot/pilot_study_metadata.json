@@ -1,0 +1,9 @@
+{
+  "study_stage": "pilot_seed",
+  "rating_collection_started": false,
+  "unique_clip_count": 98,
+  "base_ratings_per_clip": 5,
+  "hidden_duplicates_per_listener_slot": 1,
+  "repeatability_status": "insufficient_for_stable_per_rater_repeatability",
+  "complete_channel_sets": 14
+}

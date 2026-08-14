@@ -1,0 +1,16 @@
+{
+  "study_stage": "final_calibration",
+  "assignment_generated": false,
+  "ratings_per_clip": 5,
+  "minimum_hidden_duplicates_per_rater": 5,
+  "preferred_hidden_duplicate_fraction_of_workload": "0.05_to_0.10",
+  "duplicate_constraints": [
+    "different_presentation_id",
+    "same_underlying_sample",
+    "not_adjacent",
+    "not_disclosed",
+    "cross_target_when_possible",
+    "include_native_learner_and_channel_samples"
+  ],
+  "generation_guard": "final_assignment_from_real_manifest requires 70 real learner clean clips across 10 speakers and 15 complete channel sets"
+}
