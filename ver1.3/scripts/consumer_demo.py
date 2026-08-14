@@ -8,8 +8,13 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 from scripts import debug_ui  # noqa: E402
+from jp_speech_eval.consumer_dimension_policy import build_consumer_score_dimensions  # noqa: E402
+from jp_speech_eval.feedback_renderer import render_user_facing_result as _base_render_user_facing_result  # noqa: E402
 
 
 DEFAULT_CACHE = ROOT / "assets" / "reference_cache" / "ramen_kudasai_aivis"
@@ -29,6 +34,22 @@ def _inject_defaults(args: list[str]) -> list[str]:
     if "--public-demo" not in args:
         injected.append("--public-demo")
     return [*injected, *args]
+
+
+def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
+    payload = _base_render_user_facing_result(result, mode=mode, **kwargs)
+    payload["score_dimensions"] = build_consumer_score_dimensions(
+        result,
+        payload,
+        mode=str(mode or result.get("details", {}).get("mode") or "reference"),
+    )
+    payload.setdefault("dimension_policy", {})
+    payload["dimension_policy"].update({
+        "version": "consumer_semantics_v1",
+        "lexical_pitch_accent_is_not_top_level_intonation": True,
+        "legacy_pronunciation_timing_proxy_is_not_labeled_pronunciation": True,
+    })
+    return payload
 
 
 class ConsumerUiHandler(debug_ui.DebugUiHandler):
@@ -85,6 +106,7 @@ def main() -> None:
         raise FileNotFoundError(f"Bundled demo reference wav is missing: {DEFAULT_WAV}")
 
     debug_ui.DebugUiHandler = ConsumerUiHandler
+    debug_ui.render_user_facing_result = _render_consumer_user_facing
     sys.argv = [sys.argv[0], *_inject_defaults(sys.argv[1:])]
     debug_ui.main()
 
