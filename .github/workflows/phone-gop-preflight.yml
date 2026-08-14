@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: phone-gop-hf-${{ runner.os }}-beatrice-f5fe070-distil-01ffc3e
+          key: phone-gop-hf-${{ runner.os }}-beatrice-f5fe070-distil-01ffc3e-wavlm-47fa985
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -83,6 +83,13 @@ jobs:
           --model TylorShine/distilhubert-hiragana-ctc
           --revision 01ffc3e5b0e49ba34180d50c48ea4111aa041cfd
           --output outputs/distilhubert_dual_ctc_preflight_ci.json
+      - name: Run pinned WavLM dual-CTC research preflight
+        run: >-
+          python scripts/run_dual_ctc_candidate_preflight.py
+          --allow-download
+          --model TylorShine/wavlm-base-plus-hiragana-ctc
+          --revision 47fa985035342365bcec4948bd821aaf58dd778a
+          --output outputs/wavlm_dual_ctc_preflight_ci.json
       - name: Upload model preflight reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,4 +100,5 @@ jobs:
             ver1.3/outputs/segmentation_free_gop_preflight_ci.json
             ver1.3/outputs/phone_ctc_candidate_revisions.json
             ver1.3/outputs/distilhubert_dual_ctc_preflight_ci.json
+            ver1.3/outputs/wavlm_dual_ctc_preflight_ci.json
           if-no-files-found: warn
