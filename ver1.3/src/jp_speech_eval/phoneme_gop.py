@@ -36,10 +36,13 @@ class PhoneGopEvidence:
     frame_count: int
     start_sec: float
     end_sec: float
+    # Backward-compatible alias. This is CTC support duration, not a physical
+    # phone boundary/duration measurement.
     duration_sec: float
     target_mean_logit: float
     target_max_logit: float
     target_mean_logprob: float
+    # Backward-compatible mean-logit competitor provenance.
     best_competitor_phone: str
     best_competitor_token_id: int
     best_competitor_mean_logit: float
@@ -50,6 +53,12 @@ class PhoneGopEvidence:
     posterior_gop_margin: float
     mean_entropy: float
     path_support_mean_logprob: float
+    # Explicit provenance added after the initial implementation. The phone
+    # maximizing a per-frame maximum can differ from the phone maximizing the
+    # mean over support frames, so they must not share one label.
+    best_competitor_max_phone: str = ""
+    best_competitor_max_token_id: int = -1
+    ctc_support_duration_sec: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -138,8 +147,6 @@ def ctc_viterbi_align(
         dp[0, 1] = probs[0, labels[1]]
 
     for t in range(1, frames):
-        # At frame t, no path can have advanced farther than roughly 2t+1
-        # states; limiting the loop is a small but useful optimization.
         max_state = min(states, 2 * t + 2)
         for s in range(max_state):
             candidates: List[tuple[float, int]] = [(dp[t - 1, s], s)]
@@ -157,9 +164,7 @@ def ctc_viterbi_align(
         end_candidates.append(states - 2)
     final_state = max(end_candidates, key=lambda s: dp[-1, s])
     if not np.isfinite(dp[-1, final_state]):
-        raise ValueError(
-            "canonical phone sequence cannot be aligned to the available CTC frames"
-        )
+        raise ValueError("canonical phone sequence cannot be aligned to the available CTC frames")
 
     state_path = [int(final_state)]
     for t in range(frames - 1, 0, -1):
@@ -211,12 +216,13 @@ def compute_phone_gop_evidence(
     model_id: str = "",
     competitor_token_ids: Optional[Sequence[int]] = None,
 ) -> PhoneGopResult:
-    """Compute raw phone-local GOP/logit evidence without score calibration.
+    """Compute raw frame-local GOP/logit evidence without score calibration.
 
-    This is deliberately a *feature extractor*.  The `posterior_gop_margin`
-    resembles classic phone-competition GOP, while the logit margins are kept
-    separately because recent work has shown that softmax GOP can be
-    overconfident and that logit-based variants can behave differently.
+    This is a feature extractor. The `posterior_gop_margin` resembles classic
+    phone-competition GOP, while logit margins are kept separately. For peaky
+    CTC models these forced support-frame features are diagnostics rather than a
+    preferred pronunciation criterion; segmentation-free sequence features are
+    evaluated separately in the Japanese research stack.
     """
     raw_logits = np.asarray(logits, dtype=np.float64)
     if raw_logits.ndim != 2:
@@ -279,8 +285,6 @@ def compute_phone_gop_evidence(
         zip(phones, token_ids, alignment["phone_frame_indices"])
     ):
         if not frames:
-            # Standard CTC Viterbi normally emits every canonical label at least
-            # once, but keep an explicit failure rather than synthesizing data.
             warnings.append(f"phone_without_ctc_support:{phone_index}:{phone}")
             continue
         frame_idx = np.asarray(frames, dtype=int)
@@ -295,7 +299,6 @@ def compute_phone_gop_evidence(
         if not competitor_candidates:
             competitor_candidates = [index for index in range(vocab_size) if index not in {target_id, blank_id}]
         competitor_matrix_logits = phone_logits[:, competitor_candidates]
-        competitor_matrix_log_probs = phone_log_probs[:, competitor_candidates]
         competitor_mean_logits = np.mean(competitor_matrix_logits, axis=0)
         best_position = int(np.argmax(competitor_mean_logits))
         best_id = int(competitor_candidates[best_position])
@@ -311,6 +314,7 @@ def compute_phone_gop_evidence(
         entropy = -np.sum(probs * phone_log_probs, axis=1)
         start_frame = int(frame_idx[0])
         end_frame = int(frame_idx[-1] + 1)
+        support_duration = float(len(frame_idx) * frame_stride_sec)
 
         evidence.append(
             PhoneGopEvidence(
@@ -322,7 +326,7 @@ def compute_phone_gop_evidence(
                 frame_count=int(len(frame_idx)),
                 start_sec=float(start_frame * frame_stride_sec),
                 end_sec=float(end_frame * frame_stride_sec),
-                duration_sec=float(len(frame_idx) * frame_stride_sec),
+                duration_sec=support_duration,
                 target_mean_logit=float(np.mean(target_logits)),
                 target_max_logit=float(np.max(target_logits)),
                 target_mean_logprob=float(np.mean(target_log_probs)),
@@ -336,6 +340,9 @@ def compute_phone_gop_evidence(
                 posterior_gop_margin=float(np.mean(target_log_probs) - best_mean_logprob),
                 mean_entropy=float(np.mean(entropy)),
                 path_support_mean_logprob=float(np.mean(target_log_probs)),
+                best_competitor_max_phone=id_to_token.get(best_max_id, str(best_max_id)),
+                best_competitor_max_token_id=best_max_id,
+                ctc_support_duration_sec=support_duration,
             )
         )
 
@@ -361,6 +368,9 @@ def compute_phone_gop_evidence(
     sparse_ratio = float(np.mean([count <= 1 for count in support_counts])) if support_counts else 1.0
     if sparse_ratio >= 0.50:
         warnings.append("ctc_support_is_peaky_for_at_least_half_of_phones")
+        frame_local_reliability = "low_due_ctc_peakiness"
+    else:
+        frame_local_reliability = "diagnostic_only_unvalidated"
 
     return PhoneGopResult(
         available=True,
@@ -375,6 +385,8 @@ def compute_phone_gop_evidence(
             "frame_stride_sec": float(frame_stride_sec),
             "ctc_path_logprob": float(alignment["path_logprob"]),
             "single_frame_support_ratio": sparse_ratio,
+            "frame_local_viterbi_evidence_reliability": frame_local_reliability,
+            "evidence_duration_semantics": "ctc_support_duration_not_physical_phone_duration",
             "posterior_gop_margin": posterior_summary,
             "mean_logit_margin": logit_summary,
             "entropy": entropy_summary,
@@ -385,7 +397,7 @@ def compute_phone_gop_evidence(
                 evidence, key=lambda item: item.posterior_gop_margin
             ).phone_index,
             "interpretation": (
-                "raw_phone_competition_evidence_not_pronunciation_correctness_or_percent_score"
+                "raw_frame_local_phone_competition_evidence_not_pronunciation_correctness_or_percent_score"
             ),
         },
         warnings=warnings,
@@ -396,7 +408,7 @@ class HuggingFacePhoneCtcBackend:
     """Lazy Japanese phone-CTC backend for explicit shadow experiments.
 
     `local_files_only=True` is the safe default so ordinary product/test runs do
-    not unexpectedly download hundreds of megabytes.  A benchmark can opt in to
+    not unexpectedly download hundreds of megabytes. A benchmark can opt in to
     a download by constructing the backend with `local_files_only=False`.
     """
 
@@ -448,10 +460,6 @@ class HuggingFacePhoneCtcBackend:
     def _frame_stride_sec(self, audio_length: int, sr: int, frame_count: int) -> float:
         if frame_count <= 0:
             raise ValueError("frame_count must be positive")
-        # Prefer the model's convolutional output-length calculation because it
-        # remains valid when the exact frontend stride changes.  Time is then
-        # distributed over the analyzed waveform; this is sufficient for CTC
-        # support diagnostics and avoids pretending to have gold boundaries.
         duration = float(audio_length) / max(int(sr), 1)
         return duration / frame_count
 
