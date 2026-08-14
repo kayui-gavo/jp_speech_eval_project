@@ -228,19 +228,6 @@ def _run_model(model: Any, sample_rows: list[Dict[str, Any]], phones: list[str])
     }
 
 
-def _release_model(model: Any) -> None:
-    """Best-effort CPU/GPU memory release between heavyweight backbones."""
-    try:
-        torch_module = getattr(getattr(model, "backend", None), "_torch", None)
-        device = str(getattr(getattr(model, "backend", None), "device", "") or "")
-        del model
-        gc.collect()
-        if torch_module is not None and device.startswith("cuda") and torch_module.cuda.is_available():
-            torch_module.cuda.empty_cache()
-    except Exception:
-        gc.collect()
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default="outputs/jvs_official_samples_manifest.json")
@@ -274,12 +261,18 @@ def main() -> None:
     results = []
     for factory in factories:
         model = factory()
+        torch_module = getattr(getattr(model, "backend", None), "_torch", None)
+        device = str(getattr(getattr(model, "backend", None), "device", "") or "")
         try:
             result = _run_model(model, sample_rows, phones)
             results.append(result)
             print(model.name, result["summary"])
         finally:
-            _release_model(model)
+            # Drop the outer reference *before* constructing the next model.
+            del model
+            gc.collect()
+            if torch_module is not None and device.startswith("cuda") and torch_module.cuda.is_available():
+                torch_module.cuda.empty_cache()
 
     payload = {
         "schema": "jvs_native_phone_ctc_anchor_preflight_v1",
