@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from importlib.metadata import PackageNotFoundError, version
 from importlib.util import find_spec
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,9 @@ class JapaneseTargetEvidence:
     accent_source: str
     accent_phrases: List[Dict[str, Any]]
     verified_target_used: bool
+    frontend_distribution: str
+    frontend_version: Optional[str]
+    frontend_ambiguous: bool
     marine_available: bool
     marine_used: bool
     marine_fullcontext_labels: Optional[List[str]]
@@ -40,8 +44,38 @@ def _load_pyopenjtalk():
     try:
         import pyopenjtalk
     except ImportError as exc:
-        raise RuntimeError("pyopenjtalk is required by the free Japanese frontend") from exc
+        raise RuntimeError("pyopenjtalk-compatible frontend is required by the free Japanese frontend") from exc
     return pyopenjtalk
+
+
+def _installed_version(distribution: str) -> Optional[str]:
+    try:
+        return version(distribution)
+    except PackageNotFoundError:
+        return None
+
+
+def detect_pyopenjtalk_distribution() -> tuple[str, Optional[str], bool, List[str]]:
+    """Identify which distribution currently owns the `pyopenjtalk` import.
+
+    `pyopenjtalk-plus` is a drop-in replacement and deliberately keeps the same
+    import name.  Having both distributions installed at once is ambiguous,
+    because both can install files into the same import package.  The GOP
+    preflight treats that state as blocked rather than guessing which code won.
+    """
+    plus_version = _installed_version("pyopenjtalk-plus")
+    base_version = _installed_version("pyopenjtalk")
+    warnings: List[str] = []
+    if plus_version and base_version:
+        warnings.append("both_pyopenjtalk_and_pyopenjtalk_plus_installed")
+        return "ambiguous", plus_version, True, warnings
+    if plus_version:
+        return "pyopenjtalk-plus", plus_version, False, warnings
+    if base_version:
+        warnings.append("gop_backend_training_frontend_is_pyopenjtalk_plus_but_runtime_is_base_pyopenjtalk")
+        return "pyopenjtalk", base_version, False, warnings
+    warnings.append("pyopenjtalk_distribution_metadata_unavailable")
+    return "unknown", None, False, warnings
 
 
 def _g2p_phones(pyopenjtalk: Any, text: str) -> List[str]:
@@ -68,10 +102,13 @@ def build_japanese_target_evidence(
     full-context output as a second target-side opinion; it never replaces a
     verified/manual accent target or creates a user score.
     """
-
     pyopenjtalk = _load_pyopenjtalk()
     verified = lookup_verified_target(text)
     warnings: List[str] = []
+    frontend_distribution, frontend_version, frontend_ambiguous, frontend_warnings = (
+        detect_pyopenjtalk_distribution()
+    )
+    warnings.extend(frontend_warnings)
 
     if reading_override:
         frontend_input = kata_normalize(str(reading_override))
@@ -123,7 +160,10 @@ def build_japanese_target_evidence(
         fullcontext_labels=fullcontext_labels,
         accent_source=accent_source,
         accent_phrases=accent_phrases,
-        verified_target_used=verified_target_used,
+        verified_target_used=bool(verified_target_used),
+        frontend_distribution=frontend_distribution,
+        frontend_version=frontend_version,
+        frontend_ambiguous=frontend_ambiguous,
         marine_available=marine_available,
         marine_used=marine_used,
         marine_fullcontext_labels=marine_labels,
