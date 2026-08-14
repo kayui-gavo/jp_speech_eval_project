@@ -18,21 +18,23 @@ class UmeJrfResearchTest(unittest.TestCase):
         self.assertFalse(guard["product_runtime_ingestion_allowed"])
         self.assertFalse(guard["product_model_training_allowed_without_separate_permission"])
         self.assertFalse(guard["normalize_raw_expert_labels_to_100_on_import"])
+        self.assertIn("pseudonymous", guard["speaker_identifier_policy"])
         self.assertEqual(len(D_RATED_WORDS), 10)
         self.assertIn("酸っぱい", D_RATED_WORDS)
 
     def test_set_specific_label_scales_and_constructs_remain_separate(self) -> None:
         broad = build_ume_jrf_criterion_label(
-            set_id="A", item_id="A1_001", rater_id="r1", raw_label=5
+            set_id="A", speaker_id="learner001", item_id="A1_001", rater_id="r1", raw_label=5
         )
         phone_binary = build_ume_jrf_criterion_label(
-            set_id="B", item_id="B1_001", rater_id="r2", raw_label=1
+            set_id="B", speaker_id="learner001", item_id="B1_001", rater_id="r2", raw_label=1
         )
         prosody = build_ume_jrf_criterion_label(
-            set_id="C", item_id="C_001", rater_id="r3", raw_label=4
+            set_id="C", speaker_id="learner001", item_id="C_001", rater_id="r3", raw_label=4
         )
         phone_ordinal = build_ume_jrf_criterion_label(
             set_id="D",
+            speaker_id="learner001",
             item_id="D_suppai",
             rater_id="r4",
             raw_label=3,
@@ -45,6 +47,7 @@ class UmeJrfResearchTest(unittest.TestCase):
         self.assertNotEqual(broad.construct, phone_binary.construct)
         self.assertNotEqual(prosody.construct, phone_ordinal.construct)
         for label in (broad, phone_binary, prosody, phone_ordinal):
+            self.assertEqual(label.speaker_id, "learner001")
             self.assertIsNone(label.normalized_100)
             self.assertTrue(label.research_only_license)
             self.assertFalse(label.commercial_product_use_allowed)
@@ -53,11 +56,17 @@ class UmeJrfResearchTest(unittest.TestCase):
     def test_invalid_scale_values_fail_closed(self) -> None:
         with self.assertRaises(ValueError):
             build_ume_jrf_criterion_label(
-                set_id="B", item_id="B1", rater_id="r1", raw_label=4
+                set_id="B", speaker_id="learner001", item_id="B1", rater_id="r1", raw_label=4
             )
         with self.assertRaises(ValueError):
             build_ume_jrf_criterion_label(
-                set_id="D", item_id="D1", rater_id="r1", raw_label=0
+                set_id="D", speaker_id="learner001", item_id="D1", rater_id="r1", raw_label=0
+            )
+
+    def test_missing_speaker_id_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "speaker_id"):
+            build_ume_jrf_criterion_label(
+                set_id="D", speaker_id="", item_id="D1", rater_id="r1", raw_label=3
             )
 
     def test_missing_corpus_probe_does_not_download_or_enable_parser(self) -> None:
