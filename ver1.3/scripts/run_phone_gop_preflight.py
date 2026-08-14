@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run the Stage-0 Japanese phone-GOP preflight using bundled audio only.
+"""Run the Stage-0 Japanese phone-GOP backend preflight using bundled audio only.
 
-This script is deliberately designed to protect human time. It does not ask for
-new recordings and it never changes ProductScore. The first run may explicitly
-allow downloading the pinned HuBERT phone-CTC model.
+This script protects human time. Passing it means only that the selected backend
+survived the bundled-audio engineering checks. It never by itself opens the
+human-recording gate, and it never changes ProductScore.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ WRONG_TEXT = "コーヒーをください。"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Stage-0 Japanese phone-GOP preflight; uses bundled audio only."
+        description="Stage-0 Japanese phone-GOP backend preflight; bundled audio only."
     )
     parser.add_argument("--wav", default=str(DEFAULT_WAV), help="Known Japanese reference WAV")
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST), help="Pilot manifest for target inventory coverage")
@@ -69,7 +69,6 @@ def _manifest_targets(path: Path) -> dict[str, object]:
 
 
 def _gain_variant(audio: np.ndarray, gain: float) -> np.ndarray:
-    # Avoid clipping while preserving a pure amplitude perturbation.
     y = np.asarray(audio, dtype=np.float32) * float(gain)
     peak = float(np.max(np.abs(y))) if y.size else 0.0
     if peak > 0.999:
@@ -112,6 +111,7 @@ def main() -> None:
         correct_result=correct_result,
         wrong_result=wrong_result,
         gain_results=gain_results,
+        human_gate_promoted=False,
     )
     payload = report.to_dict()
     payload["runtime"] = {
@@ -132,10 +132,11 @@ def main() -> None:
     for check in report.checks:
         print(f"[{check.status.upper():5}] {check.name}: {check.detail}")
     print(
-        "HUMAN RECORDING GATE: "
-        + ("OPEN" if report.human_recording_allowed else "BLOCKED")
+        "BACKEND PREFLIGHT: "
+        + ("PASS" if report.backend_preflight_passed else "BLOCKED")
     )
-    if not report.human_recording_allowed:
+    print("HUMAN RECORDING GATE: BLOCKED (requires full Stage-0 promotion after additional automatic checks)")
+    if not report.backend_preflight_passed:
         raise SystemExit(2)
 
 
