@@ -6,10 +6,11 @@ a pronunciation-correctness decision. Published FGOP-SF work uses the joint
 LPP/LPR feature vector in downstream pronunciation assessment; this script is
 therefore an engineering/feature preflight, not a clean-phone threshold test.
 
-Alongside the transparent enumerated LPP/LPR extractor, this preflight now runs
-an independent NumPy reimplementation of the published normalized SD
-alternative-graph forward recursion to expose ``Occ(i)``. ``Occ(i)`` is graph
-occupancy/activation, never a physical phone duration.
+Alongside the transparent enumerated LPP/LPR extractor, this preflight runs an
+independent NumPy reimplementation of the published normalized SD
+alternative-graph forward recursion to expose ``Occ(i)``. It also joins both
+families into a strict criterion-ready feature bundle for later labeled work.
+``Occ(i)`` is graph occupancy/activation, never a physical phone duration.
 """
 
 from __future__ import annotations
@@ -34,6 +35,10 @@ from jp_speech_eval.japanese_phoneme_gop import (  # noqa: E402
     sanitize_canonical_phones,
 )
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
+from jp_speech_eval.phone_criterion_features import (  # noqa: E402
+    build_phone_criterion_feature_bundle,
+    compare_shared_suffix_locality,
+)
 from jp_speech_eval.segmentation_free_gop import evaluate_backend_fgop_sf_sd_shadow  # noqa: E402
 from jp_speech_eval.segmentation_free_gop_norm import compute_segmentation_free_norm_features  # noqa: E402
 from jp_speech_eval.vad import trim_to_speech  # noqa: E402
@@ -106,6 +111,22 @@ def _norm_features(
     )
 
 
+def _failed_bundle(reason: str, model_id: str, revision: str) -> dict:
+    return {
+        "available": False,
+        "schema": "phone_criterion_feature_bundle_v1",
+        "model_id": model_id,
+        "revision": revision,
+        "canonical_phones": [],
+        "substitution_phone_inventory": [],
+        "rows": [],
+        "summary": {"reason": reason, "product_score_changed": False},
+        "warnings": [reason],
+        "score_mapped": False,
+        "product_calibrated": False,
+    }
+
+
 def main() -> None:
     args = parse_args()
     audio = load_audio(str(Path(args.wav)), sr=16000)
@@ -123,36 +144,51 @@ def main() -> None:
     wrong = evaluate_backend_fgop_sf_sd_shadow(
         backend, speech, wrong_target.phones, sr=audio.sr
     )
+    model_id = str(backend.model_id)
+    revision = str(backend.revision)
     try:
-        correct_norm = _norm_features(
+        correct_norm_obj = _norm_features(
             backend, speech, correct_target.phones, sr=audio.sr
-        ).to_dict()
-        wrong_norm = _norm_features(
+        )
+        wrong_norm_obj = _norm_features(
             backend, speech, wrong_target.phones, sr=audio.sr
-        ).to_dict()
+        )
+        correct_bundle_obj = build_phone_criterion_feature_bundle(correct, correct_norm_obj)
+        wrong_bundle_obj = build_phone_criterion_feature_bundle(wrong, wrong_norm_obj)
+        correct_norm = correct_norm_obj.to_dict()
+        wrong_norm = wrong_norm_obj.to_dict()
+        correct_bundle = correct_bundle_obj.to_dict()
+        wrong_bundle = wrong_bundle_obj.to_dict()
+        shared_suffix = compare_shared_suffix_locality(
+            correct_bundle_obj, wrong_bundle_obj
+        )
     except Exception as exc:
+        reason = f"norm_or_bundle_extraction_failed:{type(exc).__name__}"
         failed = {
             "available": False,
+            "model_id": model_id,
+            "revision": revision,
             "method": "paper_sd_norm_forward_v1",
             "evidence": [],
-            "summary": {
-                "reason": f"norm_feature_extraction_failed:{type(exc).__name__}",
-                "detail": str(exc),
-            },
-            "warnings": ["norm_feature_extraction_failed"],
+            "summary": {"reason": reason, "detail": str(exc)},
+            "warnings": [reason],
             "score_mapped": False,
             "product_calibrated": False,
         }
         correct_norm = dict(failed)
         wrong_norm = dict(failed)
+        correct_bundle = _failed_bundle(reason, model_id, revision)
+        wrong_bundle = _failed_bundle(reason, model_id, revision)
+        shared_suffix = {"available": False, "reason": reason}
 
     payload = {
-        "schema": "segmentation_free_gop_bundled_preflight_v2",
+        "schema": "segmentation_free_gop_bundled_preflight_v3",
         "product_score_changed": False,
         "score_mapped": False,
         "human_recording_allowed": False,
         "individual_lpr_sign_is_pronunciation_error_rule": False,
         "occ_i_is_physical_phone_duration": False,
+        "cross_model_raw_feature_averaging_allowed": False,
         "speech_region": region.to_dict(),
         "correct_target": correct_target.to_dict(),
         "wrong_target": wrong_target.to_dict(),
@@ -160,6 +196,9 @@ def main() -> None:
         "wrong": wrong.to_dict(),
         "correct_norm": correct_norm,
         "wrong_norm": wrong_norm,
+        "correct_criterion_feature_bundle": correct_bundle,
+        "wrong_criterion_feature_bundle": wrong_bundle,
+        "shared_suffix_locality": shared_suffix,
         "diagnostic": {
             "correct_weakest_rows": _weakest_rows(correct),
             "wrong_weakest_rows": _weakest_rows(wrong),
@@ -168,10 +207,10 @@ def main() -> None:
             "noncanonical_win_count_is_stage0_failure_gate": False,
             "downstream_labeled_interpretation_required": True,
             "note": (
-                "This artifact evaluates enumerated LPP/LPR substitution+deletion features and "
-                "the paper-aligned SD alternative-graph Occ(i) forward diagnostic. An individual "
-                "negative LPR is feature evidence, not a direct mispronunciation label. Neither "
-                "feature family is mapped to /100."
+                "This artifact evaluates enumerated LPP/LPR substitution+deletion features, "
+                "paper-aligned SD graph/Occ(i), and their strict criterion-ready join. An "
+                "individual feature is not a direct mispronunciation label. Nothing is mapped "
+                "to /100. Shared-suffix comparison is implementation locality evidence only."
             ),
         },
     }
@@ -193,11 +232,15 @@ def main() -> None:
         correct_norm.get("summary", {}).get("occ_i_min"),
         correct_norm.get("summary", {}).get("occ_i_max"),
     )
+    print("criterion bundle available:", correct_bundle.get("available"))
+    print("shared suffix locality:", shared_suffix)
     print("HUMAN RECORDING GATE: BLOCKED (awaits labeled criterion / Stage-0 promotion)")
     if not correct.available or not wrong.available:
         raise SystemExit(2)
     if not bool(correct_norm.get("available")) or not bool(wrong_norm.get("available")):
         raise SystemExit(3)
+    if not bool(correct_bundle.get("available")) or not bool(wrong_bundle.get("available")):
+        raise SystemExit(4)
 
 
 if __name__ == "__main__":
