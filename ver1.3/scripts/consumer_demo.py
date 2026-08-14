@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,38 @@ class ConsumerUiHandler(debug_ui.DebugUiHandler):
             self.end_headers()
             return
         super().do_GET()
+
+    def _asr_confirmation_response(
+        self,
+        prompt: Any,
+        wav_path: Path,
+        mode: str,
+        *,
+        requires_user_confirmation: bool = True,
+    ) -> None:
+        """Reject clear non-Japanese speech before a pseudo-reference is created."""
+        if getattr(prompt, "language_eligible", True) is False:
+            debug_ui._json_response(
+                self,
+                {
+                    "ok": False,
+                    "mode": "asr_language_reject",
+                    "error": str(getattr(prompt, "message", "这段录音没有可靠识别为日语。请用日语重新录制。")),
+                    "language_eligible": False,
+                    "language_reason": str(getattr(prompt, "language_reason", "detected_non_japanese")),
+                    "asr_raw": dict(getattr(prompt, "asr_raw", {}) or {}),
+                },
+                status=422,
+            )
+            if not self.server.retain_uploads:  # type: ignore[attr-defined]
+                wav_path.unlink(missing_ok=True)
+            return
+        super()._asr_confirmation_response(
+            prompt,
+            wav_path,
+            mode,
+            requires_user_confirmation=requires_user_confirmation,
+        )
 
 
 def main() -> None:
