@@ -3,7 +3,10 @@ import unittest
 
 import numpy as np
 
-from jp_speech_eval.phone_criterion_features import build_phone_criterion_feature_bundle
+from jp_speech_eval.phone_criterion_features import (
+    build_phone_criterion_feature_bundle,
+    compare_shared_suffix_locality,
+)
 from jp_speech_eval.segmentation_free_gop import compute_enumerated_fgop_sf_sd_features
 from jp_speech_eval.segmentation_free_gop_norm import compute_segmentation_free_norm_features
 
@@ -67,6 +70,32 @@ class PhoneCriterionFeaturesTest(unittest.TestCase):
         bundle = build_phone_criterion_feature_bundle(enumerated, normalized)
         self.assertFalse(bundle.available)
         self.assertEqual(bundle.summary["reason"], "enumerated_features_unavailable")
+
+    def test_shared_suffix_locality_aligns_from_the_end(self) -> None:
+        enumerated, normalized = self._results()
+        right = build_phone_criterion_feature_bundle(enumerated, normalized)
+        left = replace(
+            right,
+            canonical_phones=["x", "b"],
+            rows=[replace(right.rows[0], canonical_phone="x"), right.rows[1]],
+        )
+        diagnostic = compare_shared_suffix_locality(left, right)
+        self.assertTrue(diagnostic["available"])
+        self.assertEqual(diagnostic["shared_suffix_phone_count"], 1)
+        self.assertEqual(diagnostic["shared_suffix_phones"], ["b"])
+        self.assertEqual(diagnostic["left_prefix_phone_count"], 1)
+        self.assertEqual(diagnostic["right_prefix_phone_count"], 1)
+        self.assertAlmostEqual(diagnostic["normalized_graph_gop_abs_delta_max"], 0.0)
+        self.assertAlmostEqual(diagnostic["occ_i_abs_delta_max"], 0.0)
+        self.assertFalse(diagnostic["product_score_changed"])
+
+    def test_shared_suffix_locality_rejects_cross_model_comparison(self) -> None:
+        enumerated, normalized = self._results()
+        bundle = build_phone_criterion_feature_bundle(enumerated, normalized)
+        other = replace(bundle, model_id="another-model")
+        diagnostic = compare_shared_suffix_locality(bundle, other)
+        self.assertFalse(diagnostic["available"])
+        self.assertEqual(diagnostic["reason"], "model_provenance_mismatch")
 
 
 if __name__ == "__main__":
