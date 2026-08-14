@@ -5,6 +5,7 @@ import numpy as np
 from jp_speech_eval.japanese_phoneme_gop import (
     NON_SEGMENTAL_TOKENS,
     add_sequence_level_evidence,
+    ctc_forward_logprob,
     project_japanese_ctc_logits,
     sanitize_canonical_phones,
     segmental_competitor_ids,
@@ -117,3 +118,46 @@ def test_sequence_evidence_does_not_create_product_score_mapping() -> None:
     enriched = add_sequence_level_evidence(base, logits, ["a", "b", "c"], vocab=vocab, blank_id=0)
     assert enriched.score_mapped is False
     assert enriched.product_calibrated is False
+
+
+def test_ctc_forward_probability_handles_repeated_phones() -> None:
+    # CTC repeated labels require an intervening blank; the forward algorithm
+    # must keep that topology rather than silently collapsing /a a/ into /a/.
+    logits = np.full((7, 3), -6.0, dtype=float)
+    logits[:, 0] = 0.0  # blank
+    logits[1:3, 1] = 8.0
+    logits[3, 0] = 8.0
+    logits[4:6, 1] = 8.0
+    shifted = logits - np.max(logits, axis=1, keepdims=True)
+    log_probs = shifted - np.log(np.sum(np.exp(shifted), axis=1, keepdims=True))
+    repeated = ctc_forward_logprob(log_probs, [1, 1], blank_id=0)
+    single = ctc_forward_logprob(log_probs, [1], blank_id=0)
+    assert np.isfinite(repeated)
+    assert np.isfinite(single)
+    assert repeated > single
+
+
+def test_greedy_sequence_evidence_localizes_an_inserted_phone() -> None:
+    vocab = {"PAD": 0, "a": 1, "b": 2, "c": 3}
+    # Observed acoustics are a -> c -> b, while canonical target is a -> b.
+    logits = np.full((10, 4), -6.0, dtype=float)
+    logits[:, 0] = 0.0
+    logits[0, 0] = 8.0
+    logits[1:3, 1] = 9.0
+    logits[3, 0] = 8.0
+    logits[4:6, 3] = 9.0
+    logits[6, 0] = 8.0
+    logits[7:9, 2] = 9.0
+    logits[9, 0] = 8.0
+    base = compute_phone_gop_evidence(
+        logits,
+        ["a", "b"],
+        vocab=vocab,
+        blank_id=0,
+        frame_stride_sec=0.02,
+        competitor_token_ids=[1, 2, 3],
+    )
+    enriched = add_sequence_level_evidence(base, logits, ["a", "b"], vocab=vocab, blank_id=0)
+    assert enriched.summary["greedy_logical_phone_sequence"] == ["a", "c", "b"]
+    operations = enriched.summary["greedy_phone_edit_operations"]
+    assert any(op["op"] == "insert" and op["observed"] == "c" for op in operations)
