@@ -36,7 +36,6 @@ class _FakeBackend:
 
 
 def _logits() -> np.ndarray:
-    # PAD, a, b, pau, sil. Acoustics strongly support canonical a -> b.
     values = np.full((8, 5), -6.0, dtype=float)
     values[:, 0] = 0.0
     values[0, 0] = 8.0
@@ -61,32 +60,24 @@ def _result(phones: list[str]):
     return add_sequence_level_evidence(base, logits, phones, vocab=vocab, blank_id=0)
 
 
-def test_preflight_opens_only_when_automatic_contracts_pass() -> None:
+def _with_contract_flags(result):
+    return type(result)(
+        **{
+            **result.__dict__,
+            "summary": {
+                **result.summary,
+                "high_vowel_allophones_collapsed": True,
+                "ctc_support_frames_are_not_physical_phone_boundaries": True,
+            },
+        }
+    )
+
+
+def test_backend_preflight_can_pass_without_spending_human_time() -> None:
     correct_target = _target("correct", ["a", "b"])
     wrong_target = _target("wrong", ["b", "a"])
-    correct = _result(["a", "b"])
-    wrong = _result(["b", "a"])
-    # Japanese backend normally adds these semantic contract flags.
-    correct = type(correct)(
-        **{
-            **correct.__dict__,
-            "summary": {
-                **correct.summary,
-                "high_vowel_allophones_collapsed": True,
-                "ctc_support_frames_are_not_physical_phone_boundaries": True,
-            },
-        }
-    )
-    wrong = type(wrong)(
-        **{
-            **wrong.__dict__,
-            "summary": {
-                **wrong.summary,
-                "high_vowel_allophones_collapsed": True,
-                "ctc_support_frames_are_not_physical_phone_boundaries": True,
-            },
-        }
-    )
+    correct = _with_contract_flags(_result(["a", "b"]))
+    wrong = _with_contract_flags(_result(["b", "a"]))
 
     report = build_phone_gop_preflight_report(
         backend=_FakeBackend(),
@@ -98,7 +89,11 @@ def test_preflight_opens_only_when_automatic_contracts_pass() -> None:
         gain_results={"gain_0p80": correct, "gain_1p20": correct},
     )
 
-    assert report.human_recording_allowed is True
+    assert report.backend_preflight_passed is True
+    # Passing one bundled-audio backend check is intentionally insufficient to
+    # authorize the 38-clip human battery.
+    assert report.human_gate_promoted is False
+    assert report.human_recording_allowed is False
     statuses = {check.name: check.status for check in report.checks}
     assert statuses["target_frontend_distribution"] == "pass"
     assert statuses["correct_vs_wrong_target_separation"] == "pass"
@@ -106,21 +101,30 @@ def test_preflight_opens_only_when_automatic_contracts_pass() -> None:
     assert statuses["no_product_score_mapping"] == "pass"
 
 
+def test_human_gate_requires_explicit_promotion_after_backend_pass() -> None:
+    correct_target = _target("correct", ["a", "b"])
+    wrong_target = _target("wrong", ["b", "a"])
+    correct = _with_contract_flags(_result(["a", "b"]))
+    wrong = _with_contract_flags(_result(["b", "a"]))
+    report = build_phone_gop_preflight_report(
+        backend=_FakeBackend(),
+        correct_target=correct_target,
+        wrong_target=wrong_target,
+        extra_targets={},
+        correct_result=correct,
+        wrong_result=wrong,
+        gain_results={"gain_0p80": correct, "gain_1p20": correct},
+        human_gate_promoted=True,
+    )
+    assert report.backend_preflight_passed is True
+    assert report.human_recording_allowed is True
+
+
 def test_preflight_blocks_base_pyopenjtalk_even_when_acoustics_look_good() -> None:
     correct_target = _target("correct", ["a", "b"], distribution="pyopenjtalk")
     wrong_target = _target("wrong", ["b", "a"], distribution="pyopenjtalk")
-    correct = _result(["a", "b"])
-    wrong = _result(["b", "a"])
-    correct = type(correct)(
-        **{
-            **correct.__dict__,
-            "summary": {
-                **correct.summary,
-                "high_vowel_allophones_collapsed": True,
-                "ctc_support_frames_are_not_physical_phone_boundaries": True,
-            },
-        }
-    )
+    correct = _with_contract_flags(_result(["a", "b"]))
+    wrong = _with_contract_flags(_result(["b", "a"]))
 
     report = build_phone_gop_preflight_report(
         backend=_FakeBackend(),
@@ -130,8 +134,10 @@ def test_preflight_blocks_base_pyopenjtalk_even_when_acoustics_look_good() -> No
         correct_result=correct,
         wrong_result=wrong,
         gain_results={"gain_0p80": correct, "gain_1p20": correct},
+        human_gate_promoted=True,
     )
 
+    assert report.backend_preflight_passed is False
     assert report.human_recording_allowed is False
     frontend = next(check for check in report.checks if check.name == "target_frontend_distribution")
     assert frontend.status == "block"
