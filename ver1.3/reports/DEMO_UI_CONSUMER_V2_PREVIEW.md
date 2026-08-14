@@ -4,71 +4,90 @@
 
 - Branch: `free-assessment-integration-v1`
 - Preview file: `debug_ui/consumer_v2.html`
+- Product-first local launcher: `scripts/consumer_demo.py`
 - Existing `debug_ui/index.html`: unchanged
 - Scoring/backend/API behavior: unchanged
 - Hugging Face default page: unchanged until the preview is explicitly promoted
 
-## Why this preview exists
+## Design correction
 
-The existing demo exposes useful research diagnostics, but the normal learner journey competes with reliability, endpointing, realtime replay, pitch details, and debug output. The preview reorganizes the same backend around a consumer-first path:
+The first consumer preview was too close to a generic SaaS card dashboard. It has been replaced rather than incrementally patched.
 
-1. choose read-aloud or free-speaking practice;
-2. see/listen to the target when one exists;
-3. record or upload audio;
-4. confirm ASR text in free-speaking mode;
-5. see the product display score, a small set of available dimensions, and learner-facing feedback first;
-6. expand technical analysis only when desired.
+The current preview intentionally follows the visual language of the owner's personal website (`kayui-gavo.github.io`):
 
-## Safety constraints
+- warm ivory / paper background;
+- deep navy typography;
+- restrained dusty-rose and muted-gold accents;
+- serif display type paired with a neutral sans-serif body face;
+- thin editorial rules instead of dense cards and pills;
+- large typographic hierarchy and generous whitespace;
+- low-chrome navigation;
+- research diagnostics visually demoted behind disclosure.
 
-The preview deliberately does **not**:
+The page is still a consumer practice product, not a clone of the personal profile page. The shared part is the design system and editorial rhythm.
 
-- change `ProductScore v2`;
-- enable ProductScore v3;
-- invent a rhythm, pitch, or pronunciation score when the API marks it unavailable;
-- average research/vendor evidence;
-- hide ASR confirmation in free-speaking mode;
-- remove the existing research UI;
-- introduce a paid API.
+## Consumer information architecture
 
-## Visual/interaction changes
+The normal learner flow is now:
 
-- reduced default card density;
-- two primary learner tasks instead of exposing experimental mode taxonomy;
-- one dominant recording action;
-- product display score is visually primary;
-- learner feedback appears before technical diagnostics;
-- confidence is shown as supporting context rather than a separate research dashboard;
-- detailed analysis is collapsed by default;
-- raw JSON is nested one level deeper under detailed analysis;
-- mobile layout is intentionally single-column and touch-friendly;
-- multilingual shell remains available (`zh-CN`, `zh-TW`, `ja`, `en`).
+1. choose `音読練習` or `自由発話`;
+2. read/listen to the target when one exists;
+3. make one recording;
+4. confirm ASR text only when free-speaking needs it;
+5. see the practice reference score, available dimensions, and concrete feedback;
+6. expand technical analysis only when wanted.
 
-## Preview locally
+The score result deliberately uses a large editorial numeral instead of a gamified donut/ring. Dimension evidence is rendered as compact rows rather than a grid of KPI cards.
 
-Start the existing debug server and open:
+## Missing-cache startup fix
+
+The legacy `scripts/debug_ui.py --public-demo` defaults point to `cache/ramen_kudasai`, which is a generated local cache and is not committed to the repository.
+
+The repository already includes a complete pre-generated reference under:
 
 ```text
-http://127.0.0.1:8765/consumer_v2.html
+assets/reference_cache/ramen_kudasai_aivis.{json,npz,ref.wav}
 ```
 
-The current public/default UI remains:
+`scripts/consumer_demo.py` now uses these bundled assets by default and redirects `/` to the consumer preview. It keeps explicit `--cache` / `--wav` overrides available.
+
+Recommended local start command:
+
+```bash
+python scripts/consumer_demo.py
+```
+
+Then open:
 
 ```text
 http://127.0.0.1:8765/
 ```
 
+## Safety constraints
+
+The preview deliberately does **not**:
+
+- change ProductScore v2;
+- enable ProductScore v3;
+- invent a dimension value when the API marks it unavailable;
+- treat unavailable evidence as zero;
+- average research/vendor evidence;
+- hide ASR confirmation in free-speaking mode;
+- remove the existing research UI;
+- introduce a paid API.
+
 ## Promotion gate
 
 Do not replace `debug_ui/index.html` or the Hugging Face Space default page until the preview has been manually checked for:
 
+- local zero-setup startup through `scripts/consumer_demo.py`;
 - microphone permission and recording;
 - fixed-reading evaluation;
 - free-speaking ASR confirmation;
 - upload flow;
 - missing-dimension rendering;
-- mobile layout;
+- desktop and mobile layout;
 - all four language shells;
 - public-space cold-start/failure behavior.
 
-If the preview is worse, delete the preview commit/file; no production UI rollback is required because the old page was not replaced.
+If the preview is worse, revert the consumer-specific commits or delete the preview/launcher. `main` and the existing research UI remain untouched.
