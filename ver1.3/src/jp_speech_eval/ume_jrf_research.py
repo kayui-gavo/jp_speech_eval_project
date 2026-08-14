@@ -1,14 +1,14 @@
 """Research-only UME-JRF criterion schema and fail-closed layout probing.
 
 UME-JRF is an unusually useful Japanese learner-speech criterion corpus, but
-its official license is research-only / non-commercial.  This module therefore
+its official license is research-only / non-commercial. This module therefore
 makes licensing and construct provenance first-class data instead of allowing
 corpus labels to leak into the commercial C-end runtime accidentally.
 
 The public corpus introduction describes the *conceptual* grading design and
 points to corpus-internal files such as ``Vol1/doc/FJlabel/description.txt``.
-It does not publicly specify every on-disk grading-table field.  Accordingly,
-this module does not guess a label parser.  ``probe_ume_jrf_layout`` inventories
+It does not publicly specify every on-disk grading-table field. Accordingly,
+this module does not guess a label parser. ``probe_ume_jrf_layout`` inventories
 what is actually present; parsing can be implemented only after the real
 ``FJlabel`` documentation has been inspected.
 """
@@ -75,6 +75,7 @@ class UmeJrfCriterionLabel:
     set_id: str
     construct: str
     scale: str
+    speaker_id: str
     item_id: str
     rater_id: str
     raw_label: int
@@ -126,6 +127,7 @@ def _valid_raw_label(scale: str, value: int) -> bool:
 def build_ume_jrf_criterion_label(
     *,
     set_id: str,
+    speaker_id: str,
     item_id: str,
     rater_id: str,
     raw_label: int,
@@ -134,15 +136,22 @@ def build_ume_jrf_criterion_label(
 ) -> UmeJrfCriterionLabel:
     """Create one typed raw expert label after corpus-specific parsing.
 
+    ``speaker_id`` and ``rater_id`` must be corpus/pseudonymous identifiers, not
+    personally identifying names. They are required because speaker-held-out
+    validation and rater-aware analysis are impossible if provenance is lost.
+
     This function validates a label already extracted according to the actual
-    corpus documentation.  It is intentionally *not* a generic numeric-column
+    corpus documentation. It is intentionally *not* a generic numeric-column
     parser and never converts an ordinal/binary raw label to `/100`.
     """
     set_key = str(set_id).strip().upper()
     if set_key not in SET_DEFINITIONS:
         raise ValueError(f"unsupported UME-JRF set: {set_id!r}")
+    speaker = str(speaker_id).strip()
     item = str(item_id).strip()
     rater = str(rater_id).strip()
+    if not speaker:
+        raise ValueError("UME-JRF criterion label requires pseudonymous speaker_id")
     if not item:
         raise ValueError("UME-JRF criterion label requires item_id")
     if not rater:
@@ -157,6 +166,7 @@ def build_ume_jrf_criterion_label(
         set_id=set_key,
         construct=str(definition["construct"]),
         scale=scale,
+        speaker_id=speaker,
         item_id=item,
         rater_id=rater,
         raw_label=value,
@@ -226,6 +236,7 @@ def probe_ume_jrf_layout(corpus_root: str | Path) -> UmeJrfLayoutProbe:
         "Candidate filenames are inventory only; no unknown numeric field is treated as a pronunciation label.",
         "Inspect Vol1/doc/FJlabel/description.txt before implementing a concrete parser.",
         "UME-JRF is research-only/non-commercial and must not be copied into the product runtime.",
+        "Preserve pseudonymous speaker/rater IDs so LOSO and rater-aware analysis remain possible.",
     ]
     status = (
         "label_documentation_present_requires_human_schema_inspection"
@@ -260,6 +271,8 @@ def research_guard_metadata() -> Dict[str, Any]:
         "product_runtime_ingestion_allowed": False,
         "product_model_training_allowed_without_separate_permission": False,
         "normalize_raw_expert_labels_to_100_on_import": False,
+        "speaker_identifier_policy": "corpus_pseudonymous_id_required_no_personal_names",
+        "rater_identifier_policy": "pseudonymous_id_required_no_personal_names",
         "set_definitions": SET_DEFINITIONS,
         "d_rated_words": list(D_RATED_WORDS),
     }
