@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
@@ -36,20 +35,21 @@ def transcribe_japanese(
     model_name: str = "small",
     provider: str = "auto",
 ) -> AsrTranscript:
-    """Optional ASR wrapper.
+    """Transcribe a recording under an explicit Japanese decoding constraint.
 
-    The core package does not require a neural ASR dependency. If
-    faster-whisper or openai-whisper is installed, this function uses it;
-    otherwise it returns an unavailable marker and callers can fall back to
-    acoustic content matching.
+    This helper is intentionally reserved for fixed-target verification, where
+    the task already asserts that the expected content is Japanese.  It must
+    not be used for free-speaking language eligibility or ASR confirmation,
+    because forcing ``language='ja'`` can render English or other languages as
+    plausible-looking Japanese text.
     """
     provider = provider.lower().strip()
     if provider in {"auto", "faster-whisper", "faster_whisper"}:
-        out = _try_faster_whisper(y, sr, model_name)
+        out = _try_faster_whisper(y, sr, model_name, language="ja")
         if out.available or provider in {"faster-whisper", "faster_whisper"}:
             return out
     if provider in {"auto", "whisper", "openai-whisper", "openai_whisper"}:
-        out = _try_openai_whisper(y, sr, model_name)
+        out = _try_openai_whisper(y, sr, model_name, language="ja")
         if out.available or provider != "auto":
             return out
     return AsrTranscript(
@@ -62,35 +62,53 @@ def transcribe_japanese(
     )
 
 
-def detect_spoken_language(
+def transcribe_language_aware(
     y: np.ndarray,
     sr: int,
     model_name: str = "small",
     provider: str = "auto",
 ) -> AsrTranscript:
-    """Obtain independent language evidence without forcing Japanese.
+    """Transcribe without forcing Japanese and always use transcription mode.
 
-    This is intentionally separate from :func:`transcribe_japanese`: fixed
-    target verification needs a Japanese-biased transcript, while broad
-    fallback eligibility needs an honest language observation.  It is only
-    invoked after a fixed-target mismatch and therefore stays off the normal
-    successful-reference path.
+    Free-speaking flows must start here.  ``language=None`` lets Whisper keep
+    its own language observation, and ``task='transcribe'`` prevents the
+    translation task from being requested.  Callers can then reject confident
+    non-Japanese speech before creating a Japanese pseudo-reference.
     """
     provider = provider.lower().strip()
     if provider in {"auto", "faster-whisper", "faster_whisper"}:
         out = _try_faster_whisper(y, sr, model_name, language=None)
         if out.available or provider in {"faster-whisper", "faster_whisper"}:
             return out
-    return AsrTranscript(False, provider, model_name, "", "", "language_detection_unavailable")
+    if provider in {"auto", "whisper", "openai-whisper", "openai_whisper"}:
+        out = _try_openai_whisper(y, sr, model_name, language=None)
+        if out.available or provider != "auto":
+            return out
+    return AsrTranscript(False, provider, model_name, "", "", "language_aware_asr_unavailable")
 
 
-def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str, language: Optional[str] = "ja") -> AsrTranscript:
+def detect_spoken_language(
+    y: np.ndarray,
+    sr: int,
+    model_name: str = "small",
+    provider: str = "auto",
+) -> AsrTranscript:
+    """Obtain independent language evidence without forcing Japanese."""
+    return transcribe_language_aware(y, sr, model_name=model_name, provider=provider)
+
+
+def _try_faster_whisper(
+    y: np.ndarray,
+    sr: int,
+    model_name: str,
+    language: Optional[str] = "ja",
+) -> AsrTranscript:
     try:
         from faster_whisper import WhisperModel
         import soundfile as sf
         import tempfile
     except Exception:
-        return AsrTranscript(False, "faster-whisper", model_name, "", "ja", "faster_whisper_not_installed")
+        return AsrTranscript(False, "faster-whisper", model_name, "", language or "", "faster_whisper_not_installed")
 
     try:
         cache_key = (model_name, "cpu", "int8")
@@ -103,6 +121,7 @@ def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str, language: Optio
             segments, info = model.transcribe(
                 f.name,
                 language=language,
+                task="transcribe",
                 beam_size=1,
                 vad_filter=False,
                 condition_on_previous_text=False,
@@ -113,14 +132,19 @@ def _try_faster_whisper(y: np.ndarray, sr: int, model_name: str, language: Optio
             probability = float(probability) if probability is not None else None
         return AsrTranscript(True, "faster-whisper", model_name, text, detected_language, "ok", probability)
     except Exception as exc:
-        return AsrTranscript(False, "faster-whisper", model_name, "", "ja", _error_note(exc))
+        return AsrTranscript(False, "faster-whisper", model_name, "", language or "", _error_note(exc))
 
 
-def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscript:
+def _try_openai_whisper(
+    y: np.ndarray,
+    sr: int,
+    model_name: str,
+    language: Optional[str] = "ja",
+) -> AsrTranscript:
     try:
         import whisper
     except Exception:
-        return AsrTranscript(False, "openai-whisper", model_name, "", "ja", "whisper_not_installed")
+        return AsrTranscript(False, "openai-whisper", model_name, "", language or "", "whisper_not_installed")
 
     try:
         audio = np.asarray(y, dtype=np.float32)
@@ -134,7 +158,8 @@ def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
             _OPENAI_WHISPER_CACHE[model_name] = model
         result = model.transcribe(
             audio,
-            language="ja",
+            language=language,
+            task="transcribe",
             fp16=False,
             condition_on_previous_text=False,
         )
@@ -143,8 +168,8 @@ def _try_openai_whisper(y: np.ndarray, sr: int, model_name: str) -> AsrTranscrip
             "openai-whisper",
             model_name,
             str(result.get("text", "")).strip(),
-            str(result.get("language", "ja") or "ja"),
+            str(result.get("language", language or "") or ""),
             "ok",
         )
     except Exception as exc:
-        return AsrTranscript(False, "openai-whisper", model_name, "", "ja", _error_note(exc))
+        return AsrTranscript(False, "openai-whisper", model_name, "", language or "", _error_note(exc))
