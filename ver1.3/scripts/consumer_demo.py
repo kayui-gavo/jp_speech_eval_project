@@ -38,33 +38,51 @@ def _inject_defaults(args: list[str]) -> list[str]:
 
 
 def _is_consumer_entry_path(path: str) -> bool:
-    """Route ordinary demo entry points away from the legacy research renderer.
-
-    The legacy index page predates the four consumer dimensions. In JavaScript,
-    ``Number(null)`` becomes ``0`` there, so an unavailable dimension can look
-    like a genuine zero score. The consumer launcher must never expose that
-    renderer as the product entry page.
-    """
+    """Route ordinary demo entry points away from the legacy research renderer."""
     clean = str(path or "").split("?", 1)[0]
     return clean in {"", "/", "/index.html"}
 
 
 def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     payload = _base_render_user_facing_result(result, mode=mode, **kwargs)
-    payload["score_dimensions"] = build_consumer_score_dimensions(
+    dimensions = build_consumer_score_dimensions(
         result,
         payload,
         mode=str(mode or result.get("details", {}).get("mode") or "reference"),
     )
+    payload["score_dimensions"] = dimensions
+
+    # Consumer preview uses the four dimensions as one coherent surface.  Keep
+    # the legacy display score for audit, but when all four practice scores are
+    # available use an explicit equal-weight practice index rather than mixing
+    # a legacy three-factor total with the new four cards.
+    legacy_display = payload.get("display_score")
+    values = [
+        float(item["value"])
+        for item in dimensions
+        if item.get("available") and item.get("value") is not None
+    ]
+    if legacy_display is not None and len(values) == 4:
+        consumer_total = int(round(sum(values) / 4.0))
+        payload["legacy_display_score"] = legacy_display
+        payload["display_score"] = consumer_total
+        practice_score = payload.get("practice_score")
+        if isinstance(practice_score, dict):
+            practice_score["value"] = consumer_total
+
     payload.setdefault("dimension_policy", {})
     payload["dimension_policy"].update({
-        "version": "consumer_semantics_v2",
+        "version": "consumer_semantics_v3_always_four",
         "top_level_dimensions": ["delivery_fluency", "clarity", "mora_timing", "intonation"],
+        "always_show_four_scores_after_japanese_acceptance": True,
+        "evidence_degrades_before_score_disappears": True,
+        "consumer_total_policy": "equal_weight_mean_of_four_practice_dimensions",
+        "consumer_total_product_calibrated": False,
         "prosody_is_not_a_peer_label_to_intonation": True,
         "lexical_pitch_accent_is_not_top_level_intonation": True,
         "recording_quality_is_not_clarity": True,
         "legacy_pronunciation_timing_proxy_is_not_clarity": True,
-        "unavailable_dimension_is_never_zero": True,
+        "non_japanese_or_unusable_audio_can_still_be_no_score": True,
     })
     return payload
 
@@ -83,10 +101,10 @@ dimensionLabel = function(k){
   };
   return d[k]?.[locale]||k;
 };
-copy["zh-CN"].hero="从流畅度、清晰度、节奏和抑扬四个方向看这次发话。没有足够证据的维度会显示为“--”，绝不会伪装成 0 分。";
-copy["zh-TW"].hero="從流暢度、清晰度、節奏和抑揚四個方向看這次發話。沒有足夠證據的維度會顯示為「--」，絕不會偽裝成 0 分。";
-copy.ja.hero="流暢さ・明瞭さ・リズム・抑揚の4方向から今回の発話を確認します。十分な根拠がない項目は「--」と表示し、0点として扱いません。";
-copy.en.hero="Review each attempt through fluency, clarity, rhythm, and intonation. A dimension without enough evidence is shown as “--”, never as a fake zero.";
+copy["zh-CN"].hero="只要确认是在说可评价的日语，就会从流畅度、清晰度、节奏和抑扬四个方向给出练习分。证据不足时会降低判断可信度，而不是让某一维消失。";
+copy["zh-TW"].hero="只要確認是在說可評價的日語，就會從流暢度、清晰度、節奏和抑揚四個方向給出練習分。證據不足時會降低判斷可信度，而不是讓某一維消失。";
+copy.ja.hero="評価可能な日本語発話として確認できた場合は、流暢さ・明瞭さ・リズム・抑揚の4項目を必ず練習スコアとして表示します。根拠が弱い場合は信頼度を下げ、項目自体は消しません。";
+copy.en.hero="Once the utterance is accepted as scoreable Japanese, the demo always returns four practice scores: fluency, clarity, rhythm, and intonation. Weak evidence lowers confidence instead of making a dimension disappear.";
 </script>
 """
     return html.replace("</body>", f"{patch}</body>").encode("utf-8")
