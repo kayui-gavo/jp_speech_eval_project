@@ -9,7 +9,7 @@ on:
       run_model_preflight:
         description: "Download pinned Japanese phone-CTC model and run bundled-audio preflight"
         required: false
-        default: false
+        default: true
         type: boolean
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
         run: python -m pytest -q
 
   model-preflight:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_model_preflight }}
+    if: ${{ github.event_name == 'push' || inputs.run_model_preflight }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,6 +46,11 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: ver1.3/requirements.txt
+      - name: Cache Hugging Face model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: phone-gop-hf-${{ runner.os }}-beatrice-v4-f5fe070
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools wheel
