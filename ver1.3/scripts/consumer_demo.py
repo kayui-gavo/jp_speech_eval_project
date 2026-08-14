@@ -37,6 +37,18 @@ def _inject_defaults(args: list[str]) -> list[str]:
     return [*injected, *args]
 
 
+def _is_consumer_entry_path(path: str) -> bool:
+    """Route ordinary demo entry points away from the legacy research renderer.
+
+    The legacy index page predates the four consumer dimensions. In JavaScript,
+    ``Number(null)`` becomes ``0`` there, so an unavailable dimension can look
+    like a genuine zero score. The consumer launcher must never expose that
+    renderer as the product entry page.
+    """
+    clean = str(path or "").split("?", 1)[0]
+    return clean in {"", "/", "/index.html"}
+
+
 def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     payload = _base_render_user_facing_result(result, mode=mode, **kwargs)
     payload["score_dimensions"] = build_consumer_score_dimensions(
@@ -52,6 +64,7 @@ def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwar
         "lexical_pitch_accent_is_not_top_level_intonation": True,
         "recording_quality_is_not_clarity": True,
         "legacy_pronunciation_timing_proxy_is_not_clarity": True,
+        "unavailable_dimension_is_never_zero": True,
     })
     return payload
 
@@ -70,20 +83,20 @@ dimensionLabel = function(k){
   };
   return d[k]?.[locale]||k;
 };
-copy["zh-CN"].hero="从流畅度、清晰度、节奏和抑扬四个方向看这次发话。录音质量只决定结果可信度，不会冒充清晰度；词汇重音放到详细反馈里。";
-copy["zh-TW"].hero="從流暢度、清晰度、節奏和抑揚四個方向看這次發話。錄音品質只決定結果可信度，不會冒充清晰度；詞彙重音放到詳細回饋裡。";
-copy.ja.hero="流暢さ・明瞭さ・リズム・抑揚の4方向から今回の発話を確認します。録音品質は信頼度として扱い、明瞭さの点数にはしません。語彙アクセントは詳細フィードバックで扱います。";
-copy.en.hero="Review each attempt through four separate dimensions: fluency, clarity, rhythm, and intonation. Recording quality affects confidence rather than clarity; lexical pitch accent stays in detailed feedback.";
+copy["zh-CN"].hero="从流畅度、清晰度、节奏和抑扬四个方向看这次发话。没有足够证据的维度会显示为“--”，绝不会伪装成 0 分。";
+copy["zh-TW"].hero="從流暢度、清晰度、節奏和抑揚四個方向看這次發話。沒有足夠證據的維度會顯示為「--」，絕不會偽裝成 0 分。";
+copy.ja.hero="流暢さ・明瞭さ・リズム・抑揚の4方向から今回の発話を確認します。十分な根拠がない項目は「--」と表示し、0点として扱いません。";
+copy.en.hero="Review each attempt through fluency, clarity, rhythm, and intonation. A dimension without enough evidence is shown as “--”, never as a fake zero.";
 </script>
 """
     return html.replace("</body>", f"{patch}</body>").encode("utf-8")
 
 
 class ConsumerUiHandler(debug_ui.DebugUiHandler):
-    """Keep the research UI intact while making `/` product-first for this launcher."""
+    """Keep the research UI intact while making product routes consumer-first."""
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
-        if self.path in {"", "/"}:
+        if _is_consumer_entry_path(self.path):
             self.send_response(302)
             self.send_header("Location", "/consumer_v2.html")
             self.end_headers()
@@ -92,9 +105,14 @@ class ConsumerUiHandler(debug_ui.DebugUiHandler):
             body = _consumer_html_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if self.path.split("?", 1)[0] == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
             return
         super().do_GET()
 
