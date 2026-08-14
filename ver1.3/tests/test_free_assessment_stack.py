@@ -25,11 +25,24 @@ def test_recommended_routes_contain_no_paid_provider():
     assert "paid_cloud_pronunciation_apis" in routes["never_auto_enable"]
 
 
-def test_optional_heavy_aligners_are_never_default_enabled():
+def test_optional_heavy_aligners_and_gop_models_are_never_default_enabled():
     stack = discover_free_assessment_stack()
-    assert stack["whisperx"].default_enabled is False
-    assert stack["mfa"].default_enabled is False
-    assert stack["marine"].default_enabled is False
+    for key in (
+        "whisperx",
+        "mfa",
+        "narabas",
+        "marine",
+        "beatrice_phone_ctc",
+        "sakasegawa_dual_ctc",
+    ):
+        assert stack[key].default_enabled is False
+    assert "gop" in stack["beatrice_phone_ctc"].role
+    assert "gop" in stack["sakasegawa_dual_ctc"].role
+
+
+def test_free_speaking_shadow_can_use_confirmed_transcript_phone_gop_without_tts_reference():
+    routes = recommended_free_routes()
+    assert "confirmed_transcript_to_pyopenjtalk_phones_then_phone_ctc_gop" in routes["free_speaking_shadow"]
 
 
 def test_manual_reading_override_does_not_invent_accent_target():
