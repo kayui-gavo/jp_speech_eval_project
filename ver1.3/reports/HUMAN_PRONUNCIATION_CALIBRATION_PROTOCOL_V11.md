@@ -1,5 +1,7 @@
 # Human Pronunciation Calibration Protocol v1.1
 
+> Historical pre-collection record. Superseded by [Protocol v1.2](HUMAN_PRONUNCIATION_CALIBRATION_PROTOCOL_V12.md), which separates JANON isolated-word calibration from JVS long-sentence channel-bias controls before rating collection.
+
 ```text
 protocol_version: v1.1
 rating_collection_started: false

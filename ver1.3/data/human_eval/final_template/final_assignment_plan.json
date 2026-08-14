@@ -12,5 +12,5 @@
     "cross_target_when_possible",
     "include_native_learner_and_channel_samples"
   ],
-  "generation_guard": "final_assignment_from_real_manifest requires 70 real learner clean clips across 10 speakers and 15 complete channel sets"
+  "generation_guard": "final_assignment_from_real_manifest requires a 98-clip primary isolated-word cohort (70 real learner clean clips across 10 speakers) and 15 complete long-sentence channel quartets"
 }

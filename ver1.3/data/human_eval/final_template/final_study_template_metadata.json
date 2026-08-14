@@ -2,11 +2,28 @@
   "study_stage": "final_template_unpopulated",
   "assignment_generated": false,
   "rating_collection_started": false,
-  "projected_unique_clip_count_if_seed_is_retained": 154,
+  "study_components": {
+    "primary_pronunciation_calibration": {
+      "validation_scope": "janon_7target_isolated_word_validation_v1",
+      "projected_clean_isolated_word_clips": 98,
+      "current_seed_clips": 42
+    },
+    "channel_bias_control": {
+      "validation_scope": "jvs_channel_bias_long_sentence_v1",
+      "projected_minimum_long_sentence_clips": 60,
+      "current_seed_clips": 56
+    }
+  },
+  "projected_primary_unique_clip_count": 98,
+  "projected_channel_unique_clip_count": 60,
+  "projected_total_unique_clip_count": 158,
+  "projected_base_ratings": 790,
+  "projected_hidden_repeat_presentations": 50,
+  "projected_total_presentations": 840,
   "required_new_real_learner_clips": 56,
   "required_total_learner_clean_clips": 70,
   "required_total_learner_speakers": 10,
   "required_complete_channel_sets_for_promotion": 15,
   "current_complete_channel_sets": 14,
-  "generation_rule": "Populate only after each new learner audio path exists and source metadata is verified."
+  "generation_rule": "Populate only after each new learner audio path exists, source metadata is verified, and the fifteenth real channel quartet exists."
 }

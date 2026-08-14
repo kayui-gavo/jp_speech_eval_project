@@ -1,6 +1,6 @@
 # Human Pronunciation Calibration Protocol v1 (pre-registration)
 
-> Superseded before rating collection by [Protocol v1.1](HUMAN_PRONUNCIATION_CALIBRATION_PROTOCOL_V11.md). This v1 document is retained as the initial seed-study record only.
+> Superseded before rating collection by [Protocol v1.2](HUMAN_PRONUNCIATION_CALIBRATION_PROTOCOL_V12.md). This v1 document is retained as the initial seed-study record only.
 
 ## Status and scope
 

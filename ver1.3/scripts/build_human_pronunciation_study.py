@@ -30,6 +30,14 @@ FINAL_STUDY_STAGE = "final_calibration"
 FINAL_MIN_LEARNER_CLIPS = 70
 FINAL_MIN_LEARNER_SPEAKERS = 10
 FINAL_MIN_CHANNEL_SETS = 15
+FINAL_NATIVE_CLIP_COUNT = 28
+PRIMARY_COMPONENT = "primary_pronunciation_calibration"
+CHANNEL_COMPONENT = "channel_bias_control"
+PRIMARY_VALIDATION_SCOPE = "janon_7target_isolated_word_validation_v1"
+CHANNEL_VALIDATION_SCOPE = "jvs_channel_bias_long_sentence_v1"
+FINAL_PRIMARY_CLIP_COUNT = 98
+FINAL_CHANNEL_CLIP_COUNT = FINAL_MIN_CHANNEL_SETS * len(CHANNEL_CONDITIONS)
+FINAL_PROJECTED_CLIP_COUNT = FINAL_PRIMARY_CLIP_COUNT + FINAL_CHANNEL_CLIP_COUNT
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -112,6 +120,9 @@ def _native_and_learner_rows() -> list[dict[str, Any]]:
             "reference_bank_id": "wavlm_7target_human_native_v1",
             "alignment_available": "not_required_for_listener_rating",
             "recording_quality": "pending_pre_rating_qc",
+            "study_component": PRIMARY_COMPONENT,
+            "validation_scope": PRIMARY_VALIDATION_SCOPE,
+            "future_mapping_research_eligible": "true",
             **_ssl_fields(frozen_ssl.get((target, "native_loo", speaker))),
         })
 
@@ -137,6 +148,9 @@ def _native_and_learner_rows() -> list[dict[str, Any]]:
             "reference_bank_id": "wavlm_7target_human_native_v1",
             "alignment_available": "not_required_for_listener_rating",
             "recording_quality": "pending_pre_rating_qc",
+            "study_component": PRIMARY_COMPONENT,
+            "validation_scope": PRIMARY_VALIDATION_SCOPE,
+            "future_mapping_research_eligible": "true",
             **_ssl_fields(frozen_ssl.get((target, "learner", speaker))),
         })
     return rows
@@ -184,6 +198,9 @@ def _channel_rows() -> list[dict[str, Any]]:
                 "reference_bank_id": "not_applicable_channel_bias_subset",
                 "alignment_available": "not_evaluated_in_manifest_construction",
                 "recording_quality": "pending_pre_rating_qc",
+                "study_component": CHANNEL_COMPONENT,
+                "validation_scope": CHANNEL_VALIDATION_SCOPE,
+                "future_mapping_research_eligible": "false",
                 **_ssl_fields(None),
             })
     return rows
@@ -283,10 +300,25 @@ def complete_channel_set_ids(rows: list[dict[str, Any]]) -> set[str]:
     """Return only channel sets that contain the entire four-condition quartet."""
     conditions_by_pair: dict[str, set[str]] = defaultdict(set)
     for row in rows:
-        if row.get("pair_id"):
+        if row.get("study_component") == CHANNEL_COMPONENT and row.get("pair_id"):
             conditions_by_pair[row["pair_id"]].add(str(row.get("condition", "")))
     expected = set(CHANNEL_CONDITIONS)
     return {pair_id for pair_id, conditions in conditions_by_pair.items() if conditions == expected}
+
+
+def primary_mapping_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return the only rows eligible for future calibration/mapping research.
+
+    Channel-bias controls are deliberately excluded even though they may be
+    rated: their long-sentence task is a robustness control, not construct
+    validation for the seven isolated JANON targets.
+    """
+    return [
+        row for row in rows
+        if row.get("study_component") == PRIMARY_COMPONENT
+        and row.get("validation_scope") == PRIMARY_VALIDATION_SCOPE
+        and row.get("future_mapping_research_eligible") == "true"
+    ]
 
 
 def final_assignment_from_real_manifest(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -297,10 +329,14 @@ def final_assignment_from_real_manifest(rows: list[dict[str, Any]]) -> list[dict
     """
     if any(row.get("study_stage") != FINAL_STUDY_STAGE for row in rows):
         raise ValueError("final assignment blocked: manifest is not marked final_calibration")
-    learners = [row for row in rows if row.get("speaker_group_hidden") == "learner_candidate" and row.get("is_clean") == "true"]
+    primary = primary_mapping_rows(rows)
+    if len(primary) != FINAL_PRIMARY_CLIP_COUNT:
+        raise ValueError("final assignment blocked: primary isolated-word cohort is incomplete")
+    learners = [row for row in primary if row.get("speaker_group_hidden") == "learner_candidate" and row.get("is_clean") == "true"]
+    native_anchors = [row for row in primary if row.get("speaker_group_hidden") == "native_anchor" and row.get("is_clean") == "true"]
     speakers = {row.get("speaker_id_anonymized") for row in learners}
     missing_audio = [row.get("sample_id", "") for row in learners if not row.get("audio_path") or not (DATA_ROOT / str(row["audio_path"])).exists()]
-    if len(learners) < FINAL_MIN_LEARNER_CLIPS or len(speakers) < FINAL_MIN_LEARNER_SPEAKERS or missing_audio:
+    if len(native_anchors) != FINAL_NATIVE_CLIP_COUNT or len(learners) != FINAL_MIN_LEARNER_CLIPS or len(speakers) < FINAL_MIN_LEARNER_SPEAKERS or missing_audio:
         raise ValueError("final assignment blocked: required real learner audio cohort is incomplete")
     if len(complete_channel_set_ids(rows)) < FINAL_MIN_CHANNEL_SETS:
         raise ValueError("final assignment blocked: fewer than 15 complete channel sets")
@@ -318,6 +354,8 @@ def learner_recording_needed() -> list[dict[str, Any]]:
         "normalized_kana": kana[target],
         "required_recording": "one_clean_real_learner_recording",
         "required_metadata": "self_reported_native_language,japanese_proficiency,recording_device",
+        "study_component": PRIMARY_COMPONENT,
+        "validation_scope": PRIMARY_VALIDATION_SCOPE,
         "status": "needed",
     } for speaker_index in range(1, 9) for target in TARGETS]
 
@@ -380,13 +418,30 @@ def final_template(rows: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any
         "study_stage": "final_template_unpopulated",
         "assignment_generated": False,
         "rating_collection_started": False,
-        "projected_unique_clip_count_if_seed_is_retained": len(rows) + 56,
+        "study_components": {
+            PRIMARY_COMPONENT: {
+                "validation_scope": PRIMARY_VALIDATION_SCOPE,
+                "projected_clean_isolated_word_clips": FINAL_PRIMARY_CLIP_COUNT,
+                "current_seed_clips": len(primary_mapping_rows(rows)),
+            },
+            CHANNEL_COMPONENT: {
+                "validation_scope": CHANNEL_VALIDATION_SCOPE,
+                "projected_minimum_long_sentence_clips": FINAL_CHANNEL_CLIP_COUNT,
+                "current_seed_clips": len([row for row in rows if row.get("study_component") == CHANNEL_COMPONENT]),
+            },
+        },
+        "projected_primary_unique_clip_count": FINAL_PRIMARY_CLIP_COUNT,
+        "projected_channel_unique_clip_count": FINAL_CHANNEL_CLIP_COUNT,
+        "projected_total_unique_clip_count": FINAL_PROJECTED_CLIP_COUNT,
+        "projected_base_ratings": FINAL_PROJECTED_CLIP_COUNT * RATINGS_PER_CLIP,
+        "projected_hidden_repeat_presentations": len(LISTENER_SLOTS) * 5,
+        "projected_total_presentations": FINAL_PROJECTED_CLIP_COUNT * RATINGS_PER_CLIP + len(LISTENER_SLOTS) * 5,
         "required_new_real_learner_clips": 56,
         "required_total_learner_clean_clips": FINAL_MIN_LEARNER_CLIPS,
         "required_total_learner_speakers": FINAL_MIN_LEARNER_SPEAKERS,
         "required_complete_channel_sets_for_promotion": FINAL_MIN_CHANNEL_SETS,
         "current_complete_channel_sets": len(complete_channel_set_ids(rows)),
-        "generation_rule": "Populate only after each new learner audio path exists and source metadata is verified.",
+        "generation_rule": "Populate only after each new learner audio path exists, source metadata is verified, and the fifteenth real channel quartet exists.",
     }
     assignment_plan = {
         "study_stage": FINAL_STUDY_STAGE,
@@ -395,7 +450,7 @@ def final_template(rows: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any
         "minimum_hidden_duplicates_per_rater": 5,
         "preferred_hidden_duplicate_fraction_of_workload": "0.05_to_0.10",
         "duplicate_constraints": ["different_presentation_id", "same_underlying_sample", "not_adjacent", "not_disclosed", "cross_target_when_possible", "include_native_learner_and_channel_samples"],
-        "generation_guard": "final_assignment_from_real_manifest requires 70 real learner clean clips across 10 speakers and 15 complete channel sets",
+        "generation_guard": "final_assignment_from_real_manifest requires a 98-clip primary isolated-word cohort (70 real learner clean clips across 10 speakers) and 15 complete long-sentence channel quartets",
     }
     return fields, metadata, assignment_plan
 
@@ -413,10 +468,25 @@ def main() -> None:
     write_csv(FINAL_TEMPLATE_OUT / "learner_recording_needed.csv", learner_recording_needed())
     (FINAL_TEMPLATE_OUT / "final_study_template_metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (FINAL_TEMPLATE_OUT / "final_assignment_plan.json").write_text(json.dumps(assignment_plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    primary_rows = primary_mapping_rows(rows)
+    channel_rows = [row for row in rows if row.get("study_component") == CHANNEL_COMPONENT]
     (PILOT_OUT / "pilot_study_metadata.json").write_text(json.dumps({
         "study_stage": PILOT_STUDY_STAGE,
         "rating_collection_started": False,
         "unique_clip_count": len(rows),
+        "study_components": {
+            PRIMARY_COMPONENT: {
+                "validation_scope": PRIMARY_VALIDATION_SCOPE,
+                "clip_count": len(primary_rows),
+                "description": "JANON seven-target isolated-word primary calibration seed",
+            },
+            CHANNEL_COMPONENT: {
+                "validation_scope": CHANNEL_VALIDATION_SCOPE,
+                "clip_count": len(channel_rows),
+                "description": "JVS long-sentence channel-bias control seed",
+            },
+        },
+        "analysis_rule": "Analyze primary pronunciation calibration and channel-bias control separately; do not report a mixed global WavLM-human correlation.",
         "base_ratings_per_clip": RATINGS_PER_CLIP,
         "hidden_duplicates_per_listener_slot": 1,
         "repeatability_status": "insufficient_for_stable_per_rater_repeatability",

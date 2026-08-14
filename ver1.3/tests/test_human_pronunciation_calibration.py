@@ -9,12 +9,20 @@ import pytest
 
 from jp_speech_eval.pronunciation_calibration import default_pronunciation_calibration
 from scripts.build_human_pronunciation_study import (
+    CHANNEL_COMPONENT,
+    CHANNEL_VALIDATION_SCOPE,
+    FINAL_CHANNEL_CLIP_COUNT,
     FINAL_MIN_CHANNEL_SETS,
+    FINAL_NATIVE_CLIP_COUNT,
+    FINAL_PRIMARY_CLIP_COUNT,
     FINAL_STUDY_STAGE,
     PILOT_STUDY_STAGE,
+    PRIMARY_COMPONENT,
+    PRIMARY_VALIDATION_SCOPE,
     assignments,
     complete_channel_set_ids,
     final_assignment_from_real_manifest,
+    primary_mapping_rows,
 )
 
 
@@ -40,9 +48,22 @@ def test_pilot_manifest_is_explicitly_seed_and_not_final_assignment():
     assert not (FINAL_TEMPLATE / "listener_assignment_final.csv").exists()
 
 
+def test_pilot_manifest_separates_primary_and_channel_studies():
+    master = _rows("pronunciation_listener_manifest_v1.csv")
+    assert all(row["study_component"] for row in master)
+    primary = [row for row in master if row["study_component"] == PRIMARY_COMPONENT]
+    channel = [row for row in master if row["study_component"] == CHANNEL_COMPONENT]
+    assert len(primary) == 42
+    assert len(channel) == 56
+    assert {row["validation_scope"] for row in primary} == {PRIMARY_VALIDATION_SCOPE}
+    assert {row["validation_scope"] for row in channel} == {CHANNEL_VALIDATION_SCOPE}
+    assert all(row["dataset"] == "JANON" and row["target_text"] in {"うっとうしい", "がっしり", "さっさと", "ばっちり", "オイル", "バグ", "酸味"} for row in primary)
+    assert all(row["dataset"] == "JVS" and row["pair_id"] for row in channel)
+
+
 def test_blind_files_do_not_leak_hidden_source_or_condition_fields():
     rows = _rows("pronunciation_listener_blind_v1.csv")
-    forbidden = {"speaker_group_hidden", "dataset", "condition", "wavlm_layer12", "wavlm_layer24", "wavlm_median_index", "alignment_available", "recording_quality", "audio_path"}
+    forbidden = {"speaker_group_hidden", "dataset", "condition", "wavlm_layer12", "wavlm_layer24", "wavlm_median_index", "alignment_available", "recording_quality", "audio_path", "study_component", "validation_scope", "future_mapping_research_eligible"}
     assert rows
     assert not (forbidden & set(rows[0]))
     assert all(row["sample_id"].startswith("clip_") for row in rows)
@@ -68,6 +89,15 @@ def test_channel_set_requires_all_four_conditions():
     incomplete_pair = next(iter(complete))
     missing_codec = [row for row in master if not (row["pair_id"] == incomplete_pair and row["condition"] == "codec")]
     assert incomplete_pair not in complete_channel_set_ids(missing_codec)
+
+
+def test_mapping_eligibility_excludes_all_channel_rows():
+    master = _rows("pronunciation_listener_manifest_v1.csv")
+    mapping_rows = primary_mapping_rows(master)
+    assert len(mapping_rows) == 42
+    assert all(row["study_component"] == PRIMARY_COMPONENT for row in mapping_rows)
+    assert all(row["future_mapping_research_eligible"] == "true" for row in mapping_rows)
+    assert not any(row["sample_id"].startswith("channel_pair") for row in mapping_rows)
 
 
 def test_channel_set_members_and_duplicates_are_not_adjacent_in_pilot_schedule():
@@ -107,10 +137,22 @@ def test_final_assignment_refuses_missing_real_learner_audio():
     seed = _rows("pronunciation_listener_manifest_v1.csv")
     with pytest.raises(ValueError, match="final assignment blocked"):
         final_assignment_from_real_manifest(seed)
-    with pytest.raises(ValueError, match="required real learner audio cohort is incomplete"):
+    with pytest.raises(ValueError, match="primary isolated-word cohort is incomplete"):
         final_assignment_from_real_manifest([{**row, "study_stage": FINAL_STUDY_STAGE} for row in seed])
     template_rows = _rows("pronunciation_listener_manifest_final_template.csv", directory=FINAL_TEMPLATE)
     assert template_rows == []
+
+
+def test_final_projection_requires_separate_primary_and_channel_totals():
+    metadata = json.loads((FINAL_TEMPLATE / "final_study_template_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["projected_primary_unique_clip_count"] == FINAL_PRIMARY_CLIP_COUNT == 98
+    assert metadata["projected_channel_unique_clip_count"] == FINAL_CHANNEL_CLIP_COUNT == 60
+    assert metadata["projected_total_unique_clip_count"] == 158
+    assert metadata["projected_base_ratings"] == 790
+    assert metadata["projected_hidden_repeat_presentations"] == 50
+    assert metadata["projected_total_presentations"] == 840
+    assert metadata["required_complete_channel_sets_for_promotion"] >= 15
+    assert FINAL_NATIVE_CLIP_COUNT == 28
 
 
 def test_rating_contract_and_json_schema_keep_analyzability_separate():

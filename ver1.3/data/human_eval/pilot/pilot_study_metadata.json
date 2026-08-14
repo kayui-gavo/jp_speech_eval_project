@@ -2,6 +2,19 @@
   "study_stage": "pilot_seed",
   "rating_collection_started": false,
   "unique_clip_count": 98,
+  "study_components": {
+    "primary_pronunciation_calibration": {
+      "validation_scope": "janon_7target_isolated_word_validation_v1",
+      "clip_count": 42,
+      "description": "JANON seven-target isolated-word primary calibration seed"
+    },
+    "channel_bias_control": {
+      "validation_scope": "jvs_channel_bias_long_sentence_v1",
+      "clip_count": 56,
+      "description": "JVS long-sentence channel-bias control seed"
+    }
+  },
+  "analysis_rule": "Analyze primary pronunciation calibration and channel-bias control separately; do not report a mixed global WavLM-human correlation.",
   "base_ratings_per_clip": 5,
   "hidden_duplicates_per_listener_slot": 1,
   "repeatability_status": "insufficient_for_stable_per_rater_repeatability",
