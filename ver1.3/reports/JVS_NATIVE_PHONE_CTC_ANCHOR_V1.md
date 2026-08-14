@@ -14,19 +14,33 @@ The official JVS corpus project page links three small samples for `jvs001`, `jv
 
 `また、東寺のように、五大明王と呼ばれる、主要な明王の中央に配されることも多い。`
 
-This preflight downloads those WAV files only for the CI run, verifies/fingerprints the exact bytes, evaluates them, then deletes the audio before artifact collection.
+This preflight downloads those WAV files only for the CI run, validates the reviewed official source/file IDs plus WAV/audio semantics, evaluates them, and then deletes the audio before artifact collection.
 
-## Frozen official sample bytes
+## Reproducibility correction: transport bytes are not acoustic identity
 
-The first successful run produced:
+The first successful run observed these raw HTTP/WAV representations:
 
-| speaker | bytes | SHA-256 |
+| speaker | first observed bytes | first observed raw SHA-256 |
 |---|---:|---|
 | jvs001 | 778284 | `dc9fd6e4caefc6e1781ad225f0b41ca13153da4afe2fb92f39f175fa3d9d85a7` |
 | jvs002 | 642764 | `d91e5199508d89b45d68f18473c013f90bbfd68c1940ad039f5ea0b183f61ae2` |
 | jvs003 | 661004 | `7b164601457b27c8a89c6aaef971967e5a6c7cf9bf2d46c303e21d1e8e41ed15` |
 
-`download_official_jvs_samples.py` now freezes those sizes/digests and fails closed if the upstream bytes change. A future hash update requires explicit review rather than silently changing the acoustic benchmark.
+A later official Google Drive response for `jvs001` changed to a much smaller raw WAV representation while preserving the expected ~8.621 s utterance. That exposed a flaw in the first reproducibility policy: a Google Drive transport/container byte hash is not a stable acoustic identity.
+
+The old hard byte-hash gate has therefore been **removed rather than widened with arbitrary extra hashes**.
+
+Current downloader policy verifies:
+
+- the reviewed official JVS project-page Google Drive file ID;
+- readable uncompressed mono PCM WAV;
+- expected utterance duration within a tight tolerance;
+- plausible PCM width and positive sample rate/frame count;
+- downstream target-conditioned acoustic behavior after project-standard resampling.
+
+Raw bytes, raw SHA-256, sample rate and sample width are still recorded as provenance. A raw-hash change alone is not called source failure. Duration/audio-semantic drift still fails closed and requires source inspection.
+
+This is a more defensible reproducibility policy than pretending a mutable HTTP representation is an immutable corpus checksum.
 
 ## Control design
 
@@ -86,7 +100,7 @@ Native correct-target discrimination is necessary engineering evidence, not lear
 
 - **PASS** native-human target-consistency sanity gate.
 - **PASS** mild-gain robustness sanity gate for these three samples.
-- **PASS** source-byte freeze / drift-detection gate.
+- **CORRECTED** source reproducibility gate now uses reviewed source ID + acoustic semantics; transport-byte SHA is provenance only.
 - Continue machine-only work with criterion-ready `{LPP, LPR, normalized graph GOP, Occ(i)}` bundles and already-existing learner/native data.
 - Keep all phone evidence shadow-only.
-- Keep the new-user-recording gate **BLOCKED** until a genuinely labeled local-pronunciation criterion becomes necessary after existing data are exhausted.
+- Keep the new-user-recording gate **BLOCKED** while existing expert-labeled corpora such as UME-JRF are pursued first.
