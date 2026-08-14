@@ -56,9 +56,6 @@ def _duration_match_score(ratio: Any) -> Optional[float]:
     value = _number(ratio)
     if value is None or value <= 0:
         return None
-    # Symmetric in log-duration space. This is intentionally broad: a 20–30%
-    # rate difference should not destroy a rhythm score, while truncation or a
-    # very large tempo mismatch should be visible.
     return 100.0 * math.exp(-0.80 * abs(math.log(value)))
 
 
@@ -90,7 +87,6 @@ def _dimension(
 
 
 def _mapped_clarity_evidence(details: Mapping[str, Any]) -> tuple[Optional[float], str, str]:
-    """Prefer an explicitly mapped pronunciation/clarity backend when present."""
     shadow = details.get("shadow") if isinstance(details.get("shadow"), Mapping) else {}
     ssl = shadow.get("ssl_pronunciation") if isinstance(shadow.get("ssl_pronunciation"), Mapping) else {}
     if bool(ssl.get("score_mapped")):
@@ -115,19 +111,6 @@ def _clarity_proxy(
     result: Mapping[str, Any],
     details: Mapping[str, Any],
 ) -> tuple[float, str, str, str, str]:
-    """Always produce a broad clarity/intelligibility proxy for valid speech.
-
-    Evidence ladder, strongest first:
-      1) explicitly mapped pronunciation evidence;
-      2) ASR kana agreement with the known target, supported by acoustic match;
-      3) reference-relative acoustic content similarity;
-      4) MFCC-DTW acoustic similarity to the reference;
-      5) conservative product prior when no independent clarity evidence exists.
-
-    Tiers 2–5 are *not* pronunciation-accuracy scores. They are used because the
-    C-end product requires a continuous practice score, while provenance and
-    confidence remain visible for research and later calibration.
-    """
     mapped, mapped_source, mapped_construct = _mapped_clarity_evidence(details)
     if mapped is not None:
         return mapped, mapped_source, mapped_construct, "medium", "mapped_pronunciation_evidence"
@@ -138,8 +121,6 @@ def _clarity_proxy(
     content_status = str(content.get("status") or "unknown")
 
     if kana_similarity is not None and kana_similarity > 0:
-        # ASR agreement is treated as machine-intelligibility evidence, not as
-        # segmental correctness. Avoid 100 saturation even for an exact match.
         asr_component = 45.0 + 50.0 * _clip01(kana_similarity)
         acoustic_component = None if acoustic_score is None else 55.0 + 35.0 * _clip01(acoustic_score)
         value = _blend([(asr_component, 0.82), (acoustic_component, 0.18)]) or asr_component
@@ -165,8 +146,6 @@ def _clarity_proxy(
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     dtw_cost = _number(alignment.get("normalized_dtw_cost"))
     if dtw_cost is not None:
-        # Same broad cost region used by the content gate. The mapping is a
-        # product-scale proxy only; MFCC-DTW is not phone correctness.
         similarity = max(0.0, min(1.0, 1.0 - (dtw_cost - 3.4) / 1.8))
         value = 55.0 + 35.0 * similarity
         return (
@@ -177,8 +156,6 @@ def _clarity_proxy(
             "mfcc_reference_similarity",
         )
 
-    # A numeric score is required by the product, but we do not invent a fake
-    # measurement. Keep a neutral prior and mark it explicitly as lowest-tier.
     return 70.0, "product_prior", "broad_clarity_prior_without_independent_measurement", "low", "prior_fallback"
 
 
@@ -207,7 +184,6 @@ def _z(values: Sequence[float]) -> list[float]:
 
 
 def _f0_pair_fallback(result: Mapping[str, Any], details: Mapping[str, Any]) -> tuple[Optional[float], str, str]:
-    """Reference-relative F0 fallback that tolerates incomplete mora coverage."""
     rows = result.get("mora_table") if isinstance(result.get("mora_table"), list) else []
     ref = details.get("reference_f0_by_mora") if isinstance(details.get("reference_f0_by_mora"), list) else []
     user_values: list[float] = []
@@ -270,9 +246,6 @@ def _intonation_proxy(
         confidence = "high" if alignment_available and f0_coverage >= 0.65 and not weak_reference else "medium"
         value = raw
         if weak_reference:
-            # TTS generated from confirmed free speech is useful as a contour
-            # comparison, but not a strong prosodic ground truth. Keep the score
-            # while shrinking extreme values toward a neutral practice anchor.
             value = 72.0 + 0.60 * (value - 72.0)
             confidence = "low"
         return (
@@ -318,20 +291,7 @@ def build_consumer_score_dimensions(
     *,
     mode: str,
 ) -> List[Dict[str, Any]]:
-    """Build four always-display C-end practice dimensions.
-
-    The C-end policy is deliberately different from a psychometric test:
-    whenever the system has accepted the utterance as scoreable Japanese, all
-    four practice dimensions receive a number. Missing high-quality evidence
-    triggers a lower evidence tier and lower confidence rather than a fake zero
-    or a disappearing card.
-
-    Constructs:
-      * 流暢さ = speed + breakdown/pausing fluency;
-      * 明瞭さ = broad machine-intelligibility / phonetic-clarity proxy;
-      * リズム = Japanese timing structure, not equal-mora timing alone;
-      * 抑揚 = phrase/sentence F0 movement, separate from lexical pitch accent.
-    """
+    """Build four always-display C-end practice dimensions."""
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
@@ -340,8 +300,6 @@ def build_consumer_score_dimensions(
 
     score_available = user_facing.get("display_score") is not None
     if not score_available:
-        # Preserve the true no-score state for unusable/non-Japanese input. The
-        # always-display rule starts only after the utterance has been accepted.
         return [
             _dimension(key, label, None, source_field="", construct=construct, available=False, confidence="unavailable")
             for key, label, construct in (
@@ -352,8 +310,6 @@ def build_consumer_score_dimensions(
             )
         ]
 
-    # 1) Fluency. L2 utterance-fluency research separates speed and breakdown
-    # fluency, so a pause-only 100 is no longer allowed to stand alone.
     rate_score = _number(fluency.get("rate_score"))
     pause_score = _number(fluency.get("pause_score"))
     delivery_legacy = _number(fluency.get("delivery_fluency_score", result.get("fluency_score")))
@@ -362,14 +318,8 @@ def build_consumer_score_dimensions(
         fluency_value = delivery_legacy if delivery_legacy is not None else 70.0
     fluency_conf = "high" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "medium"
 
-    # 2) Clarity. The score is always present, but source/evidence tier says how
-    # much of it is actual pronunciation/intelligibility evidence.
     clarity_value, clarity_source, clarity_construct, clarity_conf, clarity_tier = _clarity_proxy(result, details)
 
-    # 3) Rhythm. When local alignment is usable, keep the mora/special-mora
-    # timing proxy but temper it with global reference-relative duration. When
-    # local alignment fails, degrade to broad tempo/duration evidence instead
-    # of returning no score.
     legacy_timing = _number(result.get("pronunciation_score"))
     duration_ratio = _number(reliability.get("duration_ratio_to_reference"))
     if duration_ratio is None:
@@ -389,9 +339,6 @@ def build_consumer_score_dimensions(
         rhythm_tier = "broad_timing_fallback"
         rhythm_source = "rate_score+duration_ratio_to_reference"
 
-    # 4) Intonation. Prefer the existing mora-level contour score, then partial
-    # F0 pairs, then broad pitch movement. A neutral low-confidence fallback is
-    # used only when F0 is genuinely unavailable.
     intonation_value, intonation_source, intonation_construct, intonation_conf, intonation_tier = _intonation_proxy(
         result, details, mode=str(mode or "")
     )
@@ -439,6 +386,6 @@ def build_consumer_score_dimensions(
             construct=intonation_construct,
             confidence=intonation_conf,
             evidence_tier=intonation_tier,
-            note="phrase/sentence intonation practice proxy, separate from strict lexical pitch-accent correctness",
+            note="phrase/sentence intonation practice proxy; not strict lexical pitch-accent correctness",
         ),
     ]
