@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       run_model_preflight:
-        description: "Download pinned Japanese phone-CTC model and run bundled-audio preflight"
+        description: "Download pinned Japanese phone-CTC models and run bundled-audio preflight"
         required: false
         default: true
         type: boolean
@@ -59,11 +59,11 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: ver1.3/requirements.txt
-      - name: Cache Hugging Face model
+      - name: Cache Hugging Face models
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: phone-gop-hf-${{ runner.os }}-beatrice-v4-f5fe070
+          key: phone-gop-hf-${{ runner.os }}-beatrice-f5fe070-distil-01ffc3e
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -72,10 +72,17 @@ jobs:
           python -m pip install -e .
       - name: Resolve immutable revisions for alternative dual-CTC candidates
         run: python scripts/resolve_phone_ctc_candidate_revision.py --output outputs/phone_ctc_candidate_revisions.json
-      - name: Run pinned-model backend preflight on bundled audio
+      - name: Run pinned Beatrice backend preflight on bundled audio
         run: python scripts/run_phone_gop_preflight.py --allow-download --output outputs/phone_gop_preflight_ci.json
-      - name: Run segmentation-free SD feature preflight
+      - name: Run Beatrice segmentation-free SD feature preflight
         run: python scripts/run_segmentation_free_gop_preflight.py --allow-download --output outputs/segmentation_free_gop_preflight_ci.json
+      - name: Run pinned DistilHuBERT dual-CTC shadow preflight
+        run: >-
+          python scripts/run_dual_ctc_candidate_preflight.py
+          --allow-download
+          --model TylorShine/distilhubert-hiragana-ctc
+          --revision 01ffc3e5b0e49ba34180d50c48ea4111aa041cfd
+          --output outputs/distilhubert_dual_ctc_preflight_ci.json
       - name: Upload model preflight reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,4 +92,5 @@ jobs:
             ver1.3/outputs/phone_gop_preflight_ci.json
             ver1.3/outputs/segmentation_free_gop_preflight_ci.json
             ver1.3/outputs/phone_ctc_candidate_revisions.json
+            ver1.3/outputs/distilhubert_dual_ctc_preflight_ci.json
           if-no-files-found: warn
