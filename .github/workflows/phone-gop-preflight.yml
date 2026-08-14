@@ -1,0 +1,62 @@
+name: phone-gop-preflight
+
+on:
+  push:
+    branches:
+      - free-assessment-integration-v1
+  workflow_dispatch:
+    inputs:
+      run_model_preflight:
+        description: "Download pinned Japanese phone-CTC model and run bundled-audio preflight"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ver1.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ver1.3/requirements.txt
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+      - name: Run ordinary tests
+        run: python -m pytest -q
+
+  model-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_model_preflight }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ver1.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ver1.3/requirements.txt
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+      - name: Run pinned-model preflight on bundled audio
+        run: python scripts/run_phone_gop_preflight.py --allow-download --output outputs/phone_gop_preflight_ci.json
+      - name: Upload preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-gop-preflight-report
+          path: ver1.3/outputs/phone_gop_preflight_ci.json
+          if-no-files-found: warn
