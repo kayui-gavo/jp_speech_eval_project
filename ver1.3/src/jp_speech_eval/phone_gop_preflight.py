@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import math
-from typing import Any, Dict, Iterable, Mapping, Sequence
+from typing import Any, Dict, Mapping
 
 import numpy as np
 
@@ -17,7 +17,7 @@ class PreflightCheck:
     status: str  # pass | warn | block
     detail: str
     metrics: Dict[str, Any]
-    required_for_human_recording: bool = True
+    required_for_backend_preflight: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -27,18 +27,31 @@ class PreflightCheck:
 class PhoneGopPreflightReport:
     checks: list[PreflightCheck]
     artifacts: Dict[str, Any]
+    # Deliberately false by default. A bundled-audio backend smoke test is only
+    # one part of Stage 0; it must never silently authorize spending human time.
+    human_gate_promoted: bool = False
 
     @property
-    def human_recording_allowed(self) -> bool:
+    def backend_preflight_passed(self) -> bool:
         return not any(
-            check.required_for_human_recording and check.status == "block"
+            check.required_for_backend_preflight and check.status == "block"
             for check in self.checks
         )
 
+    @property
+    def human_recording_allowed(self) -> bool:
+        return self.backend_preflight_passed and bool(self.human_gate_promoted)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "schema": "japanese_phone_gop_preflight_v1",
+            "schema": "japanese_phone_gop_preflight_v2",
+            "backend_preflight_passed": self.backend_preflight_passed,
+            "human_gate_promoted": bool(self.human_gate_promoted),
             "human_recording_allowed": self.human_recording_allowed,
+            "human_gate_note": (
+                "Human recording remains blocked until ordinary tests, target-phone snapshot, "
+                "existing-data/channel checks, and automatic batch-report readiness are reviewed together."
+            ),
             "checks": [check.to_dict() for check in self.checks],
             "artifacts": self.artifacts,
         }
@@ -62,7 +75,7 @@ def _result_has_only_finite_numeric_evidence(result: PhoneGopResult) -> bool:
     if not result.available:
         return False
     for row in result.evidence:
-        for key, value in row.to_dict().items():
+        for _key, value in row.to_dict().items():
             if isinstance(value, (int, float, np.floating, np.integer)) and not _finite(value):
                 return False
     for key in ("ctc_forward_logprob", "ctc_forward_logprob_per_frame"):
@@ -121,8 +134,6 @@ def _check_target_inventory(
             metrics={},
         )
 
-    # The backend itself projects i/I and u/U into logical classes. For static
-    # coverage, accept either allophone spelling and ignore text-level pauses.
     logical_tokens = set(raw_vocab)
     if "I" in logical_tokens or "i" in logical_tokens:
         logical_tokens.update({"i", "I"})
@@ -216,10 +227,9 @@ def _check_wrong_target_separation(correct: PhoneGopResult, wrong: PhoneGopResul
     edit_direction_ok = (
         isinstance(correct_ed, int) and isinstance(wrong_ed, int) and correct_ed <= wrong_ed
     )
-    # The first hard gate is deliberately modest; the eventual product threshold
-    # must come from distributions, not this single TTS reference. A non-positive
-    # gap means the backend cannot even rank the known target above a deliberately
-    # wrong target on bundled audio and should not consume human time.
+    # This is an engineering sanity gate, not a pronunciation threshold. A
+    # non-positive/near-zero gap means the backend cannot even rank the known
+    # bundled target over a deliberate mismatch and should not consume human time.
     passed = gap > 0.01 and edit_direction_ok
     return PreflightCheck(
         name="correct_vs_wrong_target_separation",
@@ -266,10 +276,6 @@ def _check_gain_stability(
         deltas[label] = abs(value - clean_lp)
 
     max_delta = max(deltas.values(), default=0.0)
-    # The perturbation should be much less damaging than replacing the target.
-    # Use a small absolute allowance because the selected feature extractor does
-    # not normalize amplitude. This remains a preflight engineering gate, not a
-    # scientific pronunciation threshold.
     if wrong_target_gap is not None and wrong_target_gap > 0:
         threshold = max(0.10, 0.60 * wrong_target_gap)
     else:
@@ -296,6 +302,7 @@ def build_phone_gop_preflight_report(
     correct_result: PhoneGopResult,
     wrong_result: PhoneGopResult,
     gain_results: Mapping[str, PhoneGopResult],
+    human_gate_promoted: bool = False,
 ) -> PhoneGopPreflightReport:
     targets = {"correct": correct_target, "wrong": wrong_target, **dict(extra_targets)}
     checks: list[PreflightCheck] = [_check_frontend(correct_target)]
@@ -336,10 +343,21 @@ def build_phone_gop_preflight_report(
 
     return PhoneGopPreflightReport(
         checks=checks,
+        human_gate_promoted=bool(human_gate_promoted),
         artifacts={
             "correct_target": correct_target.to_dict(),
             "wrong_target": wrong_target.to_dict(),
             "extra_target_count": len(extra_targets),
+            "pilot_target_phone_snapshot_candidate": {
+                label: {
+                    "text": target.surface_text,
+                    "kana": target.reading_kana,
+                    "phones": list(target.phones),
+                    "frontend_distribution": target.frontend_distribution,
+                    "frontend_version": target.frontend_version,
+                }
+                for label, target in extra_targets.items()
+            },
             "correct_result": correct_result.to_dict(),
             "wrong_result": wrong_result.to_dict(),
             "gain_results": {label: result.to_dict() for label, result in gain_results.items()},
