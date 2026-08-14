@@ -19,6 +19,7 @@ from jp_speech_eval.feedback_renderer import render_user_facing_result as _base_
 
 DEFAULT_CACHE = ROOT / "assets" / "reference_cache" / "ramen_kudasai_aivis"
 DEFAULT_WAV = DEFAULT_CACHE.with_suffix(".ref.wav")
+CONSUMER_HTML = ROOT / "debug_ui" / "consumer_v2.html"
 
 
 def _has_option(args: list[str], name: str) -> bool:
@@ -52,6 +53,29 @@ def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwar
     return payload
 
 
+def _consumer_html_bytes() -> bytes:
+    html = CONSUMER_HTML.read_text(encoding="utf-8")
+    patch = r"""
+<script>
+/* Preview-only semantic patch: backend fields remain backward compatible. */
+dimensionLabel = function(k){
+  const d={
+    pronunciation:{"zh-CN":"发音","zh-TW":"發音",ja:"発音",en:"Pronunciation"},
+    mora_timing:{"zh-CN":"节奏","zh-TW":"節奏",ja:"リズム",en:"Rhythm"},
+    delivery_fluency:{"zh-CN":"流畅度","zh-TW":"流暢度",ja:"流暢さ",en:"Fluency"},
+    intonation:{"zh-CN":"抑扬","zh-TW":"抑揚",ja:"抑揚",en:"Intonation"}
+  };
+  return d[k]?.[locale]||k;
+};
+copy["zh-CN"].hero="先完成发话，再看节奏、流畅度和抑扬。真正的发音正确度仍在验证，不用旧的节奏代理冒充。";
+copy["zh-TW"].hero="先完成發話，再看節奏、流暢度和抑揚。真正的發音正確度仍在驗證，不用舊的節奏代理冒充。";
+copy.ja.hero="まず話してから、リズム・流暢さ・抑揚を確認します。発音の正確さは検証中のため、旧来のリズム指標を発音点として表示しません。";
+copy.en.hero="Speak first, then review rhythm, fluency, and intonation. Pronunciation accuracy stays hidden until a real pronunciation backbone is mapped.";
+</script>
+"""
+    return html.replace("</body>", f"{patch}</body>").encode("utf-8")
+
+
 class ConsumerUiHandler(debug_ui.DebugUiHandler):
     """Keep the research UI intact while making `/` product-first for this launcher."""
 
@@ -60,6 +84,14 @@ class ConsumerUiHandler(debug_ui.DebugUiHandler):
             self.send_response(302)
             self.send_header("Location", "/consumer_v2.html")
             self.end_headers()
+            return
+        if self.path.split("?", 1)[0] == "/consumer_v2.html":
+            body = _consumer_html_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         super().do_GET()
 
