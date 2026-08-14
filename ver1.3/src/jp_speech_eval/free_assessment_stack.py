@@ -45,15 +45,15 @@ def discover_free_assessment_stack() -> Dict[str, FreeToolCapability]:
 
     return {
         "pyopenjtalk": FreeToolCapability(
-            tool="pyopenjtalk",
+            tool="pyopenjtalk-plus (import name: pyopenjtalk)",
             role="japanese_text_frontend_g2p_fullcontext",
             installed=_module_available("pyopenjtalk"),
-            license="MIT wrapper + Modified BSD OpenJTalk",
+            license="MIT wrapper/fork + bundled OpenJTalk component licenses",
             product_policy="allowed",
             runtime="local_cpu",
             requires_model_download=False,
             default_enabled=True,
-            notes="Already a base dependency; target reading/accent metadata are evidence, not pronunciation ground truth.",
+            notes="Pinned product/research frontend because the selected Beatrice phone-CTC family used pyopenjtalk-plus labels. Target metadata are still not learner-pronunciation ground truth.",
         ),
         "marine": FreeToolCapability(
             tool="marine",
@@ -97,7 +97,7 @@ def discover_free_assessment_stack() -> Dict[str, FreeToolCapability]:
             runtime="local_model",
             requires_model_download=True,
             default_enabled=False,
-            notes="315.6M dual CTC with a dedicated intermediate phoneme head and pyopenjtalk-style 42-phone vocabulary. Strong scientific comparison backend, too heavy to assume as product default.",
+            notes="315.6M dual CTC with a dedicated intermediate phoneme head and pyopenjtalk-style phone vocabulary. Strong scientific comparison backend, too heavy to assume as product default.",
         ),
         "wavlm": FreeToolCapability(
             tool="microsoft/wavlm-large via transformers",
@@ -173,7 +173,7 @@ def recommended_free_routes() -> Dict[str, List[str]]:
 
     return {
         "fixed_reading_default": [
-            "pyopenjtalk_target_frontend",
+            "pyopenjtalk_plus_target_frontend",
             "faster_whisper_content_verification",
             "local_cached_dtw_timing",
             "local_f0",
@@ -194,6 +194,7 @@ def recommended_free_routes() -> Dict[str, List[str]]:
             "local_f0_phrase_intonation_shadow",
         ],
         "free_speaking_shadow": [
+            "confirmed_transcript_to_pyopenjtalk_plus_phones_then_phone_ctc_gop",
             "confirmed_transcript_to_pyopenjtalk_phones_then_phone_ctc_gop",
             "wavlm_if_reference_strategy_is_explicitly_available",
         ],
