@@ -88,11 +88,27 @@ However, the count of positions where one substitution/deletion alternative has 
 
 The three-backbone result is valuable because it demonstrates that **whole-target sequence evidence is reproducible across independently trained Japanese phone models**, while local pronunciation interpretation still requires the paper-aligned feature semantics and labeled criterion data.
 
+## Paper-aligned normalized forward implementation
+
+The authors' public `frank613/CTC-based-GOP/taslpro26` implementation is now directly used as the algorithmic reference. The project contains an independent NumPy reimplementation in:
+
+`src/jp_speech_eval/segmentation_free_gop_norm.py`
+
+It reproduces the normalized SD alternative-graph forward recursion and returns:
+
+- graph denominator log posterior;
+- normalized `GOP-SF-SD`-style log ratio;
+- `Occ(i)` from normalized wildcard-state forward mass.
+
+`Occ(i)` is explicitly marked **not a physical phone duration**. Five regression tests freeze reference outputs on deterministic synthetic posterior grids, including repeated-phone context. The clean Python 3.11 suite now passes **238 tests with 6 existing warnings**.
+
+The current heavy preflight is being advanced so Beatrice, DistilHuBERT and WavLM will all emit this graph-derived normalization alongside the existing enumerated LPP/LPR features. This still does not create a pronunciation decision or `/100` mapping.
+
 ## Engineering decision
 
 1. Keep Beatrice, DistilHuBERT and WavLM phone evidence in shadow/research mode.
 2. Prefer DistilHuBERT as the compact second backbone for engineering experiments; it is independent, small and robust to the mild gain controls used here.
 3. Keep WavLM as a research comparison rather than a presumed product dependency.
-4. Add the published SD alternative-graph normalized forward recursion and `Occ(i)` feature before claiming FGOP-SF-Norm equivalence.
+4. The published SD alternative-graph normalized forward recursion and `Occ(i)` feature are now implemented and regression-tested; next verify them on real model outputs across all three backbones.
 5. Validate the resulting feature vectors on already-existing human data wherever available before asking the user to record anything.
 6. Do not alter C-end `明瞭さ` or overall `/100` from this experiment.
