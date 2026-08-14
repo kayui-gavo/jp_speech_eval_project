@@ -17,7 +17,6 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 from .japanese_phoneme_gop import (
-    NON_SEGMENTAL_TOKENS,
     project_japanese_ctc_logits,
     sanitize_canonical_phones,
     segmental_competitor_ids,
@@ -172,10 +171,9 @@ class DualCtcPhoneCandidateBackend:
             raise ValueError("candidate phoneme logits are smaller than tokenizer vocabulary")
         logical_logits, logical_vocab, provenance = project_japanese_ctc_logits(raw_logits, self._raw_vocab)
         raw_blank_name = next(name for name in ("<blank>", "PAD", "<pad>") if name in self._raw_vocab)
-        logical_blank_name = raw_blank_name
-        if logical_blank_name not in logical_vocab:
+        if raw_blank_name not in logical_vocab:
             raise ValueError("logical blank token missing after projection")
-        return logical_logits, logical_vocab, int(logical_vocab[logical_blank_name]), provenance
+        return logical_logits, logical_vocab, int(logical_vocab[raw_blank_name]), provenance
 
     def evaluate_frame_local(
         self,
@@ -211,12 +209,14 @@ class DualCtcPhoneCandidateBackend:
                 warnings=["phone_inventory_mismatch"],
             )
         competitor_ids = segmental_competitor_ids(vocab, blank_id=blank_id)
+        waveform = np.asarray(audio, dtype=np.float32).reshape(-1)
+        frame_stride_sec = float(waveform.size) / float(sr) / float(logits.shape[0])
         result = compute_phone_gop_evidence(
             logits,
             phones,
             vocab=vocab,
             blank_id=blank_id,
-            frame_stride_sec=0.020,
+            frame_stride_sec=frame_stride_sec,
             backend="hf_dual_ctc_phone_candidate",
             model_id=f"{self.model_id}@{self.revision}",
             competitor_token_ids=competitor_ids,
@@ -229,7 +229,7 @@ class DualCtcPhoneCandidateBackend:
                 "remote_custom_code_pinned": True,
                 "logical_phone_projection": provenance,
                 "dropped_nonsegmental_target_tokens": dropped,
-                "frame_stride_sec_is_nominal": True,
+                "frame_stride_sec_observed_average": frame_stride_sec,
                 "ctc_support_frames_are_not_physical_phone_boundaries": True,
             }
         )
