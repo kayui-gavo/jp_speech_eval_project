@@ -48,7 +48,9 @@ jobs:
           if-no-files-found: warn
 
   model-preflight:
-    if: ${{ github.event_name == 'push' || inputs.run_model_preflight }}
+    # Model download/inference is intentionally not run on every editing commit.
+    # A push runs it only when the commit message contains [run-model-preflight].
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_model_preflight) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[run-model-preflight]')) }}
     runs-on: ubuntu-latest
     defaults:
       run:
