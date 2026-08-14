@@ -6,6 +6,12 @@ code is only trusted at that pinned revision. Raw phoneme logits are projected
 into the same logical Japanese phone space used by the Beatrice research
 backend so candidate comparisons can use identical CTC evidence functions.
 
+The DistilHuBERT candidate currently omits ``preprocessor_config.json`` even
+though its model card calls ``AutoFeatureExtractor.from_pretrained``. For that
+specific model we reproduce the base ``ntu-spml/distilhubert`` feature
+extractor contract explicitly (16 kHz, no waveform normalization, no attention
+mask) rather than silently using arbitrary defaults.
+
 No learner-facing score is produced here.
 """
 
@@ -27,6 +33,7 @@ from .segmentation_free_gop import SegmentationFreeGopResult, compute_enumerated
 
 DISTILHUBERT_DUAL_CTC_MODEL = "TylorShine/distilhubert-hiragana-ctc"
 WAVLM_DUAL_CTC_MODEL = "TylorShine/wavlm-base-plus-hiragana-ctc"
+DISTILHUBERT_BASE_PREPROCESSOR_REVISION = "9c4eece5b1dd98770108a416c101096fb04813de"
 
 
 def validate_immutable_revision(revision: str) -> str:
@@ -79,6 +86,26 @@ def extract_phoneme_logits(output: Any) -> np.ndarray:
     return np.asarray(array, dtype=np.float64)
 
 
+def build_distilhubert_feature_extractor() -> Any:
+    """Reproduce the pinned base DistilHuBERT preprocessing contract.
+
+    ``ntu-spml/distilhubert`` at the pinned revision uses a
+    Wav2Vec2FeatureExtractor with feature_size=1, sampling_rate=16000,
+    padding_value=0, do_normalize=False, and return_attention_mask=False.
+    Keeping those parameters in code prevents a missing candidate-side
+    preprocessor file from turning into an arbitrary default.
+    """
+    from transformers import Wav2Vec2FeatureExtractor
+
+    return Wav2Vec2FeatureExtractor(
+        feature_size=1,
+        sampling_rate=16000,
+        padding_value=0.0,
+        do_normalize=False,
+        return_attention_mask=False,
+    )
+
+
 @dataclass
 class DualCtcPhoneCandidateBackend:
     model_id: str
@@ -90,6 +117,7 @@ class DualCtcPhoneCandidateBackend:
         self.revision = validate_immutable_revision(self.revision)
         self.model = None
         self.feature_extractor = None
+        self.feature_extractor_provenance = ""
         self.phoneme_tokenizer = None
         self._torch = None
         self._raw_vocab: Dict[str, int] = {}
@@ -110,7 +138,17 @@ class DualCtcPhoneCandidateBackend:
             "revision": self.revision,
             "local_files_only": self.local_files_only,
         }
-        self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.model_id, **common)
+        try:
+            self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.model_id, **common)
+            self.feature_extractor_provenance = f"candidate_repo@{self.revision}"
+        except OSError:
+            if self.model_id != DISTILHUBERT_DUAL_CTC_MODEL:
+                raise
+            self.feature_extractor = build_distilhubert_feature_extractor()
+            self.feature_extractor_provenance = (
+                "embedded_ntu-spml/distilhubert_preprocessor_contract@"
+                + DISTILHUBERT_BASE_PREPROCESSOR_REVISION
+            )
         self.phoneme_tokenizer = PreTrainedTokenizerFast.from_pretrained(
             self.model_id,
             subfolder="phoneme_tokenizer",
@@ -227,6 +265,7 @@ class DualCtcPhoneCandidateBackend:
                 "candidate_model_id": self.model_id,
                 "candidate_revision": self.revision,
                 "remote_custom_code_pinned": True,
+                "feature_extractor_provenance": self.feature_extractor_provenance,
                 "logical_phone_projection": provenance,
                 "dropped_nonsegmental_target_tokens": dropped,
                 "frame_stride_sec_observed_average": frame_stride_sec,
@@ -255,11 +294,26 @@ class DualCtcPhoneCandidateBackend:
     ) -> SegmentationFreeGopResult:
         phones, _dropped = sanitize_canonical_phones(canonical_phones)
         logits, vocab, blank_id, _provenance = self.infer_logical_phone_logits(audio, sr=sr)
-        return compute_enumerated_fgop_sf_sd_features(
+        result = compute_enumerated_fgop_sf_sd_features(
             logits,
             phones,
             vocab=vocab,
             blank_id=blank_id,
             model_id=self.model_id,
             revision=self.revision,
+        )
+        summary = dict(result.summary)
+        summary.update({"feature_extractor_provenance": self.feature_extractor_provenance})
+        return SegmentationFreeGopResult(
+            available=result.available,
+            model_id=result.model_id,
+            revision=result.revision,
+            method=result.method,
+            canonical_phones=result.canonical_phones,
+            feature_phone_inventory=result.feature_phone_inventory,
+            evidence=result.evidence,
+            summary=summary,
+            warnings=result.warnings,
+            score_mapped=False,
+            product_calibrated=False,
         )
