@@ -2,22 +2,25 @@
 """Run three pinned Japanese phone-CTC backbones on official JVS samples.
 
 This preflight uses the three human native-speaker sample clips linked directly
-from the official JVS project page.  It intentionally avoids phone-error claims:
-there are no local pronunciation labels here.  The only criterion is whether
+from the official JVS project page. It intentionally avoids phone-error claims:
+there are no local pronunciation labels here. The only criterion is whether
 the known target phone sequence is better supported than a deterministic
 same-length phone-order permutation, plus stability to mild gain changes.
 
-No downloaded audio is committed or uploaded as a workflow artifact.
+Models are loaded and released one at a time so a CPU CI runner never needs to
+hold Beatrice, DistilHuBERT and WavLM simultaneously. Downloaded JVS audio is
+ephemeral and must not be committed or uploaded as a workflow artifact.
 """
 
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 from pathlib import Path
 import sys
-from typing import Any, Dict, Sequence
+from typing import Any, Callable, Dict, Sequence
 
 import numpy as np
 
@@ -67,7 +70,12 @@ def _rotate_control(ids: Sequence[int]) -> list[int]:
     return rotated
 
 
-def _sequence_metrics(logits: np.ndarray, phones: Sequence[str], vocab: Dict[str, int], blank_id: int) -> Dict[str, Any]:
+def _sequence_metrics(
+    logits: np.ndarray,
+    phones: Sequence[str],
+    vocab: Dict[str, int],
+    blank_id: int,
+) -> Dict[str, Any]:
     missing = sorted({phone for phone in phones if phone not in vocab})
     if missing:
         return {"available": False, "reason": "phone_inventory_mismatch", "missing_phones": missing}
@@ -196,6 +204,11 @@ def _run_model(model: Any, sample_rows: list[Dict[str, Any]], phones: list[str])
         for row in rows
         if row["metrics"].get("available")
     ]
+    gain_abs_deltas = [
+        abs(float(row["canonical_per_frame_delta_from_clean"]))
+        for row in gain_controls
+        if row.get("canonical_per_frame_delta_from_clean") is not None
+    ]
     return {
         "name": model.name,
         "model_id": model.model_id,
@@ -209,9 +222,23 @@ def _run_model(model: Any, sample_rows: list[Dict[str, Any]], phones: list[str])
             "canonical_minus_permuted_per_frame_min": min(margins) if margins else None,
             "canonical_minus_permuted_per_frame_mean": float(np.mean(margins)) if margins else None,
             "canonical_per_frame_cross_speaker_std": float(np.std(canonical_pf)) if canonical_pf else None,
+            "max_abs_gain_delta_per_frame_jvs001": max(gain_abs_deltas) if gain_abs_deltas else None,
             "phone_correctness_claimed": False,
         },
     }
+
+
+def _release_model(model: Any) -> None:
+    """Best-effort CPU/GPU memory release between heavyweight backbones."""
+    try:
+        torch_module = getattr(getattr(model, "backend", None), "_torch", None)
+        device = str(getattr(getattr(model, "backend", None), "device", "") or "")
+        del model
+        gc.collect()
+        if torch_module is not None and device.startswith("cuda") and torch_module.cuda.is_available():
+            torch_module.cuda.empty_cache()
+    except Exception:
+        gc.collect()
 
 
 def main() -> None:
@@ -229,22 +256,30 @@ def main() -> None:
         if str(row.get("target_text")) != TARGET_TEXT:
             raise ValueError(f"unexpected target text for {row.get('speaker')}")
 
-    models = [
-        BeatriceInfer(allow_download=args.allow_download, device=args.device),
-        DualInfer(
+    factories: list[Callable[[], Any]] = [
+        lambda: BeatriceInfer(allow_download=args.allow_download, device=args.device),
+        lambda: DualInfer(
             DISTILHUBERT_DUAL_CTC_MODEL,
             DISTIL_REVISION,
             allow_download=args.allow_download,
             device=args.device,
         ),
-        DualInfer(
+        lambda: DualInfer(
             WAVLM_DUAL_CTC_MODEL,
             WAVLM_REVISION,
             allow_download=args.allow_download,
             device=args.device,
         ),
     ]
-    results = [_run_model(model, sample_rows, phones) for model in models]
+    results = []
+    for factory in factories:
+        model = factory()
+        try:
+            result = _run_model(model, sample_rows, phones)
+            results.append(result)
+            print(model.name, result["summary"])
+        finally:
+            _release_model(model)
 
     payload = {
         "schema": "jvs_native_phone_ctc_anchor_preflight_v1",
@@ -258,14 +293,13 @@ def main() -> None:
         "score_mapped": False,
         "criterion": "known_native_target_vs_same_length_phone_permutation_and_mild_gain_only",
         "local_phone_error_labels_available": False,
+        "same_length_control_removes_phone_count_confound": True,
         "models": results,
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {output}")
-    for result in results:
-        print(result["name"], result["summary"])
     print("PRODUCT SCORE: UNCHANGED / NATIVE ANCHOR PRECHECK ONLY")
 
 
