@@ -2,7 +2,7 @@
 
 This module joins the transparent enumerated segmentation-free feature family
 (LPP/LPR/substitution/deletion) with the published SD normalized-forward
-``Occ(i)`` diagnostics.  It creates a stable machine-readable bundle for future
+``Occ(i)`` diagnostics. It creates a stable machine-readable bundle for future
 labeled criterion experiments while deliberately refusing any correctness or
 learner-facing score mapping.
 
@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import math
 from typing import Any, Dict, List
+
+import numpy as np
 
 from .segmentation_free_gop import SegmentationFreeGopResult
 from .segmentation_free_gop_norm import SegmentationFreeNormResult
@@ -172,3 +174,66 @@ def build_phone_criterion_feature_bundle(
         score_mapped=False,
         product_calibrated=False,
     )
+
+
+def compare_shared_suffix_locality(
+    left: PhoneCriterionFeatureBundle,
+    right: PhoneCriterionFeatureBundle,
+) -> Dict[str, Any]:
+    """Measure whether a shared target suffix keeps locally similar evidence.
+
+    This is a structural implementation sanity diagnostic, not a correctness
+    criterion. It is useful for target pairs such as ``...をください`` where
+    the acoustic signal is fixed and the candidate texts differ only in an
+    earlier prefix. A well-localized target-conditioned feature should avoid
+    needlessly changing the entire shared suffix.
+    """
+    if not left.available or not right.available:
+        return {"available": False, "reason": "feature_bundle_unavailable"}
+    if left.model_id != right.model_id or left.revision != right.revision:
+        return {"available": False, "reason": "model_provenance_mismatch"}
+
+    a = list(left.canonical_phones)
+    b = list(right.canonical_phones)
+    suffix = 0
+    while suffix < min(len(a), len(b)) and a[-1 - suffix] == b[-1 - suffix]:
+        suffix += 1
+    if suffix == 0:
+        return {
+            "available": False,
+            "reason": "no_shared_phone_suffix",
+            "shared_suffix_phone_count": 0,
+        }
+
+    left_rows = left.rows[-suffix:]
+    right_rows = right.rows[-suffix:]
+    gop_delta = np.asarray(
+        [
+            abs(float(x.normalized_graph_gop_sf_sd) - float(y.normalized_graph_gop_sf_sd))
+            for x, y in zip(left_rows, right_rows)
+        ],
+        dtype=np.float64,
+    )
+    occ_delta = np.asarray(
+        [abs(float(x.occ_i) - float(y.occ_i)) for x, y in zip(left_rows, right_rows)],
+        dtype=np.float64,
+    )
+    deletion_delta = np.asarray(
+        [abs(float(x.deletion_lpr) - float(y.deletion_lpr)) for x, y in zip(left_rows, right_rows)],
+        dtype=np.float64,
+    )
+    return {
+        "available": True,
+        "shared_suffix_phone_count": suffix,
+        "shared_suffix_phones": a[-suffix:],
+        "left_prefix_phone_count": len(a) - suffix,
+        "right_prefix_phone_count": len(b) - suffix,
+        "normalized_graph_gop_abs_delta_mean": float(np.mean(gop_delta)),
+        "normalized_graph_gop_abs_delta_max": float(np.max(gop_delta)),
+        "occ_i_abs_delta_mean": float(np.mean(occ_delta)),
+        "occ_i_abs_delta_max": float(np.max(occ_delta)),
+        "deletion_lpr_abs_delta_mean": float(np.mean(deletion_delta)),
+        "deletion_lpr_abs_delta_max": float(np.max(deletion_delta)),
+        "interpretation": "target_locality_sanity_diagnostic_not_pronunciation_correctness",
+        "product_score_changed": False,
+    }
