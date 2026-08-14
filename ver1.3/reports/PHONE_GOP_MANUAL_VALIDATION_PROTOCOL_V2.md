@@ -1,7 +1,7 @@
 # Japanese phone-GOP manual validation protocol v2
 
 Date: 2026-08-15
-Status: current operational version; supersedes `PHONE_GOP_MANUAL_VALIDATION_PROTOCOL_V1.md`
+Status: **DESIGN FROZEN; HUMAN RECORDING BLOCKED PENDING CODE PREFLIGHT**
 
 ## Current assets
 
@@ -9,8 +9,9 @@ Status: current operational version; supersedes `PHONE_GOP_MANUAL_VALIDATION_PRO
 - Human inspection template: `data/phone_gop_manual_inspection_template_v1.csv`
 - Practical recording sheet: `reports/PHONE_GOP_RECORDING_SHEET_V1.md`
 - Technical GOP survey: `reports/JAPANESE_GOP_TECH_SURVEY_V1.md`
+- Code preflight gate: `reports/PHONE_GOP_CODE_PREFLIGHT_AUDIT_V1.md`
 
-V2 preserves the scientific design of V1 and corrects the operational manifest identifiers. Use V2 assets for all new recordings.
+The recording design is retained, but **do not spend human recording time on the 38-clip battery until the code preflight gate is reopened**. The current phone-GOP implementation still has unresolved frontend/allophone/non-speech and deletion/insertion issues documented in the preflight audit.
 
 ## Frozen principles
 
@@ -24,10 +25,14 @@ V2 preserves the scientific design of V1 and corrects the operational manifest i
 8. Artificial errors are an engineering stress test; they do not replace naturally occurring learner errors.
 9. The four C-end dimensions must be tested for leakage: pause→fluency, timing→rhythm, phone errors→clarity, F0 manipulations→intonation.
 10. Phone-GOP stays shadow-only until real learner validation.
+11. CTC support-frame count is not a physical phone-duration measurement.
+12. Human recording begins only after `PHONE_GOP_CODE_PREFLIGHT_AUDIT_V1.md` is satisfied.
 
-## Quick pilot
+## Quick pilot — currently blocked
 
-Record the 38 items in `PHONE_GOP_RECORDING_SHEET_V1.md` in one controlled session. Do not randomize the *recording* order: normal takes should precede intentional-error instructions so the speaker is not primed to distort the clean controls.
+Once the code gate is reopened, record the 38 items in `PHONE_GOP_RECORDING_SHEET_V1.md` in one controlled session. Do not randomize the *recording* order: normal takes should precede intentional-error instructions so the speaker is not primed to distort the clean controls.
+
+Before reopening this section, the automated preflight must verify the real Japanese CTC backend on existing bundled/reference audio, including correct-target vs wrong-target behavior and Japanese-specific phone inventory handling.
 
 After recording, randomize the files for the *listening* pass.
 
@@ -46,10 +51,11 @@ Then compare the label with phone-GOP output:
 
 - target mean/max logit margin;
 - posterior GOP margin;
-- best competitor;
+- best competitor with metric-specific provenance;
 - entropy;
 - target rank within word;
-- support-frame count/duration;
+- **CTC support-frame count** (not physical duration);
+- sequence-level deletion/insertion evidence once implemented;
 - adjacent-phone damage.
 
 ## Initial qualitative gates
@@ -68,9 +74,10 @@ Only after this should numeric deltas be defined from clean-repeat variance.
 
 ## Next stages
 
-- Stage A: one-speaker controlled 38-clip quick battery.
+- Stage 0: code/backend preflight on synthetic logits and existing bundled audio — **current stage**.
+- Stage A: one-speaker controlled 38-clip quick battery — blocked until Stage 0 passes.
 - Stage B: reduced battery on 3–5 speakers, preferably including at least one native Japanese speaker.
 - Stage C: naturally occurring learner errors with manual phone-level labels.
 - Stage D: fuse validated phone evidence with WavLM and ASR intelligibility into the C-end clarity score.
 
-The detailed rationale and literature background remain in V1 and `JAPANESE_GOP_TECH_SURVEY_V1.md`; V2 is the operational source of truth for recording/inspection.
+The detailed rationale and literature background remain in V1 and `JAPANESE_GOP_TECH_SURVEY_V1.md`. This V2 file is the operational source of truth for whether human recording is allowed to start.
