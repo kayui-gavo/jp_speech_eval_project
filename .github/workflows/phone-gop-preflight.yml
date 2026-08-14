@@ -35,8 +35,17 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -e .
           python -m pip install "pytest>=8,<10"
+      - name: Generate pyopenjtalk-plus target snapshot candidate
+        run: python scripts/generate_phone_target_snapshot.py --output outputs/phone_target_snapshot_candidate_ci.json
       - name: Run ordinary tests
         run: python -m pytest -q
+      - name: Upload target snapshot candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-target-snapshot-candidate
+          path: ver1.3/outputs/phone_target_snapshot_candidate_ci.json
+          if-no-files-found: warn
 
   model-preflight:
     if: ${{ github.event_name == 'push' || inputs.run_model_preflight }}
