@@ -34,6 +34,14 @@ def test_consumer_demo_allows_explicit_cache_override() -> None:
     assert str(launcher.DEFAULT_WAV) not in args
 
 
+def test_consumer_entry_paths_never_use_legacy_score_renderer() -> None:
+    launcher = _load_consumer_launcher()
+    for path in ("", "/", "/?lang=ja", "/index.html", "/index.html?lang=ja"):
+        assert launcher._is_consumer_entry_path(path)
+    assert not launcher._is_consumer_entry_path("/consumer_v2.html")
+    assert not launcher._is_consumer_entry_path("/api/config")
+
+
 def test_consumer_ui_matches_personal_site_design_tokens() -> None:
     ui = (ROOT / "debug_ui" / "consumer_v2.html").read_text(encoding="utf-8")
     for token in ("--ivory:#f5f0e8", "--navy:#1b2944", "--rose:#9a5a69", "--gold:#b2905e"):
@@ -44,3 +52,9 @@ def test_consumer_ui_matches_personal_site_design_tokens() -> None:
     assert 'fetch("/api/config")' in ui
     assert 'fetch("/api/evaluate"' in ui
     assert 'fetch("/api/evaluate-confirmed-asr"' in ui
+
+
+def test_consumer_ui_renders_unavailable_dimension_as_dash_not_zero() -> None:
+    ui = (ROOT / "debug_ui" / "consumer_v2.html").read_text(encoding="utf-8")
+    assert 'd.available!==false&&Number.isFinite(val)' in ui
+    assert 'ok?Math.round(val):"--"' in ui
