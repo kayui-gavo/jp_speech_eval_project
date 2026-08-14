@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Evaluate alignment-free FGOP-SF-SD-style features on bundled audio only."""
+"""Evaluate alignment-free FGOP-SF-SD-style features on bundled audio only.
+
+The artifact deliberately does not interpret the sign of an individual LPR as
+a pronunciation-correctness decision. Published FGOP-SF work uses the joint
+LPP/LPR feature vector in downstream pronunciation assessment; this script is
+therefore an engineering/feature preflight, not a clean-phone threshold test.
+"""
 
 from __future__ import annotations
 
@@ -90,10 +96,14 @@ def main() -> None:
             "correct_weakest_rows": _weakest_rows(correct),
             "wrong_weakest_rows": _weakest_rows(wrong),
             "forced_viterbi_not_required_for_features": True,
+            "individual_lpr_sign_is_pronunciation_error_rule": False,
+            "noncanonical_win_count_is_stage0_failure_gate": False,
+            "downstream_labeled_interpretation_required": True,
             "note": (
                 "This artifact evaluates enumerated LPP/LPR substitution+deletion features. "
-                "It is not a /100 score and does not implement Occ(i) normalization or the "
-                "paper's optimized alternative graph."
+                "An individual negative LPR is descriptive feature evidence, not a direct "
+                "mispronunciation label. The artifact is not a /100 score and does not yet "
+                "implement Occ(i) normalization or the paper's joint/optimized alternative graph."
             ),
         },
     }
@@ -103,10 +113,14 @@ def main() -> None:
     print(f"wrote {output}")
     print("correct available:", correct.available)
     if correct.available:
-        print("correct phones where noncanonical SD alternative wins:", correct.summary["phones_where_noncanonical_outscores_canonical"])
+        print(
+            "diagnostic positions with a higher-posterior noncanonical SD alternative:",
+            correct.summary["phones_where_noncanonical_outscores_canonical"],
+            "(feature diagnostic only; not a pronunciation-error count)",
+        )
         for row in _weakest_rows(correct, limit=5):
             print(row)
-    print("HUMAN RECORDING GATE: BLOCKED")
+    print("HUMAN RECORDING GATE: BLOCKED (awaits labeled criterion / Stage-0 promotion)")
     if not correct.available or not wrong.available:
         raise SystemExit(2)
 
