@@ -28,9 +28,6 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # Hosted runners do not need CUDA for this project. Preinstall a CPU
-          # wheel so the broad torch>=2 requirement does not pull multi-GB CUDA
-          # dependencies into every validation run.
           python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0,<3.0"
           python -m pip install -r requirements.txt
           python -m pip install -e .
@@ -73,12 +70,16 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0,<3.0"
           python -m pip install -r requirements.txt
           python -m pip install -e .
-      - name: Run pinned-model preflight on bundled audio
+      - name: Run pinned-model backend preflight on bundled audio
         run: python scripts/run_phone_gop_preflight.py --allow-download --output outputs/phone_gop_preflight_ci.json
-      - name: Upload preflight report
+      - name: Run segmentation-free SD feature preflight
+        run: python scripts/run_segmentation_free_gop_preflight.py --allow-download --output outputs/segmentation_free_gop_preflight_ci.json
+      - name: Upload model preflight reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phone-gop-preflight-report
-          path: ver1.3/outputs/phone_gop_preflight_ci.json
+          path: |
+            ver1.3/outputs/phone_gop_preflight_ci.json
+            ver1.3/outputs/segmentation_free_gop_preflight_ci.json
           if-no-files-found: warn
