@@ -46,9 +46,12 @@ def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwar
     )
     payload.setdefault("dimension_policy", {})
     payload["dimension_policy"].update({
-        "version": "consumer_semantics_v1",
+        "version": "consumer_semantics_v2",
+        "top_level_dimensions": ["delivery_fluency", "clarity", "mora_timing", "intonation"],
+        "prosody_is_not_a_peer_label_to_intonation": True,
         "lexical_pitch_accent_is_not_top_level_intonation": True,
-        "legacy_pronunciation_timing_proxy_is_not_labeled_pronunciation": True,
+        "recording_quality_is_not_clarity": True,
+        "legacy_pronunciation_timing_proxy_is_not_clarity": True,
     })
     return payload
 
@@ -60,17 +63,17 @@ def _consumer_html_bytes() -> bytes:
 /* Preview-only semantic patch: backend fields remain backward compatible. */
 dimensionLabel = function(k){
   const d={
-    pronunciation:{"zh-CN":"发音","zh-TW":"發音",ja:"発音",en:"Pronunciation"},
-    mora_timing:{"zh-CN":"节奏","zh-TW":"節奏",ja:"リズム",en:"Rhythm"},
     delivery_fluency:{"zh-CN":"流畅度","zh-TW":"流暢度",ja:"流暢さ",en:"Fluency"},
+    clarity:{"zh-CN":"清晰度","zh-TW":"清晰度",ja:"明瞭さ",en:"Clarity"},
+    mora_timing:{"zh-CN":"节奏","zh-TW":"節奏",ja:"リズム",en:"Rhythm"},
     intonation:{"zh-CN":"抑扬","zh-TW":"抑揚",ja:"抑揚",en:"Intonation"}
   };
   return d[k]?.[locale]||k;
 };
-copy["zh-CN"].hero="先完成发话，再看节奏、流畅度和抑扬。真正的发音正确度仍在验证，不用旧的节奏代理冒充。";
-copy["zh-TW"].hero="先完成發話，再看節奏、流暢度和抑揚。真正的發音正確度仍在驗證，不用舊的節奏代理冒充。";
-copy.ja.hero="まず話してから、リズム・流暢さ・抑揚を確認します。発音の正確さは検証中のため、旧来のリズム指標を発音点として表示しません。";
-copy.en.hero="Speak first, then review rhythm, fluency, and intonation. Pronunciation accuracy stays hidden until a real pronunciation backbone is mapped.";
+copy["zh-CN"].hero="从流畅度、清晰度、节奏和抑扬四个方向看这次发话。录音质量只决定结果可信度，不会冒充清晰度；词汇重音放到详细反馈里。";
+copy["zh-TW"].hero="從流暢度、清晰度、節奏和抑揚四個方向看這次發話。錄音品質只決定結果可信度，不會冒充清晰度；詞彙重音放到詳細回饋裡。";
+copy.ja.hero="流暢さ・明瞭さ・リズム・抑揚の4方向から今回の発話を確認します。録音品質は信頼度として扱い、明瞭さの点数にはしません。語彙アクセントは詳細フィードバックで扱います。";
+copy.en.hero="Review each attempt through four separate dimensions: fluency, clarity, rhythm, and intonation. Recording quality affects confidence rather than clarity; lexical pitch accent stays in detailed feedback.";
 </script>
 """
     return html.replace("</body>", f"{patch}</body>").encode("utf-8")
