@@ -10,6 +10,11 @@ same-length phone-order permutation, plus stability to mild gain changes.
 Models are loaded and released one at a time so a CPU CI runner never needs to
 hold Beatrice, DistilHuBERT and WavLM simultaneously. Downloaded JVS audio is
 ephemeral and must not be committed or uploaded as a workflow artifact.
+
+The downloader's current manifest treats raw HTTP/WAV hashes as provenance, not
+acoustic identity. This consumer therefore accepts the current ``raw_sha256``
+field (and legacy ``sha256`` only for old saved artifacts) while preserving the
+verified sample-rate/duration semantics in the derived report.
 """
 
 from __future__ import annotations
@@ -102,6 +107,33 @@ def _sequence_metrics(
     }
 
 
+def _source_provenance(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize current/legacy JVS manifest provenance without conflating hash with identity."""
+    raw_hash = str(row.get("raw_sha256") or row.get("sha256") or "").strip()
+    if not raw_hash:
+        raise ValueError(f"JVS manifest row for {row.get('speaker')} is missing raw hash provenance")
+    provenance: Dict[str, Any] = {
+        "raw_sha256": raw_hash,
+        "raw_transport_hash_is_acoustic_identity": bool(
+            row.get("raw_transport_hash_is_acoustic_identity", False)
+        ),
+    }
+    for key in (
+        "raw_bytes",
+        "bytes",
+        "sample_rate",
+        "sample_width_bytes",
+        "frame_count",
+        "duration_sec",
+        "semantic_duration_verified",
+        "raw_transport_variant_previously_observed",
+        "google_drive_file_id",
+    ):
+        if key in row:
+            provenance[key] = row[key]
+    return provenance
+
+
 class BeatriceInfer:
     name = "beatrice"
     model_id = "prj-beatrice/japanese-hubert-base-phoneme-ctc-v4"
@@ -168,7 +200,7 @@ def _run_model(model: Any, sample_rows: list[Dict[str, Any]], phones: list[str])
         rows.append(
             {
                 "speaker": row["speaker"],
-                "sha256": row["sha256"],
+                "source_provenance": _source_provenance(row),
                 "speech_region": region.to_dict(),
                 "metrics": metrics,
             }
@@ -242,6 +274,7 @@ def main() -> None:
     for row in sample_rows:
         if str(row.get("target_text")) != TARGET_TEXT:
             raise ValueError(f"unexpected target text for {row.get('speaker')}")
+        _source_provenance(row)
 
     factories: list[Callable[[], Any]] = [
         lambda: BeatriceInfer(allow_download=args.allow_download, device=args.device),
@@ -268,18 +301,18 @@ def main() -> None:
             results.append(result)
             print(model.name, result["summary"])
         finally:
-            # Drop the outer reference *before* constructing the next model.
             del model
             gc.collect()
             if torch_module is not None and device.startswith("cuda") and torch_module.cuda.is_available():
                 torch_module.cuda.empty_cache()
 
     payload = {
-        "schema": "jvs_native_phone_ctc_anchor_preflight_v1",
+        "schema": "jvs_native_phone_ctc_anchor_preflight_v2",
         "target_text": TARGET_TEXT,
         "canonical_phones": phones,
         "dropped_nonsegmental_target_tokens": dropped,
         "source": "official_JVS_project_page_three_sample_links",
+        "source_identity_policy": "reviewed_file_id_plus_audio_semantics_raw_hash_provenance_only",
         "human_recordings_requested_from_user": False,
         "new_human_recordings_collected": False,
         "product_score_changed": False,
