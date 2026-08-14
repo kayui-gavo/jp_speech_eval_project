@@ -3,10 +3,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import debug_ui
-
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts import debug_ui  # noqa: E402
+
+
 DEFAULT_CACHE = ROOT / "assets" / "reference_cache" / "ramen_kudasai_aivis"
 DEFAULT_WAV = DEFAULT_CACHE.with_suffix(".ref.wav")
 
