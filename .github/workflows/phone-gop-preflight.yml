@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       run_model_preflight:
-        description: "Download pinned Japanese phone-CTC models and run bundled-audio preflight"
+        description: "Download pinned Japanese phone-CTC models and run bundled/native-anchor preflight"
         required: false
         default: true
         type: boolean
@@ -72,9 +72,14 @@ jobs:
           python -m pip install -e .
       - name: Resolve immutable revisions for alternative dual-CTC candidates
         run: python scripts/resolve_phone_ctc_candidate_revision.py --output outputs/phone_ctc_candidate_revisions.json
+      - name: Download official JVS sample anchors ephemerally
+        run: >-
+          python scripts/download_official_jvs_samples.py
+          --output-dir outputs/jvs_official_samples
+          --manifest outputs/jvs_official_samples_manifest.json
       - name: Run pinned Beatrice backend preflight on bundled audio
         run: python scripts/run_phone_gop_preflight.py --allow-download --output outputs/phone_gop_preflight_ci.json
-      - name: Run Beatrice segmentation-free SD feature preflight
+      - name: Run Beatrice segmentation-free SD and Occ feature preflight
         run: python scripts/run_segmentation_free_gop_preflight.py --allow-download --output outputs/segmentation_free_gop_preflight_ci.json
       - name: Run pinned DistilHuBERT dual-CTC shadow preflight
         run: >-
@@ -90,6 +95,15 @@ jobs:
           --model TylorShine/wavlm-base-plus-hiragana-ctc
           --revision 47fa985035342365bcec4948bd821aaf58dd778a
           --output outputs/wavlm_dual_ctc_preflight_ci.json
+      - name: Run three-backbone official JVS native-anchor preflight
+        run: >-
+          python scripts/run_official_jvs_phone_ctc_anchor_preflight.py
+          --manifest outputs/jvs_official_samples_manifest.json
+          --allow-download
+          --output outputs/jvs_native_phone_ctc_anchor_preflight.json
+      - name: Remove downloaded JVS audio before artifact collection
+        if: always()
+        run: rm -rf outputs/jvs_official_samples
       - name: Upload model preflight reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,4 +115,6 @@ jobs:
             ver1.3/outputs/phone_ctc_candidate_revisions.json
             ver1.3/outputs/distilhubert_dual_ctc_preflight_ci.json
             ver1.3/outputs/wavlm_dual_ctc_preflight_ci.json
+            ver1.3/outputs/jvs_official_samples_manifest.json
+            ver1.3/outputs/jvs_native_phone_ctc_anchor_preflight.json
           if-no-files-found: warn
