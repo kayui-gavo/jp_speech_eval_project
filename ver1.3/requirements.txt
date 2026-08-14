@@ -3,7 +3,9 @@ scipy>=1.10
 librosa>=0.10.1
 soundfile>=0.12
 matplotlib>=3.7
-pyopenjtalk
+# Drop-in OpenJTalk wrapper used by the selected Japanese phone-CTC model's
+# training-label pipeline. The import name remains `pyopenjtalk`.
+pyopenjtalk-plus==0.4.1.post8
 pyworld-prebuilt
 sounddevice>=0.4
 pandas>=2.0
