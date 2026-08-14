@@ -6,6 +6,7 @@ import pytest
 
 from jp_speech_eval.product_score_v3 import (
     attach_ssl_pronunciation_candidate,
+    attach_ssl_pronunciation_evidence,
     build_product_score_v3_candidate,
     reference_relative_timing_features,
 )
@@ -54,9 +55,11 @@ def test_v3_reweights_available_dimensions_instead_of_imputing_80():
     assert "pronunciation" in aggregate["unavailable_dimensions"]
     assert sum(aggregate["weights_effective"].values()) == pytest.approx(1.0, abs=2e-4)
     assert candidate["dimensions"]["rhythm"]["source"] == "reference_relative_warp"
-    assert aggregate["score_scope"] == "partial"
+    assert aggregate["score_scope"] == "delivery_prosody"
     assert aggregate["evidence_coverage"] == pytest.approx(.55)
-    assert aggregate["ab_candidate_eligible"]
+    assert aggregate["diagnostic_candidate_eligible"]
+    assert not aggregate["overall_product_score_candidate_eligible"]
+    assert not aggregate["ab_candidate_eligible"]
 
 
 def test_local_alignment_missing_uses_real_global_rate_not_perfect_rate():
@@ -76,6 +79,7 @@ def test_single_dimension_candidate_has_continuity_scope_but_not_ab_eligibility(
     aggregate = candidate["product_score_v3_candidate"]
     assert aggregate["score_scope"] == "continuity_only"
     assert aggregate["evidence_coverage"] == pytest.approx(.20)
+    assert not aggregate["diagnostic_candidate_eligible"]
     assert not aggregate["ab_candidate_eligible"]
 
 
@@ -97,4 +101,44 @@ def test_ssl_candidate_can_be_attached_without_changing_v2_inputs():
     updated = attach_ssl_pronunciation_candidate(candidate, 72.5, confidence=.8)
     assert updated["dimensions"]["pronunciation"]["value"] == 72.5
     assert updated["product_score_v3_candidate"]["weights_effective"]["pronunciation"] > 0
+    assert updated["product_score_v3_candidate"]["overall_product_score_candidate_eligible"]
     assert updated["user_facing"] is False
+
+
+def test_ssl_confidence_is_not_alignment_confidence():
+    candidate = _candidate(alignment_confidence=.01, ssl_pronunciation={"available": True, "candidate_score": 72.5, "ssl_pronunciation_confidence": .81})
+    assert candidate["dimensions"]["pronunciation"]["confidence"] == pytest.approx(.81)
+
+
+def test_codec_like_alignment_failure_can_keep_global_ssl_evidence_without_overall_eligibility():
+    candidate = attach_ssl_pronunciation_evidence(
+        _candidate(alignment_mode="cached_dtw_fallback_equal", f0_coverage=.1),
+        evidence_index=1.4,
+        ssl_pronunciation_confidence=.76,
+        reference_count=4,
+        reference_dispersion=.03,
+        content_verified=True,
+        audio_valid=True,
+    )
+    aggregate = candidate["product_score_v3_candidate"]
+    assert candidate["dimensions"]["pronunciation"]["available"]
+    assert candidate["dimensions"]["pronunciation"]["value"] is None
+    assert aggregate["score_scope"] == "pronunciation_plus_delivery"
+    assert aggregate["diagnostic_candidate_eligible"]
+    assert not aggregate["overall_product_score_candidate_eligible"]
+    assert aggregate["overall_product_score_candidate_eligibility_reason"] == "pronunciation_evidence_not_score_mapped"
+
+
+def test_ssl_evidence_requires_verified_content_and_valid_audio():
+    evidence = attach_ssl_pronunciation_evidence(
+        _candidate(),
+        evidence_index=.22,
+        ssl_pronunciation_confidence=.8,
+        reference_count=4,
+        reference_dispersion=.02,
+        content_verified=False,
+        audio_valid=True,
+    )
+    assert not evidence["ssl_pronunciation_evidence"]["available"]
+    assert evidence["ssl_pronunciation_evidence"]["reason"] == "ssl_requires_verified_content"
+    assert not evidence["dimensions"]["pronunciation"]["available"]

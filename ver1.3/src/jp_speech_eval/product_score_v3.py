@@ -23,6 +23,9 @@ class DimensionEvidence:
     confidence: float
     source: str
     reason: str = ""
+    # Some research evidence (for example an uncalibrated SSL distance) is
+    # real evidence but deliberately has no /100 value yet.
+    score_mapped: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         payload = asdict(self)
@@ -130,32 +133,60 @@ def reference_relative_timing_features(
 
 def _weighted_candidate(dimensions: Mapping[str, DimensionEvidence]) -> Dict[str, Any]:
     weights = {"pronunciation": 0.45, "rhythm": 0.25, "fluency": 0.20, "intonation": 0.10}
-    available = {key: item for key, item in dimensions.items() if item.available and item.value is not None}
-    denominator = sum(weights[key] for key in available)
-    value = None if denominator <= 0 else sum(weights[key] * float(item.value) for key, item in available.items()) / denominator
-    confidence = 0.0 if denominator <= 0 else sum(weights[key] * item.confidence for key, item in available.items()) / denominator
-    coverage = sum(weights[key] for key in available)
-    names = list(available)
+    evidence = {key: item for key, item in dimensions.items() if item.available}
+    scored = {key: item for key, item in evidence.items() if item.value is not None and item.score_mapped}
+    denominator = sum(weights[key] for key in scored)
+    value = None if denominator <= 0 else sum(weights[key] * float(item.value) for key, item in scored.items()) / denominator
+    confidence = 0.0 if not evidence else sum(weights[key] * item.confidence for key, item in evidence.items()) / sum(weights[key] for key in evidence)
+    coverage = sum(weights[key] for key in evidence)
+    names = list(evidence)
+    pronunciation = evidence.get("pronunciation")
+    other = [key for key in names if key != "pronunciation"]
     if not names:
         scope = "unavailable"
+    elif pronunciation and not other:
+        scope = "pronunciation_only"
+    elif pronunciation:
+        scope = "full" if len(names) == len(weights) else "pronunciation_plus_delivery"
     elif names == ["fluency"]:
         scope = "continuity_only"
-    elif len(names) == len(weights):
-        scope = "full"
     else:
-        scope = "partial"
+        scope = "delivery_prosody"
+    diagnostic_eligible = bool(len(names) >= 2 and coverage >= .45)
+    overall_eligible = bool(
+        pronunciation is not None
+        and bool(other)
+        and coverage >= .65
+        and pronunciation.value is not None
+        and pronunciation.score_mapped
+    )
+    if overall_eligible:
+        overall_reason = "eligible"
+    elif pronunciation is None:
+        overall_reason = "missing_pronunciation_evidence"
+    elif pronunciation.value is None or not pronunciation.score_mapped:
+        overall_reason = "pronunciation_evidence_not_score_mapped"
+    elif not other:
+        overall_reason = "missing_independent_dimension"
+    else:
+        overall_reason = "insufficient_evidence_coverage"
     return {
         "value": None if value is None else round(_clip(value), 4),
-        "available": bool(available),
+        "available": bool(evidence),
         "confidence": round(float(confidence), 4),
         "weights_requested": weights,
-        "weights_effective": {key: round(weights[key] / denominator, 4) for key in available} if denominator else {},
-        "unavailable_dimensions": [key for key in weights if key not in available],
+        "weights_effective": {key: round(weights[key] / denominator, 4) for key in scored} if denominator else {},
+        "unavailable_dimensions": [key for key in weights if key not in evidence],
         "dimensions_available": names,
+        "dimensions_score_mapped": list(scored),
         "evidence_coverage": round(float(coverage), 4),
         "score_scope": scope,
-        # This is a research eligibility criterion, not a user no-score gate.
-        "ab_candidate_eligible": bool(len(names) >= 2 and coverage >= .45),
+        "diagnostic_candidate_eligible": diagnostic_eligible,
+        "overall_product_score_candidate_eligible": overall_eligible,
+        "overall_product_score_candidate_eligibility_reason": overall_reason,
+        # Compatibility alias.  It deliberately follows the stricter overall
+        # definition rather than the old two-dimension diagnostic rule.
+        "ab_candidate_eligible": overall_eligible,
     }
 
 
@@ -188,12 +219,14 @@ def build_product_score_v3_candidate(
     )
     alignment_ok = bool(timing.get("available"))
     ssl_value = None
+    ssl_confidence = 0.0
     if ssl_pronunciation and bool(ssl_pronunciation.get("available")):
         ssl_value = ssl_pronunciation.get("candidate_score")
+        ssl_confidence = float(ssl_pronunciation.get("ssl_pronunciation_confidence", ssl_pronunciation.get("confidence", 0.0)) or 0.0)
     pronunciation = DimensionEvidence(
         value=None if ssl_value is None else _clip(float(ssl_value)),
         available=ssl_value is not None,
-        confidence=min(1.0, max(0.0, float(alignment_confidence))) if ssl_value is not None else 0.0,
+        confidence=min(1.0, max(0.0, ssl_confidence)) if ssl_value is not None else 0.0,
         source="wavlm_multi_reference" if ssl_value is not None else "unavailable_without_ssl_candidate",
         reason="" if ssl_value is not None else "ssl_pronunciation_candidate_not_available",
     )
@@ -264,5 +297,64 @@ def attach_ssl_pronunciation_candidate(
     ).to_dict()
     typed = {key: DimensionEvidence(**value) for key, value in dimensions.items()}
     out["dimensions"] = dimensions
+    out["product_score_v3_candidate"] = _weighted_candidate(typed)
+    return out
+
+
+def attach_ssl_pronunciation_evidence(
+    candidate: Mapping[str, Any],
+    *,
+    evidence_index: Optional[float],
+    ssl_pronunciation_confidence: float,
+    reference_count: int,
+    reference_dispersion: Optional[float],
+    content_verified: bool,
+    audio_valid: bool,
+    reason: str = "uncalibrated_ssl_evidence",
+) -> Dict[str, Any]:
+    """Attach global SSL evidence without pretending it is a /100 score.
+
+    Global WavLM comparisons do not use mora boundaries.  The resulting
+    evidence may change *scope* telemetry but cannot make an overall numeric
+    ProductScore candidate eligible until a separately validated mapping is
+    supplied.
+    """
+    out = dict(candidate)
+    dimensions = {key: dict(value) for key, value in dict(candidate.get("dimensions", {})).items()}
+    available = (
+        evidence_index is not None
+        and int(reference_count) >= 3
+        and bool(content_verified)
+        and bool(audio_valid)
+    )
+    if not available and reason == "uncalibrated_ssl_evidence":
+        if not content_verified:
+            reason = "ssl_requires_verified_content"
+        elif not audio_valid:
+            reason = "ssl_requires_valid_audio"
+        elif int(reference_count) < 3:
+            reason = "ssl_requires_at_least_three_native_references"
+        else:
+            reason = "ssl_evidence_index_unavailable"
+    dimensions["pronunciation"] = DimensionEvidence(
+        value=None,
+        available=available,
+        confidence=min(1.0, max(0.0, float(ssl_pronunciation_confidence))) if available else 0.0,
+        source="wavlm_multi_reference_global",
+        reason="" if available else reason,
+        score_mapped=False,
+    ).to_dict()
+    typed = {key: DimensionEvidence(**value) for key, value in dimensions.items()}
+    out["dimensions"] = dimensions
+    out["ssl_pronunciation_evidence"] = {
+        "available": available,
+        "ssl_pronunciation_evidence_index": None if evidence_index is None else round(float(evidence_index), 6),
+        "ssl_pronunciation_confidence": round(float(dimensions["pronunciation"]["confidence"]), 4),
+        "native_reference_count": int(reference_count),
+        "native_reference_dispersion": None if reference_dispersion is None else round(float(reference_dispersion), 6),
+        "content_verified": bool(content_verified),
+        "audio_valid": bool(audio_valid),
+        "reason": "" if available else reason,
+    }
     out["product_score_v3_candidate"] = _weighted_candidate(typed)
     return out
