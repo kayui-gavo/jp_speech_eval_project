@@ -102,3 +102,11 @@ jobs:
             tests/test_research_evidence_analysis.py \
             tests/test_consumer_ratings.py \
             tests/test_app_core_mvp.py
+      - name: Audit reliability caps on existing acceptance JSONL
+        run: |
+          python scripts/run_reliability_cap_ab.py \
+            outputs/c_end_v2_acceptance/new_results.jsonl \
+            --input-format acceptance-jsonl \
+            --out-csv /tmp/reliability_cap_ab.csv \
+            --out-json /tmp/reliability_cap_ab.json
+          cat /tmp/reliability_cap_ab.json
