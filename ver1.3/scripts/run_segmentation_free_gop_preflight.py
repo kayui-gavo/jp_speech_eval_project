@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Evaluate alignment-free Japanese phone features on bundled audio only.
+"""Evaluate Japanese phone research features on bundled audio only.
 
 The artifact deliberately does not interpret the sign of an individual LPR as
-a pronunciation-correctness decision. Alongside alignment-free LPP/LPR,
-normalized SD graph/Occ(i), and criterion-ready features, this preflight now
-records explicit CTC posterior peakiness/uncertainty diagnostics. Standard CTC
-peakiness is a known risk for posterior-derived pronunciation assessment, but
-these diagnostics are model properties rather than pronunciation scores.
+a pronunciation-correctness decision. It keeps frame-local logit/posterior
+features and alignment-free LPP/LPR/SD/Occ(i) separate, then joins them only in
+a strict criterion-ready research bundle. CTC posterior peakiness/uncertainty
+is recorded as a model diagnostic, not a pronunciation score.
 """
 
 from __future__ import annotations
@@ -26,6 +25,7 @@ if str(SRC) not in sys.path:
 
 from jp_speech_eval.audio_features import load_audio  # noqa: E402
 from jp_speech_eval.ctc_posterior_diagnostics import compute_ctc_posterior_diagnostics  # noqa: E402
+from jp_speech_eval.hybrid_phone_criterion_features import build_hybrid_phone_criterion_bundle  # noqa: E402
 from jp_speech_eval.japanese_phoneme_gop import (  # noqa: E402
     JapanesePhoneCtcBackend,
     project_japanese_ctc_logits,
@@ -49,7 +49,7 @@ WRONG_TEXT = "コーヒーをください。"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Alignment-free Japanese phone feature preflight")
+    parser = argparse.ArgumentParser(description="Japanese phone feature preflight")
     parser.add_argument("--wav", default=str(DEFAULT_WAV))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--allow-download", action="store_true")
@@ -116,14 +116,17 @@ def _norm_and_posterior_features(
     return norm, posterior
 
 
-def _failed_bundle(reason: str, model_id: str, revision: str) -> dict:
+def _failed_bundle(reason: str, model_id: str, revision: str, *, hybrid: bool = False) -> dict:
     return {
         "available": False,
-        "schema": "phone_criterion_feature_bundle_v1",
+        "schema": (
+            "hybrid_phone_criterion_feature_bundle_v1"
+            if hybrid else "phone_criterion_feature_bundle_v1"
+        ),
         "model_id": model_id,
         "revision": revision,
         "canonical_phones": [],
-        "substitution_phone_inventory": [],
+        "substitution_phone_inventory": [] if not hybrid else None,
         "rows": [],
         "summary": {"reason": reason, "product_score_changed": False},
         "warnings": [reason],
@@ -158,6 +161,8 @@ def main() -> None:
         local_files_only=not args.allow_download,
     )
 
+    correct_frame = backend.evaluate(speech, correct_target.phones, sr=audio.sr)
+    wrong_frame = backend.evaluate(speech, wrong_target.phones, sr=audio.sr)
     correct = evaluate_backend_fgop_sf_sd_shadow(
         backend, speech, correct_target.phones, sr=audio.sr
     )
@@ -175,12 +180,16 @@ def main() -> None:
         )
         correct_bundle_obj = build_phone_criterion_feature_bundle(correct, correct_norm_obj)
         wrong_bundle_obj = build_phone_criterion_feature_bundle(wrong, wrong_norm_obj)
+        correct_hybrid_obj = build_hybrid_phone_criterion_bundle(correct_frame, correct_bundle_obj)
+        wrong_hybrid_obj = build_hybrid_phone_criterion_bundle(wrong_frame, wrong_bundle_obj)
         correct_norm = correct_norm_obj.to_dict()
         wrong_norm = wrong_norm_obj.to_dict()
         correct_posterior = correct_posterior_obj.to_dict()
         wrong_posterior = wrong_posterior_obj.to_dict()
         correct_bundle = correct_bundle_obj.to_dict()
         wrong_bundle = wrong_bundle_obj.to_dict()
+        correct_hybrid = correct_hybrid_obj.to_dict()
+        wrong_hybrid = wrong_hybrid_obj.to_dict()
         shared_suffix = compare_shared_suffix_locality(
             correct_bundle_obj, wrong_bundle_obj
         )
@@ -203,10 +212,12 @@ def main() -> None:
         wrong_posterior = _failed_posterior(reason)
         correct_bundle = _failed_bundle(reason, model_id, revision)
         wrong_bundle = _failed_bundle(reason, model_id, revision)
+        correct_hybrid = _failed_bundle(reason, model_id, revision, hybrid=True)
+        wrong_hybrid = _failed_bundle(reason, model_id, revision, hybrid=True)
         shared_suffix = {"available": False, "reason": reason}
 
     payload = {
-        "schema": "segmentation_free_gop_bundled_preflight_v4",
+        "schema": "segmentation_free_gop_bundled_preflight_v5",
         "product_score_changed": False,
         "score_mapped": False,
         "human_recording_allowed": False,
@@ -217,6 +228,8 @@ def main() -> None:
         "speech_region": region.to_dict(),
         "correct_target": correct_target.to_dict(),
         "wrong_target": wrong_target.to_dict(),
+        "correct_frame_local": correct_frame.to_dict(),
+        "wrong_frame_local": wrong_frame.to_dict(),
         "correct": correct.to_dict(),
         "wrong": wrong.to_dict(),
         "correct_norm": correct_norm,
@@ -225,20 +238,23 @@ def main() -> None:
         "wrong_ctc_posterior_diagnostics": wrong_posterior,
         "correct_criterion_feature_bundle": correct_bundle,
         "wrong_criterion_feature_bundle": wrong_bundle,
+        "correct_hybrid_criterion_feature_bundle": correct_hybrid,
+        "wrong_hybrid_criterion_feature_bundle": wrong_hybrid,
         "shared_suffix_locality": shared_suffix,
         "diagnostic": {
             "correct_weakest_rows": _weakest_rows(correct),
             "wrong_weakest_rows": _weakest_rows(wrong),
-            "forced_viterbi_not_required_for_features": True,
+            "frame_local_support_requires_ctc_viterbi": True,
+            "alignment_free_features_require_phone_boundaries": False,
             "individual_lpr_sign_is_pronunciation_error_rule": False,
             "noncanonical_win_count_is_stage0_failure_gate": False,
             "downstream_labeled_interpretation_required": True,
             "ctc_peakiness_requires_model_level_monitoring": True,
             "note": (
-                "This artifact evaluates alignment-free phone features, Japanese phone-masked "
-                "SD graph/Occ(i), criterion-ready joins, and CTC posterior peakiness. Individual "
-                "features and entropy/peakiness statistics are not direct mispronunciation labels. "
-                "Nothing is mapped to /100."
+                "This artifact keeps Viterbi/logit and alignment-free feature families explicit, "
+                "joins them only for future supervised criterion experiments, and records CTC "
+                "peakiness. No individual feature is a direct mispronunciation label and nothing "
+                "is mapped to /100."
             ),
         },
     }
@@ -246,7 +262,8 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
-    print("correct available:", correct.available)
+    print("correct frame-local available:", correct_frame.available)
+    print("correct alignment-free available:", correct.available)
     if correct.available:
         print(
             "diagnostic positions with a higher-posterior noncanonical SD alternative:",
@@ -261,17 +278,22 @@ def main() -> None:
         correct_norm.get("summary", {}).get("occ_i_max"),
     )
     print("criterion bundle available:", correct_bundle.get("available"))
+    print("hybrid criterion bundle available:", correct_hybrid.get("available"))
     print("CTC top1 posterior mean:", correct_posterior.get("top1_posterior_mean"))
     print("CTC blank-top1 fraction:", correct_posterior.get("blank_top1_fraction"))
     print("HUMAN RECORDING GATE: BLOCKED (awaits labeled criterion / Stage-0 promotion)")
-    if not correct.available or not wrong.available:
+    if not correct_frame.available or not wrong_frame.available:
         raise SystemExit(2)
-    if not bool(correct_norm.get("available")) or not bool(wrong_norm.get("available")):
+    if not correct.available or not wrong.available:
         raise SystemExit(3)
-    if not bool(correct_bundle.get("available")) or not bool(wrong_bundle.get("available")):
+    if not bool(correct_norm.get("available")) or not bool(wrong_norm.get("available")):
         raise SystemExit(4)
-    if not bool(correct_posterior.get("available")) or not bool(wrong_posterior.get("available")):
+    if not bool(correct_bundle.get("available")) or not bool(wrong_bundle.get("available")):
         raise SystemExit(5)
+    if not bool(correct_hybrid.get("available")) or not bool(wrong_hybrid.get("available")):
+        raise SystemExit(6)
+    if not bool(correct_posterior.get("available")) or not bool(wrong_posterior.get("available")):
+        raise SystemExit(7)
 
 
 if __name__ == "__main__":
