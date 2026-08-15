@@ -5,17 +5,18 @@ The JVS project page publishes Google Drive links for three
 VOICEACTRESS100_001 samples. They are downloaded into ``outputs`` only for the
 CI research run; audio is never committed or uploaded as a workflow artifact.
 
-A previous Stage-0 revision incorrectly made the raw WAV byte hash a hard gate.
-Google Drive can serve the same waveform in a different WAV container/sample-
-rate representation. Reproducibility therefore cannot be defined by transport
-bytes alone.
+Two different target-provenance failures were found before human recording:
 
-A second Stage-0 audit found a target-side error that is even more important for
-phone scoring: the runtime G2P can analyze ``明王`` as a personal-name reading
-(``あきらおう``) instead of the intended lexical reading ``みょうおう``. The
-JVS anchor therefore stores an explicit full-sentence kana reading. Research
-preflights must use that reading override instead of silently trusting automatic
-kanji G2P for this sentence.
+1. surface kanji ``明王`` can be analysed as a personal-name reading instead of
+   lexical ``みょうおう``;
+2. even a kana reading override can be morphologically/contextually re-analysed
+   by the text frontend, causing the second identical ``みょうおう`` occurrence
+   to receive a different phone sequence from the first.
+
+For this audited native anchor, a reviewed full-sentence kana reading is
+therefore accompanied by an explicit logical-phone sequence. Research
+preflights must use the phone override directly rather than re-G2P either the
+surface or the kana and assuming phoneme-exact preservation.
 """
 
 from __future__ import annotations
@@ -55,6 +56,32 @@ SAMPLES = {
 }
 TARGET_TEXT = "また、東寺のように、五大明王と呼ばれる、主要な明王の中央に配されることも多い。"
 TARGET_READING = "また、とうじのように、ごだいみょうおうとよばれる、しゅようなみょうおうのちゅうおうにはいされることもおおい。"
+
+# Audited logical-phone target for the pinned Japanese phone-CTC research
+# inventory. Both lexical occurrences of みょうおう are intentionally the same
+# block: my o o o o. This avoids the observed kana-text frontend reanalysis that
+# produced m i y o u o u for the second occurrence.
+TARGET_PHONES = (
+    "m", "a", "t", "a",
+    "t", "o", "o", "j", "i",
+    "n", "o",
+    "y", "o", "u",
+    "n", "i",
+    "g", "o", "d", "a", "i",
+    "my", "o", "o", "o", "o",
+    "t", "o",
+    "y", "o", "b", "a", "r", "e", "r", "u",
+    "sh", "u", "y", "o", "o",
+    "n", "a",
+    "my", "o", "o", "o", "o",
+    "n", "o",
+    "ch", "u", "u", "o", "o",
+    "n", "i",
+    "h", "a", "i", "s", "a", "r", "e", "r", "u",
+    "k", "o", "t", "o",
+    "m", "o",
+    "o", "o", "i",
+)
 READING_PROVENANCE = {
     "東寺": "とうじ",
     "五大明王": "ごだいみょうおう",
@@ -62,6 +89,13 @@ READING_PROVENANCE = {
     "明王": "みょうおう",
     "中央": "ちゅうおう",
     "配される": "はいされる",
+}
+PHONE_PROVENANCE = {
+    "policy": "reviewed_logical_phone_override_v1",
+    "frontend_family": "pyopenjtalk-plus_compatible_Japanese_phone_inventory",
+    "identical_lexeme_constraint": "both 明王/みょうおう occurrences use [my,o,o,o,o]",
+    "known_kana_reanalysis_failure": "second みょうおう was previously re-analysed as [m,i,y,o,u,o,u]",
+    "purpose": "native_anchor_target_provenance_not_general_text_frontend_replacement",
 }
 DURATION_TOLERANCE_SEC = 0.015
 
@@ -161,8 +195,13 @@ def main() -> None:
                 "target_reading": TARGET_READING,
                 "target_reading_source": "reviewed_manual_reading_override",
                 "target_reading_provenance": READING_PROVENANCE,
+                "target_phones": list(TARGET_PHONES),
+                "target_phone_source": "reviewed_logical_phone_override_v1",
+                "target_phone_provenance": PHONE_PROVENANCE,
                 "automatic_surface_g2p_is_safe_for_anchor": False,
-                "known_surface_g2p_failure": "明王 can be analyzed as あきらおう instead of みょうおう",
+                "automatic_kana_g2p_is_phone_exact_for_anchor": False,
+                "known_surface_g2p_failure": "明王 can be analysed as あきらおう instead of みょうおう",
+                "known_kana_g2p_failure": "second みょうおう can be re-analysed differently from the first identical lexeme",
                 "source": "official_JVS_project_page_sample_link",
                 **semantic,
             }
@@ -173,12 +212,14 @@ def main() -> None:
         )
 
     payload = {
-        "schema": "jvs_official_samples_manifest_v4",
+        "schema": "jvs_official_samples_manifest_v5",
         "project_page": OFFICIAL_PROJECT_PAGE,
         "source_identity": "reviewed_official_file_id_plus_verified_audio_semantics",
         "raw_http_bytes_are_immutable_source_identity": False,
         "source_drift_policy": "fail_on_audio_semantic_drift_not_container_hash_only",
         "target_reading_override_required": True,
+        "target_phone_override_required": True,
+        "text_or_kana_g2p_is_authoritative_phone_source": False,
         "audio_committed_to_repository": False,
         "audio_should_be_uploaded_as_artifact": False,
         "research_use_only": True,
