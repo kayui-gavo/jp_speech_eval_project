@@ -1,322 +1,223 @@
-"""
-Pronunciation confusion detection in L2 speech.
+"""Legacy phoneme-confusion helpers, quarantined from pronunciation scoring.
 
-Based on Sun & McIntosh's current work with UCL team:
-detect confused phoneme pairs using Bhattacharyya coefficient (BC)
-on phoneme posteriorgrams.
+The previous version of this module was not scientifically safe:
 
-Detects patterns like /l/–/r/ confusion in spontaneous speech.
+* it cited an unverifiable project attribution;
+* it treated a *low* Bhattacharyya coefficient (low distributional overlap) as
+  evidence that two phones were "confused", reversing the metric's semantics;
+* it compared posterior columns across time as if they were calibrated phone
+  distributions; and
+* it exposed kana strings and even an identity pair as "phoneme" confusions.
+
+None of that is permitted to feed the Japanese pronunciation product.  The
+active research route is target-conditioned phone CTC / GOP in
+``japanese_phoneme_gop.py`` and the restricted substitution policy in
+``japanese_phone_substitutions.py``.
+
+The generic Bhattacharyya/KL utilities are retained because they are
+mathematically useful when applied to *proper probability distributions*.
+``PhonemeConfusionDetector`` remains only as a compatibility quarantine: its
+legacy heuristic is disabled unless a caller explicitly opts in, and even then
+its output is labeled exploratory rather than a pronunciation decision.
 """
 
 from __future__ import annotations
 
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.stats import entropy
 
-
-def bhattacharyya_coefficient(
-    p: np.ndarray,
-    q: np.ndarray,
-) -> float:
-    """
-    Compute Bhattacharyya coefficient between two probability distributions.
-    
-    BC = 0: completely different
-    BC = 1: identical
-    
-    Args:
-        p: Probability distribution 1, shape (n_classes,).
-        q: Probability distribution 2, shape (n_classes,).
-    
-    Returns:
-        BC value in [0, 1].
-    """
-    # Normalize to ensure valid probabilities
-    p = np.asarray(p, dtype=np.float64)
-    q = np.asarray(q, dtype=np.float64)
-    
-    p = p / (np.sum(p) + 1e-10)
-    q = q / (np.sum(q) + 1e-10)
-    
-    bc = np.sum(np.sqrt(np.clip(p, 0.0, None) * np.clip(q, 0.0, None)))
-    return float(np.clip(bc, 0.0, 1.0))
+from .japanese_phone_substitutions import RESTRICTED_NEIGHBORS
 
 
-def kl_divergence(
-    p: np.ndarray,
-    q: np.ndarray,
-) -> float:
+LEGACY_HEURISTIC_STATUS = "deprecated_not_validated_for_pronunciation_scoring"
+
+
+def _probability_vector(values: np.ndarray) -> np.ndarray:
+    array = np.asarray(values, dtype=np.float64).reshape(-1)
+    if array.size == 0 or not np.isfinite(array).all():
+        raise ValueError("distribution must be finite and non-empty")
+    if np.any(array < 0.0):
+        raise ValueError("distribution must be non-negative")
+    total = float(np.sum(array))
+    if total <= 0.0:
+        raise ValueError("distribution must have positive mass")
+    return array / total
+
+
+def bhattacharyya_coefficient(p: np.ndarray, q: np.ndarray) -> float:
+    """Return probability-distribution overlap in ``[0, 1]``.
+
+    ``1`` means identical distributions and ``0`` means disjoint support.
+    A high coefficient is *similarity*, not evidence of a pronunciation error.
     """
-    Compute KL divergence from p to q.
-    
-    Args:
-        p: Reference distribution.
-        q: Comparison distribution.
-    
-    Returns:
-        KL divergence.
-    """
-    p = np.asarray(p, dtype=np.float64)
-    q = np.asarray(q, dtype=np.float64)
-    
-    p = p / (np.sum(p) + 1e-10)
-    q = q / (np.sum(q) + 1e-10)
-    
-    kl = entropy(p, q)
-    return float(kl)
+    p_norm = _probability_vector(p)
+    q_norm = _probability_vector(q)
+    if p_norm.shape != q_norm.shape:
+        raise ValueError("distributions must have the same shape")
+    return float(np.clip(np.sum(np.sqrt(p_norm * q_norm)), 0.0, 1.0))
+
+
+def bhattacharyya_distance(p: np.ndarray, q: np.ndarray) -> float:
+    """Return ``-log(BC)``; zero means identical distributions."""
+    coefficient = bhattacharyya_coefficient(p, q)
+    return float(-np.log(max(coefficient, np.finfo(np.float64).tiny)))
+
+
+def kl_divergence(p: np.ndarray, q: np.ndarray) -> float:
+    """Return ``D_KL(p || q)`` for proper probability distributions."""
+    p_norm = _probability_vector(p)
+    q_norm = _probability_vector(q)
+    if p_norm.shape != q_norm.shape:
+        raise ValueError("distributions must have the same shape")
+    return float(entropy(p_norm, q_norm))
 
 
 class PhonemeConfusionDetector:
+    """Compatibility wrapper around the quarantined legacy heuristic.
+
+    This class must not be used by the product scorer.  New code should use
+    target-conditioned Japanese phone CTC/GOP evidence.  To make accidental
+    reuse fail closed, legacy execution requires ``allow_legacy_heuristic``.
     """
-    Detect confused phoneme pairs in L2 speech.
-    
-    Usage:
-        detector = PhonemeConfusionDetector()
-        
-        # Get posteriorgrams from ASR model
-        # posteriorgrams[t] = log probabilities for each phoneme at frame t
-        
-        confusion_pairs = detector.detect_confusions(
-            posteriorgrams,
-            phoneme_list,
-            threshold=0.15,  # BC < 0.15 means confused
+
+    def __init__(self, *, allow_legacy_heuristic: bool = False) -> None:
+        self.allow_legacy_heuristic = bool(allow_legacy_heuristic)
+        self.confusion_history: Dict = {}
+
+    def _guard(self) -> None:
+        if not self.allow_legacy_heuristic:
+            raise RuntimeError(
+                "PhonemeConfusionDetector is deprecated and disabled: use "
+                "Japanese phone CTC/GOP evidence instead"
+            )
+        warnings.warn(
+            "Running deprecated posterior-overlap heuristic; output is exploratory "
+            "and must not be interpreted as pronunciation correctness.",
+            RuntimeWarning,
+            stacklevel=2,
         )
-        
-        for pair, bc_score in confusion_pairs:
-            print(f"Confused: {pair[0]} <-> {pair[1]}, BC={bc_score:.3f}")
-    """
-    
-    def __init__(self):
-        """Initialize detector."""
-        self.confusion_history = {}
-    
+
     @staticmethod
     def compute_phoneme_distribution(
         posteriorgrams: np.ndarray,
         phoneme_idx: int,
     ) -> np.ndarray:
+        """Return the selected posterior column as a normalized time profile.
+
+        This is retained solely for legacy reproducibility.  It is *not* a
+        calibrated categorical distribution over phones and should not be used
+        for current MDD/GOP decisions.
         """
-        Aggregate posteriorgram for a specific phoneme across time.
-        
-        Args:
-            posteriorgrams: Log probabilities, shape (n_frames, n_phonemes).
-            phoneme_idx: Phoneme index.
-        
-        Returns:
-            Aggregated distribution (mean posteriorgram).
-        """
-        return np.mean(posteriorgrams[:, phoneme_idx:phoneme_idx+1], axis=0)
-    
+        values = np.asarray(posteriorgrams, dtype=np.float64)
+        if values.ndim != 2:
+            raise ValueError("posteriorgrams must have shape (frames, classes)")
+        if not 0 <= int(phoneme_idx) < values.shape[1]:
+            raise IndexError("phoneme_idx out of range")
+        return _probability_vector(np.clip(values[:, int(phoneme_idx)], 0.0, None))
+
     def detect_confusions(
         self,
         posteriorgrams: np.ndarray,
-        phoneme_list: List[str],
+        phoneme_list: Sequence[str],
         similarity_metric: str = "bc",
-        threshold: float = 0.15,
+        threshold: float = 0.85,
         top_k: Optional[int] = 10,
     ) -> List[Tuple[Tuple[str, str], float]]:
+        """Run the disabled legacy time-profile similarity heuristic.
+
+        When explicitly enabled, high BC means similar temporal profiles; low
+        Bhattacharyya distance means similar profiles.  This fixes the old
+        reversed inequality but still does **not** establish perceptual phone
+        confusion or learner error.
         """
-        Detect confused phoneme pairs.
-        
-        Args:
-            posteriorgrams: Log probabilities, shape (n_frames, n_phonemes).
-            phoneme_list: List of phoneme names.
-            similarity_metric: "bc" (Bhattacharyya) or "kl" (KL divergence).
-            threshold: Threshold for confusion (lower = more confused).
-                For BC: < 0.15 indicates confusion
-                For KL: > 0.5 indicates confusion
-            top_k: Return top K most confused pairs. If None, return all.
-        
-        Returns:
-            List of [(phoneme1, phoneme2), score] sorted by confusion strength.
-        """
-        n_phonemes = len(phoneme_list)
-        
-        # Compute distance matrix
-        confusion_matrix = np.zeros((n_phonemes, n_phonemes))
-        
-        for i in range(n_phonemes):
-            p_i = posteriorgrams[:, i]
-            
-            for j in range(i + 1, n_phonemes):
-                p_j = posteriorgrams[:, j]
-                
+        self._guard()
+        values = np.asarray(posteriorgrams, dtype=np.float64)
+        if values.ndim != 2 or values.shape[1] != len(phoneme_list):
+            raise ValueError("posteriorgrams/classes do not match phoneme_list")
+
+        pairs: List[Tuple[Tuple[str, str], float]] = []
+        profiles = [self.compute_phoneme_distribution(values, i) for i in range(values.shape[1])]
+        for i in range(len(profiles)):
+            for j in range(i + 1, len(profiles)):
                 if similarity_metric == "bc":
-                    score = bhattacharyya_coefficient(p_i, p_j)
+                    score = bhattacharyya_coefficient(profiles[i], profiles[j])
+                    selected = score >= float(threshold)
+                elif similarity_metric == "bhattacharyya_distance":
+                    score = bhattacharyya_distance(profiles[i], profiles[j])
+                    selected = score <= float(threshold)
                 elif similarity_metric == "kl":
-                    score = kl_divergence(p_i, p_j)
+                    score = kl_divergence(profiles[i], profiles[j])
+                    selected = score <= float(threshold)
                 else:
-                    raise ValueError(f"Unknown metric: {similarity_metric}")
-                
-                confusion_matrix[i, j] = score
-                confusion_matrix[j, i] = score
-        
-        # Extract confused pairs
-        confused_pairs = []
-        
-        for i in range(n_phonemes):
-            for j in range(i + 1, n_phonemes):
-                score = confusion_matrix[i, j]
-                
-                # Check if confused (threshold depends on metric)
-                is_confused = False
-                if similarity_metric == "bc" and score < threshold:
-                    is_confused = True
-                elif similarity_metric == "kl" and score > threshold:
-                    is_confused = True
-                
-                if is_confused:
-                    confused_pairs.append((
-                        (phoneme_list[i], phoneme_list[j]),
-                        float(score),
-                    ))
-        
-        # Sort by confusion strength (ascending for BC, descending for KL)
+                    raise ValueError(f"unknown metric: {similarity_metric}")
+                if selected:
+                    pairs.append(((str(phoneme_list[i]), str(phoneme_list[j])), float(score)))
+
         if similarity_metric == "bc":
-            confused_pairs.sort(key=lambda x: x[1])
+            pairs.sort(key=lambda item: item[1], reverse=True)
         else:
-            confused_pairs.sort(key=lambda x: x[1], reverse=True)
-        
-        if top_k is not None:
-            confused_pairs = confused_pairs[:top_k]
-        
-        return confused_pairs
-    
+            pairs.sort(key=lambda item: item[1])
+        return pairs if top_k is None else pairs[: int(top_k)]
+
     def analyze_speaker(
         self,
         speech_samples: Dict[str, np.ndarray],
-        phoneme_list: List[str],
+        phoneme_list: Sequence[str],
         similarity_metric: str = "bc",
-        threshold: float = 0.15,
+        threshold: float = 0.85,
     ) -> Dict:
-        """
-        Analyze a single L2 speaker's pronunciation confusions.
-        
-        Args:
-            speech_samples: {phoneme: posteriorgrams_array}.
-            phoneme_list: List of phoneme names.
-            similarity_metric: "bc" or "kl".
-            threshold: Confusion threshold.
-        
-        Returns:
-            Analysis report.
-        """
-        # Stack posteriorgrams
-        posteriorgrams_list = []
-        phoneme_indices = {}
-        
-        for i, phoneme in enumerate(phoneme_list):
-            if phoneme in speech_samples:
-                posteriors = speech_samples[phoneme]
-                if posteriors.size > 0:
-                    posteriorgrams_list.append(posteriors)
-                    phoneme_indices[i] = phoneme
-        
-        if not posteriorgrams_list:
+        self._guard()
+        arrays = [
+            np.asarray(speech_samples[phone])
+            for phone in phoneme_list
+            if phone in speech_samples and np.asarray(speech_samples[phone]).size > 0
+        ]
+        if not arrays:
             return {
                 "status": "no_data",
-                "message": "No posteriorgrams found",
+                "heuristic_status": LEGACY_HEURISTIC_STATUS,
+                "confused_pairs": [],
             }
-        
-        # Concatenate all posteriorgrams
-        all_posteriorgrams = np.vstack(posteriorgrams_list)
-        
-        # Detect confusions
-        confused_pairs = self.detect_confusions(
-            all_posteriorgrams,
-            phoneme_list,
-            similarity_metric=similarity_metric,
-            threshold=threshold,
-        )
-        
+        all_posteriorgrams = np.vstack(arrays)
         return {
-            "status": "success",
-            "confused_pairs": confused_pairs,
-            "total_phonemes": len(phoneme_list),
+            "status": "legacy_exploratory_only",
+            "heuristic_status": LEGACY_HEURISTIC_STATUS,
+            "confused_pairs": self.detect_confusions(
+                all_posteriorgrams,
+                phoneme_list,
+                similarity_metric=similarity_metric,
+                threshold=threshold,
+            ),
             "metric": similarity_metric,
-            "threshold": threshold,
+            "threshold": float(threshold),
         }
-    
+
     @staticmethod
     def recommend_confusion_pairs_japanese() -> List[Tuple[str, str]]:
+        """Return canonical-phone research neighbors from the active policy.
+
+        These are candidate search neighbors, not established learner-error
+        frequencies.  Each unordered pair is emitted once.
         """
-        Return common confusion pairs for Japanese L2 speakers.
-        
-        Based on linguistic literature.
-        """
-        return [
-            ("ら", "だ"),  # /r/ vs /d/
-            ("ら", "ぱ"),  # /r/ vs /p/
-            ("ぱ", "ば"),  # /p/ vs /b/
-            ("ぱ", "ふぁ"), # /p/ vs /f/
-            ("さ", "しゃ"), # /s/ vs /ʃ/
-            ("り", "り"),  # Pitch accent variation
-        ]
+        pairs: set[Tuple[str, str]] = set()
+        for phone, neighbors in RESTRICTED_NEIGHBORS.items():
+            for neighbor in neighbors:
+                pair = tuple(sorted((str(phone), str(neighbor))))
+                if pair[0] != pair[1]:
+                    pairs.add(pair)
+        return sorted(pairs)
 
 
 def extract_posteriorgrams_from_whisper(
     audio: np.ndarray,
     sr: int = 16000,
 ) -> Tuple[np.ndarray, List[str]]:
-    """
-    Extract phoneme posteriorgrams from faster-whisper CTC layer.
-    
-    Note: This is a workaround. For production, train a dedicated
-    phoneme recognizer or use wav2vec2 + CTC head.
-    
-    Args:
-        audio: Audio waveform.
-        sr: Sample rate.
-    
-    Returns:
-        (posteriorgrams, phoneme_list) where posteriorgrams has shape
-        (n_frames, n_phonemes).
-    """
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError:
-        raise RuntimeError("faster-whisper not installed")
-    
-    model = WhisperModel("tiny")
-    segments, _ = model.transcribe(audio, language="ja")
-    
-    # TODO: Extract CTC posteriors if available
-    # This is a placeholder - faster-whisper doesn't directly expose CTC outputs
-    
-    warnings.warn(
-        "Direct CTC posterior extraction from faster-whisper not yet implemented. "
-        "Consider using wav2vec2-large-xlsr-japanese with CTC head for phoneme posteriors."
+    """Fail closed: Whisper does not expose a Japanese phoneme CTC head here."""
+    del audio, sr
+    raise NotImplementedError(
+        "faster-whisper is not a phoneme-CTC backend in this project; use the "
+        "pinned Japanese phone-CTC research backends instead"
     )
-    
-    return None, None
-
-
-if __name__ == "__main__":
-    # Example
-    np.random.seed(42)
-    
-    # Simulate posteriorgrams for 5 phonemes, 100 frames
-    n_frames = 100
-    n_phonemes = 5
-    phoneme_list = ["a", "i", "u", "e", "o"]
-    
-    # Create confusion: phoneme 0 and 1 are similar
-    posteriorgrams = np.random.dirichlet(np.ones(n_phonemes), size=n_frames)
-    posteriorgrams[:, 0] = 0.4 + 0.1 * np.random.randn(n_frames)
-    posteriorgrams[:, 1] = 0.35 + 0.1 * np.random.randn(n_frames)
-    posteriorgrams = np.abs(posteriorgrams) / np.sum(posteriorgrams, axis=1, keepdims=True)
-    
-    detector = PhonemeConfusionDetector()
-    confused = detector.detect_confusions(
-        posteriorgrams,
-        phoneme_list,
-        similarity_metric="bc",
-        threshold=0.3,
-    )
-    
-    print("Detected confusions:")
-    for (p1, p2), score in confused:
-        print(f"  {p1} <-> {p2}: BC={score:.4f}")
