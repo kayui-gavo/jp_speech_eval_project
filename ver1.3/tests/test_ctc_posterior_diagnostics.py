@@ -31,7 +31,11 @@ class CtcPosteriorDiagnosticsTest(unittest.TestCase):
         self.assertGreater(result.top1_posterior_mean, 0.99)
         self.assertEqual(result.phone_token_count, 2)
         self.assertGreater(result.full_top1_logit_margin_mean, 7.9)
-        self.assertGreater(result.phone_top1_logit_margin_mean, 7.9)
+        # On the two blank-dominant frames both phone logits are tied at zero;
+        # the other two frames have an 8-logit phone margin, so the phone-only
+        # mean is exactly 4. This is intentionally different from full-vocab
+        # peakiness and is useful diagnostic information rather than an error.
+        self.assertAlmostEqual(result.phone_top1_logit_margin_mean, 4.0)
         self.assertTrue(result.summary["logit_margin_diagnostics_available"])
         self.assertFalse(result.summary["logit_margin_is_pronunciation_error"])
         self.assertFalse(result.summary["universal_threshold_defined"])
