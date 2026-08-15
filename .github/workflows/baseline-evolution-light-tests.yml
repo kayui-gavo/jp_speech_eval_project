@@ -1,0 +1,51 @@
+name: baseline-evolution-light-tests
+
+on:
+  push:
+    branches:
+      - baseline-evolution-v1
+  pull_request:
+    paths:
+      - "ver1.3/src/jp_speech_eval/audio_features.py"
+      - "ver1.3/src/jp_speech_eval/recording_quality.py"
+      - "ver1.3/src/jp_speech_eval/sentence_cache.py"
+      - "ver1.3/scripts/prepare_cache.py"
+      - "ver1.3/tests/test_audio_input_domains.py"
+      - "ver1.3/tests/test_reference_boundary_provenance.py"
+      - ".github/workflows/baseline-evolution-light-tests.yml"
+
+jobs:
+  light-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ver1.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install lightweight runtime
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install \
+            "numpy>=1.24,<2.0" \
+            "scipy>=1.10,<2.0" \
+            "librosa>=0.10.1,<1.0" \
+            "soundfile>=0.12,<1.0" \
+            "matplotlib>=3.7,<4.0" \
+            "pyopenjtalk-plus==0.4.1.post8" \
+            "pyworld-prebuilt>=0.3.5,<0.4" \
+            pytest
+          python -m pip install -e .
+      - name: Run baseline evolution guards
+        run: |
+          python -m pytest -q \
+            tests/test_audio_input_domains.py \
+            tests/test_reference_boundary_provenance.py \
+            tests/test_alignment_evidence.py \
+            tests/test_alignment_v31.py \
+            tests/test_content_match_v2.py \
+            tests/test_user_score_policy.py
