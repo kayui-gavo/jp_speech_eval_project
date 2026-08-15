@@ -2,13 +2,18 @@
 """Run phone-CTC research diagnostics on public UME-JRF learner samples.
 
 The NII-SRC page publishes five test-listening WAVs by native speakers of
-Chinese.  These samples do not expose their four-teacher grades on the public
+Chinese. These samples do not expose their four-teacher grades on the public
 web page, so this script treats them as **unlabeled learner-domain anchors**.
 It must not infer that any negative phone feature is a learner error.
 
 For the published minimal pair ``じぶつ / じんぶつ`` the script additionally
-compares the page target with its partner on the same waveform.  The sign is a
+compares the page target with its partner on the same waveform. The sign is a
 content/contrast diagnostic, not pronunciation ground truth.
+
+CTC posterior peakiness uses the full acoustic phone inventory, including
+special morae N/cl. This is intentionally broader than the ordinary clarity
+competitor set; otherwise the N-bearing minimal pair would under-count phone
+probability mass in the model diagnostic itself.
 """
 
 from __future__ import annotations
@@ -30,7 +35,11 @@ if str(ROOT / "scripts") not in sys.path:
 
 from jp_speech_eval.audio_features import load_audio  # noqa: E402
 from jp_speech_eval.ctc_posterior_diagnostics import compute_ctc_posterior_diagnostics  # noqa: E402
-from jp_speech_eval.japanese_phoneme_gop import sanitize_canonical_phones, segmental_competitor_ids  # noqa: E402
+from jp_speech_eval.japanese_phone_inventory import (  # noqa: E402
+    acoustic_phone_token_ids,
+    inventory_semantics,
+)
+from jp_speech_eval.japanese_phoneme_gop import sanitize_canonical_phones  # noqa: E402
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.restricted_segmentation_free_gop import compute_restricted_fgop_sf_sd_features  # noqa: E402
 from jp_speech_eval.vad import trim_to_speech  # noqa: E402
@@ -88,11 +97,15 @@ def main() -> None:
         target_phones, target = _evaluate_target(
             model, logits, vocab, blank_id, str(sample["target_text"])
         )
-        phone_ids = segmental_competitor_ids(vocab, blank_id=blank_id)
         posterior = compute_ctc_posterior_diagnostics(
             logits,
             blank_id=blank_id,
-            phone_token_ids=phone_ids,
+            phone_token_ids=acoustic_phone_token_ids(vocab, blank_id=blank_id),
+        )
+        posterior_payload = posterior.to_dict()
+        posterior_payload["phone_inventory_semantics"] = inventory_semantics(
+            vocab,
+            blank_id=blank_id,
         )
 
         record: Dict[str, Any] = {
@@ -105,7 +118,7 @@ def main() -> None:
             "speech_region": region.to_dict(),
             "target_phones": target_phones,
             "target_feature": target.to_dict(),
-            "ctc_posterior_diagnostics": posterior.to_dict(),
+            "ctc_posterior_diagnostics": posterior_payload,
             "teacher_grade_available_for_public_sample": False,
             "phone_error_labels_available": False,
             "negative_margin_is_pronunciation_error": False,
@@ -144,7 +157,7 @@ def main() -> None:
 
     pair_rows = [row for row in rows if "minimal_pair_diagnostic" in row]
     payload = {
-        "schema": "ume_jrf_public_phone_preflight_v1",
+        "schema": "ume_jrf_public_phone_preflight_v2",
         "corpus": "UME-JRF",
         "source": "official_NII_SRC_public_test_listening_samples",
         "speaker_domain": "Japanese_L2_speech_native_speakers_of_Chinese",
@@ -155,6 +168,7 @@ def main() -> None:
         "revision": model.revision,
         "sample_count": len(rows),
         "minimal_pair_sample_count": len(pair_rows),
+        "ctc_peakiness_phone_inventory_includes_special_morae": True,
         "score_mapped": False,
         "product_calibrated": False,
         "product_score_changed": False,
@@ -165,6 +179,7 @@ def main() -> None:
             "interpretation": "unlabeled_real_Japanese_L2_domain_sanity_not_pronunciation_validity",
             "public_minimal_pair": "じぶつ / じんぶつ",
             "special_mora_contrast": "N presence/absence",
+            "ctc_peakiness_inventory_role": "all_acoustic_phone_events_including_special_morae",
             "required_for_validity": "full_criterion_labels_or_equivalent_expert_phone_labels",
         },
     }
@@ -182,6 +197,7 @@ def main() -> None:
             "target-minus-partner=",
             diag["page_target_minus_partner_sequence_logposterior"],
         )
+    print("CTC POSTERIOR PHONE INVENTORY: ALL ACOUSTIC PHONE EVENTS INCLUDING N/cl")
     print("PUBLIC UME-JRF SAMPLE GRADES: NOT AVAILABLE / NO ERROR LABEL INFERENCE")
     print("HUMAN RECORDING GATE: UNCHANGED / BLOCKED")
     print("PRODUCT SCORE: UNCHANGED / RESEARCH ONLY")
