@@ -4,6 +4,7 @@ import numpy as np
 import soundfile as sf
 
 from jp_speech_eval.reliability_counterfactual import (
+    _component_consistency,
     reliability_cap_triggers,
     rescore_without_reliability_caps,
     summarize_counterfactual_reports,
@@ -37,16 +38,9 @@ def _result_fixture() -> dict:
             {"start_sec": 0.75, "end_sec": 1.00, "f0_hz": 175.0},
         ],
         "details": {
-            "reliability": {
-                "overall": 0.60,
-                "f0_coverage": 0.40,
-            },
-            "mora_evidence_summary": {
-                "judgement_available_count": 1,
-            },
-            "prosody": {
-                "pitch_target_source": "test",
-            },
+            "reliability": {"overall": 0.60, "f0_coverage": 0.40},
+            "mora_evidence_summary": {"judgement_available_count": 1},
+            "prosody": {"pitch_target_source": "test"},
             "reference_f0_by_mora": [180.0, 220.0, 215.0, 175.0],
             "accent_phrases": [],
             "aggregate": {
@@ -84,7 +78,47 @@ def test_broad_mode_missing_mora_evidence_is_not_miscounted_as_cap_trigger() -> 
     assert triggers["overall_reliability_below_0_75"] is False
 
 
-def test_counterfactual_replays_raw_scorers_without_changing_product(tmp_path) -> None:
+def test_untriggered_component_change_is_historical_scorer_drift() -> None:
+    item = _component_consistency(
+        key="fluency",
+        observed=80,
+        replayed_pre_cap=85,
+        expected_post_cap=85,
+        triggers={},
+        same_run=False,
+    )
+    assert item["consistent"] is False
+    assert item["identifiability"] == "historical_scorer_or_config_drift"
+
+
+def test_cap_equation_match_can_still_be_censored_at_ceiling() -> None:
+    item = _component_consistency(
+        key="prosody",
+        observed=55,
+        replayed_pre_cap=91,
+        expected_post_cap=55,
+        triggers={"f0_coverage_below_0_50": True},
+        same_run=False,
+    )
+    assert item["consistent"] is True
+    assert item["effective_cap"] == 55
+    assert item["identifiability"] == "historical_censored_at_cap"
+
+
+def test_cap_nonbinding_historical_score_is_identifiable() -> None:
+    item = _component_consistency(
+        key="prosody",
+        observed=42,
+        replayed_pre_cap=42,
+        expected_post_cap=42,
+        triggers={"f0_coverage_below_0_50": True},
+        same_run=False,
+    )
+    assert item["consistent"] is True
+    assert item["identifiability"] == "historical_cap_nonbinding_exact"
+
+
+def test_formula_replay_is_product_neutral_and_marks_compatibility(tmp_path) -> None:
     sr = 16000
     wav = tmp_path / "utterance.wav"
     t = np.arange(sr, dtype=float) / sr
@@ -95,79 +129,76 @@ def test_counterfactual_replays_raw_scorers_without_changing_product(tmp_path) -
     assert report["available"] is True
     assert report["product_behavior_changed"] is False
     assert report["observed_legacy_evaluator_scores"]["pronunciation"] == 60
-    assert report["counterfactual_without_reliability_caps"]["pronunciation"] > 60
-    assert report["counterfactual_minus_observed"]["pronunciation"] > 0
-    assert report["counterfactual_without_reliability_caps"]["total"] >= report["observed_legacy_evaluator_scores"]["total"]
-    assert report["counterfactual_exactness"]["tone"] is True
+    assert report["candidate_pre_cap_scores_from_current_scorer"]["pronunciation"] >= 60
+    assert "historical_replay_compatible" in report["replay_consistency"]
+    assert report["counterfactual_trust_level"] in {
+        "historical_scorer_or_config_drift",
+        "historical_cap_compatible_but_pre_cap_censored",
+        "historical_exact_for_uncensored_components",
+    }
 
 
-def test_wav_free_replay_keeps_tone_missing_but_total_exact_when_tone_weight_zero() -> None:
-    report = rescore_without_reliability_caps(_result_fixture(), wav_path=None)
-    assert report["available"] is True
-    assert report["source_wav_available"] is False
-    assert report["counterfactual_without_reliability_caps"]["tone"] is None
-    assert report["counterfactual_exactness"]["tone"] is False
-    assert report["counterfactual_exactness"]["total"] is True
-    assert report["counterfactual_without_reliability_caps"]["total"] is not None
-
-
-def test_wav_free_total_is_unavailable_when_tone_has_positive_weight() -> None:
+def test_wav_free_replay_carries_stored_tone_without_claiming_tone_replay() -> None:
     result = _result_fixture()
     result["details"]["aggregate"]["weights"]["tone"] = 0.10
     report = rescore_without_reliability_caps(result, wav_path=None)
-    assert report["available"] is False
-    assert report["availability_reason"] == "weighted_component_missing"
-    assert report["counterfactual_without_reliability_caps"]["tone"] is None
-    assert report["counterfactual_without_reliability_caps"]["total"] is None
+    assert report["source_wav_available"] is False
+    assert report["tone_replayed"] is False
+    assert report["candidate_pre_cap_scores_from_current_scorer"]["tone"] == 85
+    assert report["replay_consistency"]["tone"]["checked"] is False
+    assert report["replay_consistency"]["tone"]["identifiability"] == "stored_unchanged_no_cap"
+    assert report["candidate_pre_cap_scores_from_current_scorer"]["total"] is not None
 
 
-def test_summary_is_descriptive_and_does_not_choose_a_policy() -> None:
+def test_same_run_consistency_marks_component_replay_exact() -> None:
+    item = _component_consistency(
+        key="pronunciation",
+        observed=60,
+        replayed_pre_cap=95,
+        expected_post_cap=60,
+        triggers={"alignment_equal_fallback": True, "mora_evidence_below_threshold": True},
+        same_run=True,
+    )
+    assert item["consistent"] is True
+    assert item["identifiability"] == "same_run_exact"
+
+
+def test_summary_excludes_drift_and_censoring_from_trusted_delta_stats() -> None:
     reports = [
         {
             "available": True,
-            "counterfactual_minus_observed": {
-                "pronunciation": 20,
-                "prosody": 10,
-                "fluency": 0,
-                "tone": None,
-                "total": 12,
-            },
-            "cap_triggers": {
-                "applicable": True,
-                "alignment_equal_fallback": True,
-                "mora_evidence_below_threshold": True,
-                "f0_coverage_below_0_50": False,
-                "overall_reliability_below_0_75": True,
-            },
+            "candidate_pre_cap_minus_observed": {"pronunciation": 0, "prosody": 0, "fluency": 0, "tone": 0, "total": 0},
+            "counterfactual_trustworthy": True,
+            "counterfactual_trust_level": "historical_exact_for_uncensored_components",
+            "replay_consistency": {"historical_replay_compatible": True},
+            "cap_triggers": {"applicable": True, "alignment_equal_fallback": False, "mora_evidence_below_threshold": False, "f0_coverage_below_0_50": False, "overall_reliability_below_0_75": False},
         },
         {
             "available": True,
-            "counterfactual_minus_observed": {
-                "pronunciation": 0,
-                "prosody": 0,
-                "fluency": 0,
-                "tone": None,
-                "total": 0,
-            },
-            "cap_triggers": {
-                "applicable": True,
-                "alignment_equal_fallback": False,
-                "mora_evidence_below_threshold": False,
-                "f0_coverage_below_0_50": False,
-                "overall_reliability_below_0_75": False,
-            },
+            "candidate_pre_cap_minus_observed": {"pronunciation": 40, "prosody": 0, "fluency": 0, "tone": 0, "total": 14},
+            "counterfactual_trustworthy": False,
+            "counterfactual_trust_level": "historical_cap_compatible_but_pre_cap_censored",
+            "replay_consistency": {"historical_replay_compatible": True},
+            "cap_triggers": {"applicable": True, "alignment_equal_fallback": True, "mora_evidence_below_threshold": True, "f0_coverage_below_0_50": False, "overall_reliability_below_0_75": False},
         },
         {
-            "available": False,
-            "counterfactual_minus_observed": {},
-            "cap_triggers": {"applicable": False},
+            "available": True,
+            "candidate_pre_cap_minus_observed": {"pronunciation": 0, "prosody": -30, "fluency": 0, "tone": 0, "total": -12},
+            "counterfactual_trustworthy": False,
+            "counterfactual_trust_level": "historical_scorer_or_config_drift",
+            "replay_consistency": {"historical_replay_compatible": False},
+            "cap_triggers": {"applicable": True, "alignment_equal_fallback": False, "mora_evidence_below_threshold": False, "f0_coverage_below_0_50": False, "overall_reliability_below_0_75": False},
         },
+        {"available": False, "cap_triggers": {"applicable": False}},
     ]
     summary = summarize_counterfactual_reports(reports)
-    assert summary["report_count"] == 3
-    assert summary["applicable_count"] == 2
-    assert summary["non_applicable_count"] == 1
-    assert summary["positive_total_delta_count"] == 1
-    assert summary["trigger_counts"]["alignment_equal_fallback"] == 1
-    assert summary["delta_stats"]["tone"]["n"] == 0
+    assert summary["report_count"] == 4
+    assert summary["applicable_count"] == 3
+    assert summary["historical_replay_compatible_count"] == 2
+    assert summary["historical_scorer_or_config_drift_count"] == 1
+    assert summary["historical_pre_cap_censored_count"] == 1
+    assert summary["counterfactual_trustworthy_count"] == 1
+    assert summary["raw_candidate_delta_stats"]["total"]["n"] == 3
+    assert summary["trusted_counterfactual_delta_stats"]["total"]["n"] == 1
+    assert summary["trusted_counterfactual_delta_stats"]["total"]["mean"] == 0.0
     assert summary["decision"] == "none"
