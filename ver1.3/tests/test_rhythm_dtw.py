@@ -20,6 +20,7 @@ def test_tempo_irregularity_is_near_zero_for_constant_local_pacing():
     second = tempo_irregularity_from_dtw_path(stretched, reference_frame_count=24)
     assert first["tempo_irregularity_rad"] < 1e-8
     assert second["tempo_irregularity_rad"] < 1e-8
+    assert first["edge_policy"] == "valid_window_centers_only"
     assert first["score_mapped"] is False
 
 
@@ -37,13 +38,12 @@ def test_tempo_irregularity_detects_local_rate_change_not_just_global_duration()
         reference_frame_count=30,
     )
     assert metric["tempo_irregularity_rad"] > 0.05
-    assert metric["angle_count"] == 28
+    # 30 raw centers -> 26 valid five-frame moving-average centers -> 24
+    # central-difference warp angles.
+    assert metric["angle_count"] == 24
 
 
 def test_interval_distortion_metric_accepts_external_interval_labels_only():
-    # First interval maps close to 1:1; second is stretched. The metric measures
-    # dispersion around the utterance mean rather than treating global tempo as
-    # the rhythm error itself.
     path = _path_from_trace([0, 1, 2, 3, 4, 5, 7, 9, 11, 13])
     labels = ["vowel"] * 5 + ["consonant"] * 5
     metric = interval_distortion_from_dtw_path(path, reference_interval_labels=labels)
