@@ -19,6 +19,17 @@ construction. The goal is to test whether a smaller, auditable Japanese
 alternative set produces more local and criterion-relevant phone evidence with
 fewer native false alarms.
 
+A later Stage-0 audit also found that **phone identity is not enough to define
+the evaluation construct**. In particular, a repeated vowel phone can be an
+ordinary vowel or the extension mora of a lexical long vowel. The current
+research path therefore carries explicit target-side construct roles:
+
+- `ordinary_segmental_clarity`
+- `special_mora_timing`
+- `long_vowel_timing`
+
+These labels are target metadata, not learner correctness labels.
+
 ## Candidate policy
 
 Implementation:
@@ -38,12 +49,53 @@ Rules:
    canonical-vs-deletion evidence only; their principal learner feedback still
    requires duration/context evidence and belongs primarily to rhythm/special-
    mora diagnostics rather than ordinary segmental clarity.
-5. If an ordinary phone has no curated neighborhood in a backend vocabulary,
+5. A vowel token used as a **long-vowel extension mora** is also a timing
+   construct. Generic vowel-substitution evidence at that position is not
+   automatically interpreted as ordinary clarity. The construct-relevant local
+   support retained for current native-pressure summaries is target-vs-deletion
+   LPR plus separate mora-duration/timing evidence.
+6. If an ordinary phone has no curated neighborhood in a backend vocabulary,
    an unrestricted segmental fallback is allowed only with explicit provenance.
 
 The exact neighborhood table is not claimed to be an empirical Japanese
 learner confusion matrix. It must be judged later against expert-labeled
 Japanese learner speech.
+
+## Target-side construct-role provenance
+
+Implementation:
+
+- `src/jp_speech_eval/japanese_phone_roles.py`
+- `src/jp_speech_eval/phone_criterion_features.py`
+- `src/jp_speech_eval/hybrid_phone_criterion_features.py`
+
+`infer_phone_construct_roles()` aligns canonical kana morae to the actual
+sanitized phone sequence. It recognizes:
+
+- ordinary vowel or onset+vowel morae;
+- `ン -> N`;
+- `ッ -> cl`;
+- `ー -> long_vowel_timing` on the corresponding vowel token.
+
+The inference is deliberately conservative. Orthographic `ウ/イ` is not
+silently guessed to be a long-vowel extension when the canonical reading does
+not normalize it to `ー`. Reviewed anchors can instead provide explicit roles.
+Any kana/phone structural mismatch fails closed.
+
+Criterion bundles can now receive explicit `construct_roles`. Downstream hybrid
+and construct-role views validate those roles and refuse contradictory
+applicability metadata. In particular:
+
+- special mora and long-vowel timing rows are not clarity-primary;
+- generic substitution features are marked inapplicable to those timing rows;
+- deletion support may be retained as research evidence;
+- normalized `Occ(i)` is never reinterpreted as physical duration;
+- raw frame-local Viterbi support is never reinterpreted as a physical phone
+  boundary.
+
+The bundled Beatrice and dual-CTC preflight scripts now infer construct roles
+before criterion assembly. A role-inference failure blocks the criterion/hybrid
+branch rather than silently reverting a long vowel to ordinary clarity.
 
 ## Restricted segmentation-free extractor
 
@@ -76,7 +128,7 @@ The raw SD denominator changes with the candidate set. Therefore:
 - clip/group means of heterogeneous raw RPS-GOP are not pronunciation-quality
   measurements.
 
-The code now carries machine-readable guards:
+The code carries machine-readable guards:
 
 - `phone_dependent_denominator = true`
 - `candidate_count_affects_raw_denominator = true`
@@ -112,17 +164,31 @@ exploratory. Whisper-to-phone-posterior extraction now raises
 
 `scripts/run_jvs_restricted_gop_preflight.py`
 
-On the three existing official JVS native anchors, record:
+The official JVS anchor no longer trusts either surface-kanji G2P or a second
+kana-to-phone pass for the audited sentence. The manifest stores:
 
-- how often an RPS noncanonical alternative out-scores canonical;
-- which phone/alternative positions cause that behavior;
-- special-mora vs ordinary segmental behavior;
-- candidate-count reduction vs the unrestricted inventory;
-- any fallback positions.
+- reviewed full-sentence reading;
+- explicit reviewed logical-phone sequence;
+- segment-level phone provenance;
+- per-phone construct role.
 
-A negative local LPR on native speech is **not** labeled a pronunciation error.
-A high native rate instead blocks user-facing interpretation and points to the
-candidate policy/backbone/feature formulation as the problem.
+Native pressure is now summarized **by construct**:
+
+- ordinary segmental rows: best restricted noncanonical LPR;
+- special mora rows: deletion LPR only;
+- long-vowel extension rows: deletion LPR only;
+- raw all-construct best-alternative counts remain descriptive diagnostics and
+  are not called ordinary clarity false alarms.
+
+This fixes a semantic inflation problem where repeated-vowel long-mora positions
+could previously enter the ordinary segmental denominator merely because their
+CTC token was `a/e/i/o/u`.
+
+Every construct-relevant negative position is mapped back to the reviewed
+surface segment, reading, phone index and role. A negative local LPR on native
+speech is **not** labeled a pronunciation error. A high native rate instead
+blocks user-facing interpretation and points to the candidate policy/backbone/
+feature formulation as the problem.
 
 ### B. Ephemeral controlled local phone-edit test
 
@@ -173,6 +239,8 @@ For any eventual RPS/UPS criterion comparison, evaluate at minimum:
 - speaker-held-out splits;
 - item/target-phone held-out stress tests where feasible;
 - phone-specific calibration rather than one global threshold;
+- construct-specific modeling for ordinary segments vs special morae vs long
+  vowels;
 - RPS vs UPS criterion performance and computation, not raw score magnitude.
 
 ## Product boundary
@@ -180,7 +248,7 @@ For any eventual RPS/UPS criterion comparison, evaluate at minimum:
 None of this changes:
 
 - C-end `明瞭さ`;
-- the four-dimension consumer score;
+- the consumer dimension scores;
 - overall `/100`;
 - human-recording eligibility.
 
