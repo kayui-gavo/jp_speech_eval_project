@@ -11,16 +11,19 @@ from .verified_targets import lookup_verified_target
 
 @dataclass(frozen=True)
 class JapaneseTargetEvidence:
-    """Free, target-side linguistic evidence with explicit provenance.
+    """Free target-side Japanese linguistic evidence with provenance.
 
-    This object describes how the *target* is expected to be read. It must not
-    be interpreted as acoustic evidence that the learner actually pronounced
-    the target correctly.
+    The object describes the expected target pronunciation. It is not acoustic
+    evidence that the learner actually realized that pronunciation.
 
-    Target phones are always generated from ``reading_kana`` (the resolved
-    pronunciation) rather than re-running G2P independently on surface kanji.
-    This prevents a verified/manual reading from disagreeing with the phone
-    sequence because of a second lexical analysis.
+    Phone-source policy is intentionally conditional:
+
+    * automatic OpenJTalk reading -> keep surface text as the phone frontend so
+      punctuation, phrase context and model-label allophones stay identical to
+      the frozen pyopenjtalk-plus contract;
+    * verified/manual reading -> generate phones from the resolved reading so a
+      lexically ambiguous surface form cannot silently override the reviewed
+      pronunciation.
     """
 
     surface_text: str
@@ -61,13 +64,7 @@ def _installed_version(distribution: str) -> Optional[str]:
 
 
 def detect_pyopenjtalk_distribution() -> tuple[str, Optional[str], bool, List[str]]:
-    """Identify which distribution currently owns the `pyopenjtalk` import.
-
-    `pyopenjtalk-plus` is a drop-in replacement and deliberately keeps the same
-    import name. Having both distributions installed at once is ambiguous,
-    because both can install files into the same import package. The GOP
-    preflight treats that state as blocked rather than guessing which code won.
-    """
+    """Identify which distribution currently owns the ``pyopenjtalk`` import."""
     plus_version = _installed_version("pyopenjtalk-plus")
     base_version = _installed_version("pyopenjtalk")
     warnings: List[str] = []
@@ -98,20 +95,16 @@ def build_japanese_target_evidence(
 ) -> JapaneseTargetEvidence:
     """Build Japanese reading/phone/accent metadata without paid services.
 
-    A manual reading override intentionally suppresses automatic accent
-    interpretation. OpenJTalk may know the original spelling but not the
-    researcher's intended pronunciation of a proper noun, so inventing an
-    accent target from the mismatched lexical analysis would be unsafe.
+    Manual reading overrides deliberately suppress automatic accent
+    interpretation. A reviewed pronunciation can be trusted for phones without
+    pretending that the surface lexical analysis also provides a verified pitch
+    pattern.
 
-    Crucially, once a reading has been resolved (automatic, verified, or manual)
-    the phone sequence is generated from that reading. We do not independently
-    G2P the surface kanji a second time. This keeps ``reading_kana`` / morae /
-    phones internally coherent and lets a verified reading actually control
-    phone-level GOP.
-
-    `use_marine_shadow` is explicit and default-off. It only stores marine's
-    full-context output as a second target-side opinion; it never replaces a
-    verified/manual accent target or creates a user score.
+    For an ordinary automatic target, surface-context phone G2P remains the
+    pinned baseline. This matters because converting the already-resolved kana
+    back through G2P can remove punctuation pauses or change model-specific
+    devoicing labels even when no lexical ambiguity existed. Only a verified or
+    manual reading overrides the surface phone path.
     """
     pyopenjtalk = _load_pyopenjtalk()
     verified = lookup_verified_target(text)
@@ -139,15 +132,20 @@ def build_japanese_target_evidence(
         reading_kana = info.kana
         reading_source = "verified_target" if verified else "pyopenjtalk_g2p"
         moras = list(info.moras)
-        # Phone evidence must follow the already-resolved reading. This matters
-        # especially when a verified target overrides an ambiguous kanji reading.
-        phones = _g2p_phones(pyopenjtalk, reading_kana)
+        if verified:
+            # The reviewed/verified reading is authoritative for phone evidence.
+            phones = _g2p_phones(pyopenjtalk, reading_kana)
+            warnings.append("verified_reading_drives_phone_sequence")
+        else:
+            # Preserve the exact surface-context pyopenjtalk-plus phone contract
+            # for ordinary targets. Reading_kana remains the derived reading
+            # metadata, not a second lossy phone-frontend round trip.
+            phones = _g2p_phones(pyopenjtalk, text)
+            warnings.append("automatic_surface_context_drives_phone_sequence")
         fullcontext_labels = list(pyopenjtalk.extract_fullcontext(text, run_marine=False))
         accent_source = str(info.pitch_target_source)
         accent_phrases = list(info.accent_phrases)
         verified_target_used = bool(verified)
-        if verified:
-            warnings.append("verified_reading_drives_phone_sequence")
 
     marine_available = False
     try:
