@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Run Japanese restricted-substitution GOP features on official JVS anchors.
 
-This is an automatic native false-alarm preflight.  It does *not* infer that a
+This is an automatic native false-alarm preflight. It does *not* infer that a
 negative local margin is a pronunciation error; instead it measures how often
 a restricted phonological alternative out-scores the canonical target on
-known native speech.  High native alternative rates would block any learner-
-facing use of the feature.
+known native speech.
 
-Only Beatrice is used here because this experiment tests the Japanese RPS
-search policy itself.  Cross-backbone criterion work remains separate.
+The target phone sequence is built from the reviewed kana reading stored in the
+JVS manifest. Surface-kanji G2P is explicitly prohibited here because a prior
+audit found ``明王`` could be analyzed as ``あきらおう`` rather than the intended
+``みょうおう``; that target-side bug created a spurious identical error block
+across all three native speakers.
 """
 
 from __future__ import annotations
@@ -51,10 +53,22 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _manifest_reading(rows: list[Dict[str, Any]]) -> str:
+    readings = {str(row.get("target_reading") or "").strip() for row in rows}
+    if "" in readings or len(readings) != 1:
+        raise ValueError("JVS manifest must provide one reviewed target_reading for every anchor")
+    if any(str(row.get("target_text") or "") != TARGET_TEXT for row in rows):
+        raise ValueError("JVS manifest target text drift detected")
+    if any(bool(row.get("automatic_surface_g2p_is_safe_for_anchor", True)) for row in rows):
+        raise ValueError("JVS manifest must explicitly block automatic surface G2P for this anchor")
+    return readings.pop()
+
+
 def main() -> None:
     args = parse_args()
     sample_rows = _load_manifest(Path(args.manifest))
-    target = build_japanese_target_evidence(TARGET_TEXT)
+    target_reading = _manifest_reading(sample_rows)
+    target = build_japanese_target_evidence(TARGET_TEXT, reading_override=target_reading)
     phones, dropped = sanitize_canonical_phones(target.phones)
     model = BeatriceInfer(allow_download=bool(args.allow_download), device=args.device)
 
@@ -131,8 +145,11 @@ def main() -> None:
         if row.get("restricted_candidate_ratio_vs_unrestricted") is not None
     ]
     payload = {
-        "schema": "jvs_restricted_gop_native_preflight_v1",
+        "schema": "jvs_restricted_gop_native_preflight_v2",
         "target_text": TARGET_TEXT,
+        "target_reading": target_reading,
+        "target_reading_source": "reviewed_manifest_override",
+        "automatic_surface_g2p_used": False,
         "target_phones": phones,
         "dropped_nonsegmental_target_tokens": dropped,
         "model_id": model.model_id,
@@ -149,6 +166,7 @@ def main() -> None:
             "native_noncanonical_outscore_rate_mean": statistics.mean(native_rates) if native_rates else None,
             "native_noncanonical_outscore_rate_max": max(native_rates) if native_rates else None,
             "restricted_candidate_ratio_vs_unrestricted_mean": statistics.mean(candidate_ratios) if candidate_ratios else None,
+            "target_reading_reviewed_before_phone_scoring": True,
             "interpretation": "native_false_alarm_pressure_test_not_pronunciation_validity",
             "required_next_step": "compare_on_labeled_or_controlled_learner_errors_before_any_clarity_mapping",
         },
