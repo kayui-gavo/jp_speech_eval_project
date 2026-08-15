@@ -35,7 +35,10 @@ from jp_speech_eval.hybrid_phone_criterion_features import (  # noqa: E402
 )
 from jp_speech_eval.japanese_phoneme_gop import segmental_competitor_ids  # noqa: E402
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
-from jp_speech_eval.phone_criterion_features import build_phone_criterion_feature_bundle  # noqa: E402
+from jp_speech_eval.phone_criterion_features import (  # noqa: E402
+    SCHEMA as CRITERION_SCHEMA,
+    build_phone_criterion_feature_bundle,
+)
 from jp_speech_eval.segmentation_free_gop_norm import (  # noqa: E402
     METHOD as NORM_METHOD,
     compute_segmentation_free_norm_features,
@@ -61,7 +64,7 @@ def parse_args() -> argparse.Namespace:
 def _unavailable_bundle(reason: str, backend: DualCtcPhoneCandidateBackend) -> dict:
     return {
         "available": False,
-        "schema": "phone_criterion_feature_bundle_v1",
+        "schema": CRITERION_SCHEMA,
         "model_id": backend.model_id,
         "revision": backend.revision,
         "canonical_phones": [],
@@ -190,7 +193,7 @@ def main() -> None:
     correct_lp = correct["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     wrong_lp = wrong["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     payload = {
-        "schema": "dual_ctc_candidate_preflight_v6",
+        "schema": "dual_ctc_candidate_preflight_v7",
         "model_id": args.model,
         "revision": args.revision,
         "audio": str(BUNDLED_AUDIO.relative_to(ROOT)),
@@ -204,6 +207,7 @@ def main() -> None:
         "ctc_peakiness_is_pronunciation_score": False,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
+        "criterion_schema": CRITERION_SCHEMA,
         "hybrid_criterion_schema": HYBRID_SCHEMA,
         "correct_target": correct,
         "wrong_target": wrong,
@@ -221,6 +225,7 @@ def main() -> None:
     print(f"wrote {output}")
     print(f"model: {args.model}@{args.revision}")
     print(f"normalized SD method: {NORM_METHOD}")
+    print(f"criterion schema: {CRITERION_SCHEMA}")
     print(f"hybrid criterion schema: {HYBRID_SCHEMA}")
     print(f"correct-minus-wrong sequence log posterior: {payload['sequence_logposterior_gap_correct_minus_wrong']}")
     norm_summary = correct["segmentation_free_norm"].get("summary", {})
