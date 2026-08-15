@@ -259,6 +259,11 @@ def evaluate_transcript_assisted_light(
         transcript=transcript or "",
         transcript_source=transcript_source,
         silent_pause_threshold_sec=0.30,
+        word_timestamps=(
+            asr_info.get("words")
+            if isinstance(asr_info.get("words"), list)
+            else None
+        ),
     )
 
     feedback: List[str] = [
