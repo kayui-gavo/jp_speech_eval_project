@@ -3,10 +3,27 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version
 from importlib.util import find_spec
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from .text_frontend import build_text_info, kata_normalize, split_mora
 from .verified_targets import lookup_verified_target
+
+
+_FORBIDDEN_PHONE_OVERRIDE_TOKENS = frozenset(
+    {
+        "PAD",
+        "UNK",
+        "SOS",
+        "EOS",
+        "<pad>",
+        "<unk>",
+        "<s>",
+        "</s>",
+        "<blank>",
+        "pau",
+        "sil",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -18,12 +35,14 @@ class JapaneseTargetEvidence:
 
     Phone-source policy is intentionally conditional:
 
-    * automatic OpenJTalk reading -> keep surface text as the phone frontend so
-      punctuation, phrase context and model-label allophones stay identical to
-      the frozen pyopenjtalk-plus contract;
-    * verified/manual reading -> generate phones from the resolved reading so a
-      lexically ambiguous surface form cannot silently override the reviewed
-      pronunciation.
+    * ordinary automatic OpenJTalk targets keep surface text as the phone
+      frontend so punctuation/context and model-label allophones match the
+      frozen pyopenjtalk-plus contract;
+    * verified/manual readings may drive G2P when a lexical reading must be
+      corrected;
+    * a reviewed ``phones_override`` is authoritative when even kana text can be
+      morphologically re-analysed by the frontend. This is intended for audited
+      research anchors, not casual product text.
     """
 
     surface_text: str
@@ -87,10 +106,27 @@ def _g2p_phones(pyopenjtalk: Any, text: str) -> List[str]:
     return [str(phone) for phone in output if str(phone)]
 
 
+def _validated_phone_override(phones: Sequence[str]) -> List[str]:
+    values: List[str] = []
+    for raw in phones:
+        phone = str(raw).strip()
+        if not phone:
+            raise ValueError("phones_override contains an empty phone token")
+        if any(character.isspace() for character in phone):
+            raise ValueError(f"phones_override token contains whitespace: {phone!r}")
+        if phone in _FORBIDDEN_PHONE_OVERRIDE_TOKENS:
+            raise ValueError(f"phones_override contains nonsegmental/control token: {phone!r}")
+        values.append(phone)
+    if not values:
+        raise ValueError("phones_override must contain at least one phone")
+    return values
+
+
 def build_japanese_target_evidence(
     text: str,
     *,
     reading_override: Optional[str] = None,
+    phones_override: Optional[Sequence[str]] = None,
     use_marine_shadow: bool = False,
 ) -> JapaneseTargetEvidence:
     """Build Japanese reading/phone/accent metadata without paid services.
@@ -101,10 +137,13 @@ def build_japanese_target_evidence(
     pattern.
 
     For an ordinary automatic target, surface-context phone G2P remains the
-    pinned baseline. This matters because converting the already-resolved kana
-    back through G2P can remove punctuation pauses or change model-specific
-    devoicing labels even when no lexical ambiguity existed. Only a verified or
-    manual reading overrides the surface phone path.
+    pinned baseline. Converting an already-resolved kana string back through the
+    text frontend is *not* assumed to preserve an exact intended phone sequence:
+    the frontend may still perform morphological/contextual analysis. Therefore
+    audited research anchors can provide ``phones_override``. When supplied,
+    that explicit phone sequence is authoritative and G2P-derived phone output
+    is retained only implicitly as frontend metadata, never as the scoring
+    target.
     """
     pyopenjtalk = _load_pyopenjtalk()
     verified = lookup_verified_target(text)
@@ -133,19 +172,20 @@ def build_japanese_target_evidence(
         reading_source = "verified_target" if verified else "pyopenjtalk_g2p"
         moras = list(info.moras)
         if verified:
-            # The reviewed/verified reading is authoritative for phone evidence.
             phones = _g2p_phones(pyopenjtalk, reading_kana)
             warnings.append("verified_reading_drives_phone_sequence")
         else:
-            # Preserve the exact surface-context pyopenjtalk-plus phone contract
-            # for ordinary targets. Reading_kana remains the derived reading
-            # metadata, not a second lossy phone-frontend round trip.
             phones = _g2p_phones(pyopenjtalk, text)
             warnings.append("automatic_surface_context_drives_phone_sequence")
         fullcontext_labels = list(pyopenjtalk.extract_fullcontext(text, run_marine=False))
         accent_source = str(info.pitch_target_source)
         accent_phrases = list(info.accent_phrases)
         verified_target_used = bool(verified)
+
+    if phones_override is not None:
+        phones = _validated_phone_override(phones_override)
+        warnings.append("manual_phone_override_drives_phone_sequence")
+        warnings.append("phone_override_is_authoritative_over_text_frontend_g2p")
 
     marine_available = False
     try:
