@@ -5,9 +5,9 @@
   "sample_count": 40,
   "applicable_fixed_evaluator_count": 37,
   "formula_replay_available_count": 37,
-  "historical_replay_compatible_count": 8,
-  "historical_scorer_or_config_drift_count": 29,
-  "historical_pre_cap_censored_count": 6,
+  "historical_replay_compatible_count": 6,
+  "historical_scorer_or_config_drift_count": 31,
+  "historical_pre_cap_censored_count": 4,
   "counterfactual_trustworthy_count": 2,
   "source_wav_available_count": 0,
   "trigger_counts": {
@@ -33,9 +33,9 @@
   "decision": "none",
   "interpretation": [
     "Historical current-scorer replay is not a valid cap counterfactual when the historical post-cap score cannot be reproduced.",
-    "Twenty-nine of 37 applicable historical fixed-evaluator records show scorer/config drift under current replay.",
-    "Six compatible historical records are saturated at a cap ceiling, so their original pre-cap magnitude is censored by the old telemetry.",
+    "Thirty-one of 37 applicable historical fixed-evaluator records show scorer/config drift under current strict replay.",
+    "Four compatible historical records are saturated at a cap ceiling, so their original pre-cap magnitude is censored by the old telemetry.",
     "Only two historical records are both compatible and uncensored enough for a trustworthy historical counterfactual; both show zero cap effect.",
-    "This historical acceptance does not support removing reliability caps. Fresh same-run or evaluator-native pre/post-cap telemetry is required."
+    "This historical acceptance does not support removing reliability caps. Fresh evaluator-native pre/post-cap telemetry is required."
   ]
 }
