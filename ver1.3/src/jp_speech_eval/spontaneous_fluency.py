@@ -7,11 +7,15 @@ product score.
 
 Japanese adaptation notes
 -------------------------
-The classical literature usually reports syllables/second.  This project uses
-mora count because its Japanese frontend is mora based.  The resulting rates
+The classical literature usually reports syllables/second. This project uses
+mora count because its Japanese frontend is mora based. The resulting rates
 must therefore be treated as Japanese product/research features, not as
 numerically interchangeable with syllable-rate thresholds from English L2
 studies.
+
+When faster-whisper word timestamps are available, long silent pauses can be
+anchored between ASR words. ASR punctuation then provides a *weak* boundary
+candidate only. It is not promoted to a syntactic clause-boundary label.
 """
 
 from __future__ import annotations
@@ -19,14 +23,11 @@ from __future__ import annotations
 import re
 import unicodedata
 from statistics import mean, median
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Sequence
 
 
 SCHEMA_VERSION = "spontaneous_fluency_evidence_v1"
 
-# Conservative, fairly lexicalized Japanese filler forms.  We deliberately do
-# not count あの/その/まあ/なんか as certain fillers because they also have
-# ordinary lexical/discourse uses.  Those forms are reported separately.
 _HIGH_PRECISION_FILLER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("eeto", re.compile(r"え(?:ー|え)*と")),
     ("etto", re.compile(r"えっ+と")),
@@ -35,6 +36,7 @@ _HIGH_PRECISION_FILLER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 _AMBIGUOUS_DISCOURSE_MARKERS = ("あの", "その", "まあ", "なんか")
 _AMBIGUOUS_REPAIR_MARKERS = ("いや", "というか", "じゃなくて", "じゃなく", "違う")
+_ASR_BOUNDARY_PUNCTUATION = ("、", "。", "！", "？", "!", "?")
 
 
 def _finite_nonnegative(value: Any, default: float = 0.0) -> float:
@@ -65,8 +67,6 @@ def _frontend_tokens(text: str) -> List[str]:
                 out.append(token)
         return out
     except Exception:
-        # The repair channel is shadow-only; text-frontend failure should not
-        # make the utterance unavailable or lower a learner score.
         return []
 
 
@@ -93,14 +93,97 @@ def speed_fluency_features(
     }
 
 
+def _valid_word_timings(words: Sequence[Mapping[str, Any]] | None) -> List[Dict[str, Any]]:
+    valid: List[Dict[str, Any]] = []
+    for raw in words or []:
+        if not isinstance(raw, Mapping):
+            continue
+        start = _finite_nonnegative(raw.get("start_sec"), -1.0)
+        end = _finite_nonnegative(raw.get("end_sec"), -1.0)
+        text = str(raw.get("text") or "").strip()
+        if start < 0 or end <= start or not text:
+            continue
+        valid.append(
+            {
+                "start_sec": start,
+                "end_sec": end,
+                "text": text,
+                "probability": raw.get("probability"),
+            }
+        )
+    return sorted(valid, key=lambda item: (item["start_sec"], item["end_sec"]))
+
+
+def _pause_location_candidates(
+    pause_segments: Sequence[tuple[float, float]],
+    words: Sequence[Mapping[str, Any]] | None,
+) -> Dict[str, Any]:
+    """Anchor pauses between ASR words without claiming syntactic truth."""
+    timings = _valid_word_timings(words)
+    if not timings:
+        return {
+            "pause_location_available": False,
+            "pause_location_source": None,
+            "pause_location_confidence": "unavailable",
+            "pause_location_reason": "no_word_timestamps",
+            "pause_location_candidates": [],
+            "pause_location_counts": {},
+        }
+
+    candidates: List[Dict[str, Any]] = []
+    counts: Dict[str, int] = {}
+    for pause_index, (start, end) in enumerate(pause_segments):
+        previous = None
+        next_word = None
+        for word in timings:
+            if word["end_sec"] <= start + 0.12:
+                previous = word
+            if next_word is None and word["start_sec"] >= end - 0.12:
+                next_word = word
+        if previous is None and next_word is not None:
+            label = "leading_pause_candidate"
+        elif previous is not None and next_word is None:
+            label = "trailing_pause_candidate"
+        elif previous is not None and next_word is not None:
+            previous_text = str(previous["text"]).strip()
+            if previous_text.endswith(_ASR_BOUNDARY_PUNCTUATION):
+                label = "after_asr_punctuation_candidate"
+            else:
+                label = "within_asr_phrase_candidate"
+        else:
+            label = "unanchored_pause_candidate"
+        counts[label] = counts.get(label, 0) + 1
+        candidates.append(
+            {
+                "pause_index": pause_index,
+                "start_sec": round(float(start), 6),
+                "end_sec": round(float(end), 6),
+                "duration_sec": round(float(end - start), 6),
+                "candidate": label,
+                "previous_word": None if previous is None else previous["text"],
+                "next_word": None if next_word is None else next_word["text"],
+                "evidence": "asr_word_timing_plus_asr_punctuation",
+            }
+        )
+    return {
+        "pause_location_available": bool(candidates),
+        "pause_location_source": "faster_whisper_word_timestamps_plus_asr_punctuation",
+        "pause_location_confidence": "low",
+        "pause_location_reason": "weak_asr_boundary_candidates_not_syntactic_clause_labels",
+        "pause_location_candidates": candidates,
+        "pause_location_counts": dict(sorted(counts.items())),
+    }
+
+
 def breakdown_fluency_features(
     pause_info: Mapping[str, Any],
     *,
     speech_duration_sec: float,
     mora_count: int,
     silent_pause_threshold_sec: float = 0.30,
+    word_timestamps: Sequence[Mapping[str, Any]] | None = None,
 ) -> Dict[str, Any]:
-    """Describe long silent-pause breakdown without inventing clause location."""
+    """Describe long silent-pause breakdown and optional weak location evidence."""
     duration = max(_finite_nonnegative(speech_duration_sec), 1e-6)
     raw_segments = pause_info.get("pause_segments") if isinstance(pause_info, Mapping) else []
     segments: List[tuple[float, float]] = []
@@ -116,6 +199,7 @@ def breakdown_fluency_features(
     count = len(durations)
     mora_n = max(0, int(mora_count))
     phonation_time = max(duration - pause_total, 0.0)
+    location = _pause_location_candidates(segments, word_timestamps)
     return {
         "silent_pause_threshold_sec": float(silent_pause_threshold_sec),
         "silent_pause_count": count,
@@ -127,9 +211,11 @@ def breakdown_fluency_features(
         "silent_pauses_per_min": round(count * 60.0 / duration, 6),
         "silent_pauses_per_100_mora": None if mora_n <= 0 else round(count * 100.0 / mora_n, 6),
         "mean_run_sec_between_long_silent_pauses": round(phonation_time / max(count + 1, 1), 6),
-        "pause_location_available": False,
-        "pause_location_reason": "no_time_aligned_clause_or_phrase_boundaries",
-        "pause_location_note": "temporal pause position is not equivalent to mid-clause vs clause-final location",
+        **location,
+        "pause_location_note": (
+            "ASR word timing can anchor a pause temporally, but ASR punctuation is only a weak "
+            "phrase/boundary candidate and is not equivalent to a syntactic clause label"
+        ),
     }
 
 
@@ -147,8 +233,6 @@ def _adjacent_repetition_candidates(tokens: Sequence[str]) -> List[Dict[str, Any
             key = (start, width)
             if key in used:
                 continue
-            # Single Japanese punctuation-like or one-character functional
-            # repetitions are too ambiguous to call repair evidence.
             surface = "".join(left)
             if width == 1 and len(surface) <= 1:
                 continue
@@ -169,7 +253,7 @@ def transcript_repair_features(
 ) -> Dict[str, Any]:
     """Extract conservative transcript-side filler/repair candidates.
 
-    Whisper-style ASR can omit or normalize disfluencies.  Therefore these
+    Whisper-style ASR can omit or normalize disfluencies. Therefore these
     features are descriptive evidence with explicit missingness/provenance, not
     learner-error counts and not a score.
     """
@@ -219,6 +303,7 @@ def build_spontaneous_fluency_evidence(
     transcript: str = "",
     transcript_source: str = "unknown",
     silent_pause_threshold_sec: float = 0.30,
+    word_timestamps: Sequence[Mapping[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     """Build the frozen v1 spontaneous-fluency evidence payload."""
     breakdown = breakdown_fluency_features(
@@ -226,6 +311,7 @@ def build_spontaneous_fluency_evidence(
         speech_duration_sec=speech_duration_sec,
         mora_count=mora_count,
         silent_pause_threshold_sec=silent_pause_threshold_sec,
+        word_timestamps=word_timestamps,
     )
     speed = speed_fluency_features(
         mora_count=mora_count,
