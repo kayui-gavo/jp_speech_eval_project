@@ -179,6 +179,26 @@ def _clarity_proxy(
             "mfcc_reference_similarity",
         )
 
+    # Older/evidence-light evaluators can still report a passed content gate
+    # without the numeric ASR similarity. A passed target check is meaningful
+    # broad intelligibility evidence, but it is not phone-level correctness.
+    if content_status == "pass":
+        return (
+            85.0,
+            "details.content_match.status",
+            "passed_target_content_gate_broad_machine_intelligibility_support",
+            "low",
+            "content_gate_pass_fallback",
+        )
+    if content_status in {"uncertain", "marginal", "partial"}:
+        return (
+            76.0,
+            "details.content_match.status",
+            "partial_target_content_gate_broad_machine_intelligibility_support",
+            "low",
+            "content_gate_partial_fallback",
+        )
+
     return 70.0, "product_prior", "broad_clarity_prior_without_independent_measurement", "low", "prior_fallback"
 
 
@@ -243,6 +263,31 @@ def _f0_pair_fallback(result: Mapping[str, Any], details: Mapping[str, Any]) -> 
     return None, "", "low"
 
 
+def _legacy_phrase_intonation_fallback(prosody: Mapping[str, Any]) -> tuple[Optional[float], str]:
+    """Recover phrase-level evidence from older result schemas.
+
+    Do not use a legacy composite ``prosody_score`` here because it may include
+    lexical pitch-accent terms. We only accept fields whose semantics are phrase
+    or sentence intonation.
+    """
+    final_score = _number(prosody.get("final_intonation_score"))
+    contour_corr = _number(prosody.get("contour_corr"))
+    transition = _number(prosody.get("transition_agreement"))
+
+    parts: list[tuple[Optional[float], float]] = []
+    if contour_corr is not None:
+        corr_score = 50.0 * (max(-1.0, min(1.0, contour_corr)) + 1.0)
+        parts.append((corr_score, 0.72))
+    if transition is not None:
+        transition_score = 100.0 * _clip01(transition)
+        parts.append((transition_score, 0.28))
+    if parts:
+        return _blend(parts), "legacy_phrase_contour_fields_fallback"
+    if final_score is not None:
+        return final_score, "legacy_final_intonation_score_fallback"
+    return None, ""
+
+
 def _intonation_proxy(
     result: Mapping[str, Any],
     details: Mapping[str, Any],
@@ -282,6 +327,22 @@ def _intonation_proxy(
         )
 
     if allow_reference_relative:
+        # Older result schemas can omit valid-mora count even though they retain
+        # phrase contour/final-intonation diagnostics. Prefer those semantics to
+        # the legacy composite prosody score, which may contain pitch accent.
+        legacy_phrase, legacy_source = _legacy_phrase_intonation_fallback(prosody)
+        if legacy_phrase is not None and note not in {"no_valid_f0"}:
+            confidence = "low" if weak_reference else "medium"
+            if weak_reference:
+                legacy_phrase = 72.0 + 0.55 * (legacy_phrase - 72.0)
+            return (
+                legacy_phrase,
+                f"details.prosody.{legacy_source}",
+                "reference_relative_phrase_intonation_fallback_without_lexical_pitch_accent",
+                confidence,
+                "phrase_intonation_semantic_fallback",
+            )
+
         fallback, fallback_source, fallback_conf = _f0_pair_fallback(result, details)
         if fallback is not None:
             if weak_reference:
