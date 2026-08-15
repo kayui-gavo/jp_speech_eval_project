@@ -1,0 +1,51 @@
+{
+  "schema": "reliability_cap_acceptance_protocol_v1",
+  "purpose": "Decide whether legacy reliability-driven score caps should remain, change, or move to confidence/detail-only behavior.",
+  "scoring_policy": {
+    "tune_on_acceptance": false,
+    "current_runtime_caps_unchanged_during_collection": true,
+    "native_cap_telemetry_required_for_fixed_reference": true,
+    "product_score_weights_frozen": true,
+    "display_transform_frozen": true
+  },
+  "required_sample_groups": [
+    "native_japanese",
+    "learner_japanese",
+    "same_duration_wrong_japanese",
+    "silence_or_noise",
+    "low_level",
+    "clipping_or_saturation",
+    "channel_variant"
+  ],
+  "recommended_when_available": [
+    "human_english_negative_control",
+    "human_mandarin_negative_control"
+  ],
+  "required_fixed_result_fields": [
+    "details.reliability_cap_audit.schema_version",
+    "details.reliability_cap_audit.pre_cap_scores",
+    "details.reliability_cap_audit.post_component_cap_scores",
+    "details.reliability_cap_audit.cap_triggers",
+    "details.reliability_cap_audit.pre_component_cap_total",
+    "details.reliability_cap_audit.post_component_cap_total",
+    "details.reliability_cap_audit.post_overall_cap_total"
+  ],
+  "primary_checks": [
+    "score_availability_by_sample_group",
+    "native_and_learner_score_distribution_with_caps",
+    "native_and_learner_exact_pre_cap_counterfactual_distribution",
+    "cap_trigger_rate_by_sample_group",
+    "wrong_content_and_non_japanese_rejection_behavior",
+    "recording_degradation_sensitivity",
+    "ceiling_and_floor_occupancy",
+    "human_criterion_association_when_ratings_exist"
+  ],
+  "decision_rule": "No automatic winner. Cap removal or replacement requires better C-end behavior plus human-criterion support; native/noise separation alone is insufficient.",
+  "prohibited_interpretations": [
+    "Do not treat low reliability as low pronunciation ability.",
+    "Do not treat a native false-alarm result as learner error-detection validation.",
+    "Do not tune thresholds on the held acceptance and then report that same acceptance as validation.",
+    "Do not infer historical pre-cap values from cap-saturated post-cap scores.",
+    "Do not map shadow evidence to /100 from this acceptance alone."
+  ]
+}

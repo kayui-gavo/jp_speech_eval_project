@@ -5,6 +5,7 @@ on:
     branches:
       - baseline-evolution-v1
       - score-contract-evolution-v2
+      - fluency-reliability-evolution-v3
   pull_request:
     paths:
       - "ver1.3/src/jp_speech_eval/audio_features.py"
@@ -16,6 +17,12 @@ on:
       - "ver1.3/src/jp_speech_eval/user_facing_policy.py"
       - "ver1.3/src/jp_speech_eval/feedback_renderer.py"
       - "ver1.3/src/jp_speech_eval/conversation_mode_policy.py"
+      - "ver1.3/src/jp_speech_eval/asr_confirmation.py"
+      - "ver1.3/src/jp_speech_eval/transcript_assisted.py"
+      - "ver1.3/src/jp_speech_eval/spontaneous_fluency.py"
+      - "ver1.3/src/jp_speech_eval/reliability_counterfactual.py"
+      - "ver1.3/src/jp_speech_eval/native_cap_telemetry.py"
+      - "ver1.3/src/jp_speech_eval/evaluator.py"
       - "ver1.3/src/jp_speech_eval/ssl_features.py"
       - "ver1.3/src/jp_speech_eval/ssl_reference_panel.py"
       - "ver1.3/src/jp_speech_eval/rhythm_dtw.py"
@@ -27,6 +34,7 @@ on:
       - "ver1.3/scripts/build_research_splits.py"
       - "ver1.3/scripts/validate_consumer_ratings.py"
       - "ver1.3/scripts/analyze_research_evidence.py"
+      - "ver1.3/scripts/run_reliability_cap_ab.py"
       - "ver1.3/data/research_eval/**"
       - "ver1.3/data/human_eval/consumer_rating_schema_v2.json"
       - "ver1.3/tests/test_audio_input_domains.py"
@@ -35,6 +43,10 @@ on:
       - "ver1.3/tests/test_ctc_posterior_diagnostics.py"
       - "ver1.3/tests/test_score_contract.py"
       - "ver1.3/tests/test_conversation_mode_policy.py"
+      - "ver1.3/tests/test_transcript_assisted_language_gate.py"
+      - "ver1.3/tests/test_spontaneous_fluency.py"
+      - "ver1.3/tests/test_reliability_counterfactual.py"
+      - "ver1.3/tests/test_native_cap_telemetry.py"
       - "ver1.3/tests/test_rhythm_dtw.py"
       - "ver1.3/tests/test_ssl_reference_panel.py"
       - "ver1.3/tests/test_research_manifest.py"
@@ -83,6 +95,10 @@ jobs:
             tests/test_user_score_policy.py \
             tests/test_score_contract.py \
             tests/test_conversation_mode_policy.py \
+            tests/test_transcript_assisted_language_gate.py \
+            tests/test_spontaneous_fluency.py \
+            tests/test_reliability_counterfactual.py \
+            tests/test_native_cap_telemetry.py \
             tests/test_rhythm_dtw.py \
             tests/test_ssl_reference_panel.py \
             tests/test_research_manifest.py \
@@ -90,3 +106,11 @@ jobs:
             tests/test_research_evidence_analysis.py \
             tests/test_consumer_ratings.py \
             tests/test_app_core_mvp.py
+      - name: Audit reliability caps on existing acceptance JSONL
+        run: |
+          python scripts/run_reliability_cap_ab.py \
+            outputs/c_end_v2_acceptance/new_results.jsonl \
+            --input-format acceptance-jsonl \
+            --out-csv /tmp/reliability_cap_ab.csv \
+            --out-json /tmp/reliability_cap_ab.json
+          cat /tmp/reliability_cap_ab.json

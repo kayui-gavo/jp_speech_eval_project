@@ -2,21 +2,24 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .asr import transcribe_japanese
+from .asr import transcribe_language_aware
+from .asr_confirmation import free_speech_language_eligibility
 from .audio_features import basic_energy_stats, detect_pauses, extract_f0, load_audio
 from .config import load_scoring_config
 from .recording_quality import assess_recording_quality
 from .scoring import clamp_score
+from .spontaneous_fluency import build_spontaneous_fluency_evidence
 from .structure_features import (
     f0_structure_features,
     light_pronunciation_risk_features,
     mora_structure_features,
 )
 from .text_frontend import build_text_info
+from .transcript_sanity import check_asr_transcript_sanity
 from .vad import trim_to_speech
 
 
@@ -36,6 +39,85 @@ def _score_from_range(value: float, good_min: float, good_max: float, bad_min: f
     return 45.0
 
 
+def _language_reject_result(
+    *,
+    transcript: str,
+    asr_info: Dict[str, Any],
+    language_reason: str,
+    transcript_sanity: Dict[str, Any],
+    speech_duration: float,
+    endpointing: Dict[str, Any],
+    recording_quality: Dict[str, Any],
+    timing: Dict[str, float],
+) -> Dict[str, Any]:
+    """Return an explicit no-score raw result for non-Japanese/unsafe ASR input.
+
+    Raw score fields are ``None`` rather than zero: language eligibility is a
+    routing decision, not evidence of poor Japanese ability.  The product score
+    policy independently sees ``transcript_sanity.ok = false`` and therefore
+    also returns a no-score/retry response.
+    """
+    quality_factor = float(recording_quality.get("reliability_factor", 1.0) or 1.0)
+    reliability_overall = min(0.25, max(0.0, quality_factor * 0.25))
+    timing["total"] = timing.get("total", 0.0)
+    return {
+        "target_text": transcript or "",
+        "kana": "",
+        "moras": [],
+        "target_pitch": [],
+        "duration_sec": round(float(speech_duration), 4),
+        "f0_method": "not_run_language_reject",
+        "alignment_mode": "none",
+        "pronunciation_score": None,
+        "prosody_score": None,
+        "fluency_score": None,
+        "tone_score": None,
+        "total_score": None,
+        "feedback": ["今回は日本語として安定して確認できませんでした。日本語でもう一度話してください。"],
+        "pause_info": {},
+        "endpointing": endpointing,
+        "details": {
+            "mode": "transcript_assisted_light",
+            "interpretation": "language_eligibility_reject_no_score",
+            "score_eligible": False,
+            "asr": asr_info,
+            "language_gate": {
+                "eligible": False,
+                "reason": language_reason,
+                "policy": "unforced_asr_then_japanese_eligibility_v1",
+            },
+            "transcript_sanity": transcript_sanity,
+            "endpointing": endpointing,
+            "recording_quality": recording_quality,
+            "reliability": {
+                "overall": round(reliability_overall, 4),
+                "level": "low",
+                "endpointing": 1.0 if endpointing.get("detected") else 0.0,
+                "alignment": 0.0,
+                "f0_coverage": 0.0,
+                "recording_quality": round(float(recording_quality.get("score", 1.0) or 1.0), 4),
+                "valid_mora_count": 0,
+                "mora_count": 0,
+                "score_is_diagnostic": False,
+                "warnings": [f"free_speech_language_reject:{language_reason}"],
+            },
+        },
+        "mora_table": [],
+        "prosody_metrics": {
+            "contour_corr": None,
+            "contour_rmse": None,
+            "transition_agreement": None,
+            "final_intonation_match": None,
+            "hl_match_rate": None,
+            "pitch_target_source": "unavailable_language_reject",
+            "hl_target_source": "unavailable_language_reject",
+            "pitch_target_consistency": "not_checked",
+        },
+        "timing": {k: round(float(v), 6) for k, v in timing.items()},
+        "cache_prefix": None,
+    }
+
+
 def evaluate_transcript_assisted_light(
     wav_path: str | Path,
     transcript: Optional[str] = None,
@@ -46,9 +128,14 @@ def evaluate_transcript_assisted_light(
 ) -> Dict:
     """Light free-speaking diagnosis using a transcript, but no TTS reference/DTW.
 
-    This mode is intentionally conservative. The transcript can be provided by
-    ASR or externally. It is used only to estimate kana/mora count and rough
-    speaking-rate context.
+    If no transcript is supplied, ASR is deliberately *language-aware* and
+    unforced.  A confident non-Japanese result is rejected before mora/F0
+    scoring.  This prevents English/Chinese/etc. speech from being coerced into
+    plausible-looking Japanese by a forced ``language='ja'`` decoder.
+
+    An externally supplied transcript is still checked for Japanese-script
+    sanity before it can drive mora-rate scoring.  ``spontaneous_fluency_v2``
+    remains shadow evidence only and does not change the current C-end mapping.
     """
     t0 = time.perf_counter()
     timing: Dict[str, float] = {}
@@ -61,20 +148,64 @@ def evaluate_transcript_assisted_light(
     }
     speech_duration = float(region.speech_duration if region.detected else len(y_speech) / audio.sr)
 
-    asr_info = {"available": False, "text": transcript or "", "provider": "external", "model": "", "note": "external_transcript"}
-    if not transcript:
+    external_transcript = bool(transcript and transcript.strip())
+    asr_info: Dict[str, Any] = {
+        "available": external_transcript,
+        "text": transcript or "",
+        "provider": "external",
+        "model": "",
+        "language": "",
+        "language_probability": None,
+        "note": "external_transcript",
+    }
+    language_eligible = True
+    language_reason = "external_transcript_japanese_script_gate"
+    if not external_transcript:
         ts = time.perf_counter()
         config = load_scoring_config(scoring_config_path)
         content_cfg = config.get("content_match", {})
-        asr = transcribe_japanese(
+        asr = transcribe_language_aware(
             y_speech,
             audio.sr,
             model_name=str(content_cfg.get("asr_model", asr_model)),
             provider=str(content_cfg.get("asr_provider", asr_provider)),
         )
         timing["asr"] = time.perf_counter() - ts
-        transcript = asr.text if asr.available else ""
         asr_info = asr.to_dict()
+        language_eligible, language_reason = free_speech_language_eligibility(asr)
+        transcript = asr.text if asr.available else ""
+
+    sanity = check_asr_transcript_sanity(transcript or "")
+    sanity_payload = sanity.to_dict()
+    if external_transcript:
+        language_eligible = bool(sanity.ok)
+        if not language_eligible:
+            language_reason = "external_transcript_not_safely_japanese"
+    safe_to_score = bool(language_eligible and sanity.ok)
+    if not safe_to_score:
+        # Ensure the existing product no-score gate sees the language decision,
+        # even when a non-Japanese ASR happened to hallucinate Japanese-looking
+        # text that passed the lightweight script sanity check.
+        original_reason = sanity_payload.get("reason")
+        sanity_payload["ok"] = False
+        sanity_payload["reason"] = (
+            f"language_gate:{language_reason}"
+            if not language_eligible
+            else str(original_reason or "transcript_sanity_failed")
+        )
+        sanity_payload["language_gate_reason"] = language_reason
+        sanity_payload["original_sanity_reason"] = original_reason
+        timing["total"] = time.perf_counter() - t0
+        return _language_reject_result(
+            transcript=transcript or "",
+            asr_info=asr_info,
+            language_reason=language_reason,
+            transcript_sanity=sanity_payload,
+            speech_duration=speech_duration,
+            endpointing=endpointing,
+            recording_quality=quality,
+            timing=timing,
+        )
 
     text_info = None
     moras: List[str] = []
@@ -118,6 +249,22 @@ def evaluate_transcript_assisted_light(
         **risk_struct,
         "interpretation": "speaker_normalized_structural_proxy",
     }
+    transcript_source = str(asr_info.get("provider") or "unknown")
+    if asr_info.get("model"):
+        transcript_source = f"{transcript_source}:{asr_info.get('model')}"
+    spontaneous_fluency_v2 = build_spontaneous_fluency_evidence(
+        mora_count=mora_count,
+        speech_duration_sec=speech_duration,
+        pause_info=pause_info,
+        transcript=transcript or "",
+        transcript_source=transcript_source,
+        silent_pause_threshold_sec=0.30,
+        word_timestamps=(
+            asr_info.get("words")
+            if isinstance(asr_info.get("words"), list)
+            else None
+        ),
+    )
 
     feedback: List[str] = [
         "当前为 Transcript-assisted light 模式： transcript 只用于估计 mora 数，不生成 TTS reference、不做 DTW，因此不输出具体假名纠错。"
@@ -211,7 +358,14 @@ def evaluate_transcript_assisted_light(
         "details": {
             "mode": "transcript_assisted_light",
             "interpretation": "transcript_assisted_acoustic_proxy_not_kana_correctness",
+            "score_eligible": True,
             "asr": asr_info,
+            "language_gate": {
+                "eligible": True,
+                "reason": language_reason,
+                "policy": "unforced_asr_then_japanese_eligibility_v1",
+            },
+            "transcript_sanity": sanity_payload,
             "endpointing": endpointing,
             "acoustic_features": {
                 "speech_duration_sec": speech_duration,
@@ -230,8 +384,10 @@ def evaluate_transcript_assisted_light(
                 "speech_duration_sec": speech_duration,
                 "speech_rate_mora_per_sec": mora_rate,
                 "avg_mora_duration_sec": None if mora_rate is None else speech_duration / max(mora_count, 1),
-                "note": "transcript_assisted_proxy_no_dtw",
+                "spontaneous_v2_shadow": spontaneous_fluency_v2,
+                "note": "transcript_assisted_proxy_no_dtw; spontaneous_v2_is_shadow_only",
             },
+            "spontaneous_fluency_v2": spontaneous_fluency_v2,
             "recording_quality": {
                 **quality,
                 "energy_mean": energy["mean"],

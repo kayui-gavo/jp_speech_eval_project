@@ -1,0 +1,41 @@
+{
+  "schema": "historical_reliability_cap_audit_v3",
+  "input": "outputs/c_end_v2_acceptance/new_results.jsonl",
+  "input_environment": "outputs/c_end_v2_acceptance/environment.json",
+  "sample_count": 40,
+  "applicable_fixed_evaluator_count": 37,
+  "formula_replay_available_count": 37,
+  "historical_replay_compatible_count": 6,
+  "historical_scorer_or_config_drift_count": 31,
+  "historical_pre_cap_censored_count": 4,
+  "counterfactual_trustworthy_count": 2,
+  "source_wav_available_count": 0,
+  "trigger_counts": {
+    "alignment_equal_fallback": 7,
+    "mora_evidence_below_threshold": 3,
+    "f0_coverage_below_0_50": 2,
+    "overall_reliability_below_0_75": 2
+  },
+  "raw_current_scorer_candidate_delta_stats": {
+    "pronunciation": {"n": 37, "mean": 6.837838, "median": 0.0, "min": 0, "max": 40, "positive_count": 10},
+    "prosody": {"n": 37, "mean": -4.162162, "median": -1.0, "min": -78, "max": 52, "positive_count": 12},
+    "fluency": {"n": 37, "mean": 0.0, "median": 0.0, "min": 0, "max": 0, "positive_count": 0},
+    "tone": {"n": 37, "mean": 0.0, "median": 0.0, "min": 0, "max": 0, "positive_count": 0},
+    "total": {"n": 37, "mean": 0.594595, "median": 0.0, "min": -31, "max": 20, "positive_count": 18}
+  },
+  "trusted_historical_counterfactual_delta_stats": {
+    "pronunciation": {"n": 2, "mean": 0.0, "median": 0.0, "min": 0, "max": 0, "positive_count": 0},
+    "prosody": {"n": 2, "mean": 0.0, "median": 0.0, "min": 0, "max": 0, "positive_count": 0},
+    "fluency": {"n": 2, "mean": 0.0, "median": 0.0, "min": 0, "max": 0, "positive_count": 0},
+    "tone": {"n": 2, "mean": 0.0, "median": 0.0, "min": 0, "max": 0, "positive_count": 0},
+    "total": {"n": 2, "mean": 0.0, "median": 0.0, "min": 0, "max": 0, "positive_count": 0}
+  },
+  "decision": "none",
+  "interpretation": [
+    "Historical current-scorer replay is not a valid cap counterfactual when the historical post-cap score cannot be reproduced.",
+    "Thirty-one of 37 applicable historical fixed-evaluator records show scorer/config drift under current strict replay.",
+    "Four compatible historical records are saturated at a cap ceiling, so their original pre-cap magnitude is censored by the old telemetry.",
+    "Only two historical records are both compatible and uncensored enough for a trustworthy historical counterfactual; both show zero cap effect.",
+    "This historical acceptance does not support removing reliability caps. Fresh evaluator-native pre/post-cap telemetry is required."
+  ]
+}

@@ -53,13 +53,17 @@ def _japanese_script_ratio(text: str) -> float:
     return len(_JA_CHAR_RE.findall(normalized)) / len(content)
 
 
-def _language_eligibility(transcript: AsrTranscript) -> tuple[bool, str]:
-    """Conservative free-speech language gate.
+def free_speech_language_eligibility(transcript: AsrTranscript) -> tuple[bool, str]:
+    """Conservative reusable language gate for *unforced* free-speech ASR.
 
-    The confirmation flow must never turn clear English/Chinese/etc. speech
-    into a Japanese pseudo-reference.  We therefore trust a confident
-    non-Japanese Whisper label, and for uncertain labels require the *unforced*
-    transcript itself to look substantially Japanese before continuing.
+    Free-speaking flows must never turn clear English/Chinese/etc. speech into
+    a Japanese pseudo-reference or a scored Japanese transcript.  We trust a
+    confident non-Japanese Whisper label, while uncertain labels require the
+    unforced transcript itself to look substantially Japanese.
+
+    This gate answers only whether there is enough evidence to continue as
+    Japanese.  Transcript plausibility/noise hallucination is checked
+    separately by ``check_asr_transcript_sanity``.
     """
     if not transcript.available:
         return False, "language_aware_asr_unavailable"
@@ -78,6 +82,13 @@ def _language_eligibility(transcript: AsrTranscript) -> tuple[bool, str]:
     return False, "no_safe_japanese_language_evidence"
 
 
+# Backward-compatible private alias for older tests/imports.  New free-speaking
+# callers should use the public name above so the policy cannot drift between
+# confirmation and instant-conversation paths.
+def _language_eligibility(transcript: AsrTranscript) -> tuple[bool, str]:
+    return free_speech_language_eligibility(transcript)
+
+
 def build_asr_confirmation_prompt(
     wav_path: str | Path,
     *,
@@ -93,7 +104,7 @@ def build_asr_confirmation_prompt(
         model_name=asr_model,
         provider=asr_provider,
     )
-    language_eligible, language_reason = _language_eligibility(transcript)
+    language_eligible, language_reason = free_speech_language_eligibility(transcript)
     text = transcript.text if language_eligible and transcript.available and transcript.text else ""
     confidence = transcript.language_probability
     candidates = [AsrCandidate(id=1, text=text, confidence=confidence)] if text else []
