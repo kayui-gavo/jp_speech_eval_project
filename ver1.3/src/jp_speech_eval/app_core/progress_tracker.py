@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from jp_speech_eval.evaluator import EvaluationResult
+from jp_speech_eval.score_contract import comparison_context
+from jp_speech_eval.user_score_policy import apply_user_score_policy
 
 from .user_profile import utc_now_iso
 
@@ -17,11 +19,16 @@ class ProgressRecord:
     step: int
     target_text: str
     audio_path: str
+    # New records store the product-facing four-score contract here. Legacy
+    # JSONL records remain readable, but lack score_context and are therefore
+    # intentionally blocked from direct progress-delta claims.
     scores: Dict[str, float]
     features: Dict[str, Optional[float]]
     feedback: List[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now_iso)
     raw_summary: Dict[str, Any] = field(default_factory=dict)
+    score_context: Dict[str, Any] = field(default_factory=dict)
+    legacy_scores: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -37,7 +44,7 @@ def _to_float(value: Any) -> Optional[float]:
     return number
 
 
-def _scores_from_result(result: EvaluationResult) -> Dict[str, float]:
+def _legacy_scores_from_result(result: EvaluationResult) -> Dict[str, float]:
     return {
         "total": float(result.total_score),
         "pronunciation": float(result.pronunciation_score),
@@ -45,6 +52,47 @@ def _scores_from_result(result: EvaluationResult) -> Dict[str, float]:
         "fluency": float(result.fluency_score),
         "expression": float(result.tone_score),
     }
+
+
+def _effective_mode(result: EvaluationResult) -> str:
+    details = result.details or {}
+    return str(details.get("mode") or "fixed_reference")
+
+
+def _consumer_scores_from_result(result: EvaluationResult) -> tuple[Dict[str, float], Dict[str, Any]]:
+    raw = result.to_dict()
+    mode = _effective_mode(result)
+    policy = apply_user_score_policy(raw, mode=mode)
+    components = policy.get("component_scores") or {}
+    scores: Dict[str, float] = {}
+    mapping = {
+        "clarity": "clarity",
+        "rhythm": "mora_timing",
+        "fluency": "delivery_fluency",
+        "intonation": "intonation",
+    }
+    total = _to_float(policy.get("display_score"))
+    if total is not None:
+        scores["total"] = total
+    for public_key, component_key in mapping.items():
+        item = components.get(component_key) if isinstance(components.get(component_key), dict) else {}
+        value = _to_float(item.get("value"))
+        if value is not None:
+            scores[public_key] = value
+    context = comparison_context(raw, mode=mode)
+    context.update({
+        "score_available": bool(policy.get("score_available")),
+        "confidence_label": str(policy.get("confidence_label") or "unknown"),
+        "component_confidence": {
+            public_key: str((components.get(component_key) or {}).get("confidence") or "unknown")
+            for public_key, component_key in mapping.items()
+        },
+        "component_evidence_tier": {
+            public_key: str((components.get(component_key) or {}).get("evidence_tier") or "unknown")
+            for public_key, component_key in mapping.items()
+        },
+    })
+    return scores, context
 
 
 def _features_from_result(result: EvaluationResult) -> Dict[str, Optional[float]]:
@@ -73,15 +121,18 @@ def record_from_evaluation(
     feedback = list(result.feedback)
     if extra_feedback:
         feedback.extend(str(item) for item in extra_feedback if str(item).strip())
+    consumer_scores, score_context = _consumer_scores_from_result(result)
     return ProgressRecord(
         user_id=user_id,
         item_id=item_id,
         step=int(step),
         target_text=result.target_text,
         audio_path=str(audio_path),
-        scores=_scores_from_result(result),
+        scores=consumer_scores,
         features=_features_from_result(result),
         feedback=feedback,
+        score_context=score_context,
+        legacy_scores=_legacy_scores_from_result(result),
         raw_summary={
             "kana": result.kana,
             "mora_count": len(result.moras),

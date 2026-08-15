@@ -46,7 +46,8 @@ class UserFacingResult:
     """Consumer UI response contract.
 
     Raw acoustic/debug values remain available under `debug`, while the main
-    fields are designed for a stable practice experience.
+    fields are designed for a stable practice experience. Score-contract
+    versions are public telemetry so stored results can be compared safely.
     """
 
     mode: str
@@ -74,6 +75,8 @@ class UserFacingResult:
     focus_feedback: Optional[Dict[str, Any]]
     display_total_score: bool
     debug: Dict[str, Any]
+    score_contract_version: str = ""
+    evidence_schema_version: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)

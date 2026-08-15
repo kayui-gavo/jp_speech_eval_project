@@ -298,4 +298,6 @@ def render_user_facing_result(
             special_mora_profile=(decision_dicts[0].get("evidence_card", {}) if decision_dicts else {}),
             user_score_policy=user_score,
         ),
+        score_contract_version=str(user_score.get("score_contract_version") or ""),
+        evidence_schema_version=str(user_score.get("evidence_schema_version") or ""),
     ).to_dict()

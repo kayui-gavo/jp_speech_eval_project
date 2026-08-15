@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from jp_speech_eval.evaluator import EvaluationResult, evaluate_utterance
+from jp_speech_eval.score_contract import comparison_context
+from jp_speech_eval.user_score_policy import apply_user_score_policy
 
 from .user_profile import CalibrationSample, UserVoiceProfile, utc_now_iso
 
@@ -31,7 +33,7 @@ def _median(values: Iterable[Optional[float]]) -> Optional[float]:
     return round(float(statistics.median(clean)), 4) if clean else None
 
 
-def _scores_from_result(result: EvaluationResult) -> Dict[str, float]:
+def _legacy_scores_from_result(result: EvaluationResult) -> Dict[str, float]:
     return {
         "total": float(result.total_score),
         "pronunciation": float(result.pronunciation_score),
@@ -39,6 +41,32 @@ def _scores_from_result(result: EvaluationResult) -> Dict[str, float]:
         "fluency": float(result.fluency_score),
         "expression": float(result.tone_score),
     }
+
+
+def _consumer_scores_from_result(result: EvaluationResult) -> tuple[Dict[str, float], Dict[str, Any]]:
+    raw = result.to_dict()
+    details = result.details or {}
+    mode = str(details.get("mode") or "fixed_reference")
+    policy = apply_user_score_policy(raw, mode=mode)
+    components = policy.get("component_scores") or {}
+    mapping = {
+        "clarity": "clarity",
+        "rhythm": "mora_timing",
+        "fluency": "delivery_fluency",
+        "intonation": "intonation",
+    }
+    scores: Dict[str, float] = {}
+    total = _finite_float(policy.get("display_score"))
+    if total is not None:
+        scores["total"] = total
+    for public_key, component_key in mapping.items():
+        item = components.get(component_key) if isinstance(components.get(component_key), dict) else {}
+        value = _finite_float(item.get("value"))
+        if value is not None:
+            scores[public_key] = value
+    context = comparison_context(raw, mode=mode)
+    context["score_available"] = bool(policy.get("score_available"))
+    return scores, context
 
 
 def _extract_energy(details: Dict[str, Any]) -> Optional[float]:
@@ -55,7 +83,7 @@ def analysis_to_calibration_sample(
     audio_path: str | Path,
     result: EvaluationResult,
 ) -> CalibrationSample:
-    """Convert one existing evaluator result into calibration evidence."""
+    """Convert one evaluator result into calibration evidence."""
 
     details = result.details or {}
     reliability = dict(details.get("reliability") or {})
@@ -71,24 +99,48 @@ def analysis_to_calibration_sample(
         "intensity_avg": _extract_energy(details),
         "reliability_overall": _finite_float(reliability.get("overall")),
     }
+    consumer_scores, score_context = _consumer_scores_from_result(result)
     return CalibrationSample(
         text=text,
         audio_path=str(audio_path),
         kana=result.kana,
         mora_count=len(result.moras),
-        scores=_scores_from_result(result),
+        scores=_legacy_scores_from_result(result),
         features=features,
         reliability=reliability,
+        consumer_scores=consumer_scores,
+        score_context=score_context,
         feedback=list(result.feedback),
     )
+
+
+def _profile_score_context(samples: List[CalibrationSample]) -> Dict[str, Any]:
+    contexts = [sample.score_context for sample in samples if sample.score_context]
+    if not contexts:
+        return {
+            "scope": "legacy_or_unversioned_calibration",
+            "direct_score_delta_allowed": False,
+        }
+    contracts = {str(item.get("score_contract_version") or "") for item in contexts}
+    families = {str(item.get("mode_family") or "") for item in contexts}
+    return {
+        "score_contract_version": next(iter(contracts)) if len(contracts) == 1 else "mixed",
+        "mode_family": next(iter(families)) if len(families) == 1 else "mixed",
+        "scope": "cross_target_calibration_panel",
+        # Calibration commonly spans several sentences/references. Its mean
+        # score is descriptive but is not a same-item progress baseline.
+        "direct_score_delta_allowed": False,
+        "target_count": len({sample.text for sample in samples}),
+    }
 
 
 def build_voice_profile(user_id: str, samples: Iterable[CalibrationSample]) -> UserVoiceProfile:
     """Build a lightweight profile from calibration samples.
 
-    The profile is used for normalization and progress feedback. It should not
-    relax fixed Japanese pronunciation targets; it only describes the user's
-    current voice range, pace, and recurring practice hints.
+    The profile normalizes voice range, pace, and recurring practice hints. It
+    never relaxes Japanese pronunciation targets. Cross-target calibration
+    score means are stored descriptively but are not used as direct progress
+    deltas unless a future protocol explicitly defines such comparability.
     """
 
     sample_list = list(samples)
@@ -100,6 +152,12 @@ def build_voice_profile(user_id: str, samples: Iterable[CalibrationSample]) -> U
         value = _mean(sample.scores.get(key) for sample in sample_list)
         if value is not None:
             baseline_scores[key] = value
+
+    consumer_baseline_scores: Dict[str, float] = {}
+    for key in ["total", "clarity", "rhythm", "fluency", "intonation"]:
+        value = _mean(sample.consumer_scores.get(key) for sample in sample_list)
+        if value is not None:
+            consumer_baseline_scores[key] = value
 
     feedback_counter = Counter()
     for sample in sample_list:
@@ -120,6 +178,8 @@ def build_voice_profile(user_id: str, samples: Iterable[CalibrationSample]) -> U
         pause_ratio_avg=_mean(sample.features.get("pause_ratio") for sample in sample_list),
         intensity_avg=_mean(sample.features.get("intensity_avg") for sample in sample_list),
         baseline_scores=baseline_scores,
+        consumer_baseline_scores=consumer_baseline_scores,
+        score_context=_profile_score_context(sample_list),
         common_issues=common_issues,
         created_at=now,
         updated_at=now,

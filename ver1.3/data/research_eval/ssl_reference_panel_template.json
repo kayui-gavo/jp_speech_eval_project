@@ -1,0 +1,22 @@
+{
+  "schema": "ssl_reference_panel_v1",
+  "panel_id": "",
+  "references": [
+    {
+      "reference_id": "target01_native01",
+      "target_text": "ラーメンをください",
+      "audio_path": "references/target01_native01.wav",
+      "speaker_id": "native01",
+      "reference_kind": "human_native",
+      "provenance": "consented_reference_recording"
+    },
+    {
+      "reference_id": "target01_native02",
+      "target_text": "ラーメンをください",
+      "audio_path": "references/target01_native02.wav",
+      "speaker_id": "native02",
+      "reference_kind": "human_native",
+      "provenance": "consented_reference_recording"
+    }
+  ]
+}

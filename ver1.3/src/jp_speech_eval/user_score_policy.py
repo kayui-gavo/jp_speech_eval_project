@@ -3,18 +3,13 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping, Optional
 
 from .consumer_dimension_policy import build_consumer_score_components
-
-
-# Product heuristic, not a psychometrically calibrated educational scale.
-# The weights are deliberately close enough that one weak proxy cannot dominate
-# the entire C-end score. They must be benchmarked against product/human data
-# before any formal measurement claim.
-PRODUCT_COMPONENT_WEIGHTS = {
-    "clarity": 0.30,
-    "mora_timing": 0.25,
-    "delivery_fluency": 0.25,
-    "intonation": 0.20,
-}
+from .score_contract import (
+    EVIDENCE_SCHEMA_VERSION,
+    PRODUCT_COMPONENT_WEIGHTS,
+    SCORE_CONTRACT_VERSION,
+    apply_display_transform,
+    score_contract_payload,
+)
 
 
 def _score(value: Any, default: float = 0.0) -> float:
@@ -64,15 +59,15 @@ def _component_value(components: Mapping[str, Mapping[str, Any]], key: str) -> f
 def _smooth_product_score(components: Mapping[str, Mapping[str, Any]]) -> tuple[float, float]:
     """Combine the same semantic dimensions shown to the user.
 
-    Returns ``(display_score, raw_weighted_score)``. The mild centering/stretch
-    is a product UX transform only; it is not a measurement calibration.
+    Returns ``(display_score, raw_weighted_score)``. The display transform lives
+    in ``score_contract.py`` so product code, telemetry, documentation, and
+    progress history cannot silently drift to different formulas.
     """
     raw = sum(
         PRODUCT_COMPONENT_WEIGHTS[key] * _component_value(components, key)
         for key in PRODUCT_COMPONENT_WEIGHTS
     )
-    centered = 70.0 + 1.08 * (raw - 70.0)
-    return max(0.0, min(100.0, centered)), raw
+    return apply_display_transform(raw), raw
 
 
 def _component_confidence_cap(components: Mapping[str, Mapping[str, Any]]) -> Optional[str]:
@@ -85,6 +80,13 @@ def _component_confidence_cap(components: Mapping[str, Mapping[str, Any]]) -> Op
     return None
 
 
+def _score_formula(*, raw_weighted_score: Optional[float] = None) -> Dict[str, Any]:
+    payload = score_contract_payload()
+    if raw_weighted_score is not None:
+        payload["raw_weighted_score"] = _round_score(raw_weighted_score)
+    return payload
+
+
 def _no_score_payload(
     *,
     mode: str,
@@ -94,6 +96,8 @@ def _no_score_payload(
     inputs: Mapping[str, Any],
 ) -> Dict[str, Any]:
     return {
+        "score_contract_version": SCORE_CONTRACT_VERSION,
+        "evidence_schema_version": EVIDENCE_SCHEMA_VERSION,
         "display_score": None,
         "display_score_before_cap": None,
         "display_score_after_cap": None,
@@ -104,11 +108,7 @@ def _no_score_payload(
         "intonation_score": None,
         "practice_completion_score": None,
         "component_scores": {},
-        "score_formula": {
-            "policy": "semantic_four_component_product_heuristic_v1",
-            "weights": dict(PRODUCT_COMPONENT_WEIGHTS),
-            "product_calibrated": False,
-        },
+        "score_formula": _score_formula(),
         "confidence_label": "low",
         "main_message_key": main_message_key,
         "score_policy_warnings": list(warnings),
@@ -128,7 +128,7 @@ def apply_user_score_policy(
 ) -> Dict[str, Any]:
     """Compute product-facing practice scores with graceful degradation.
 
-    The overall score and the four visible dimensions now share one semantic
+    The overall score and the four visible dimensions share one semantic
     component builder. A legacy field named ``pronunciation_score`` is no longer
     treated as segmental clarity: it remains one possible timing input inside
     the rhythm component. Likewise, phrase intonation participates explicitly
@@ -332,6 +332,8 @@ def apply_user_score_policy(
     }
 
     return {
+        "score_contract_version": SCORE_CONTRACT_VERSION,
+        "evidence_schema_version": EVIDENCE_SCHEMA_VERSION,
         "display_score": _round_score(display),
         "display_score_before_cap": _round_score(display_score_before_cap),
         "display_score_after_cap": _round_score(display),
@@ -344,14 +346,7 @@ def apply_user_score_policy(
         "intonation_score": _round_score(intonation),
         "practice_completion_score": _round_score(practice_completion),
         "component_scores": component_scores,
-        "score_formula": {
-            "policy": "semantic_four_component_product_heuristic_v1",
-            "weights": dict(PRODUCT_COMPONENT_WEIGHTS),
-            "raw_weighted_score": _round_score(raw_weighted),
-            "centering": "70 + 1.08 * (raw - 70)",
-            "product_calibrated": False,
-            "formal_educational_measurement": False,
-        },
+        "score_formula": _score_formula(raw_weighted_score=raw_weighted),
         "confidence_label": confidence_label,
         "main_message_key": main_message_key,
         "score_policy_warnings": warnings,
