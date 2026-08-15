@@ -3,16 +3,20 @@
 The low-level :func:`sd_norm_alternative_graph_forward` independently
 re-implements the normalized SD alternative-graph recursion published with Cao
 et al., *Segmentation-Free Goodness of Pronunciation* (IEEE TASLP 2026 /
-arXiv:2507.16838).  With ``wildcard_token_ids=None`` it preserves the authors'
+arXiv:2507.16838). With ``wildcard_token_ids=None`` it preserves the authors'
 all-token reference semantics and is regression-tested against their public
 implementation.
 
-Japanese phone-CTC vocabularies in this project also contain tokenizer/control
-symbols and pause labels. Those are not legitimate phone substitutions. The
-high-level :func:`compute_segmentation_free_norm_features` therefore uses the
-same recursion with a Japanese **phone-only wildcard mask**. This is an
-explicit project adaptation, not silently claimed to be byte-for-byte identical
-to the paper's backend vocabulary.
+Japanese phone-CTC vocabularies also contain tokenizer/control symbols, pause
+labels and special mora tokens. The high-level Japanese adapter therefore uses
+position-specific wildcard policies:
+
+* ordinary segmental positions: ordinary segmental phone inventory only;
+* ``N`` / ``cl`` positions: canonical special-mora token only, while the graph
+  still retains its deletion path.
+
+This is an explicit Japanese research adaptation, not silently claimed to be
+byte-for-byte identical to the paper's backend vocabulary.
 
 Important semantics:
 
@@ -21,6 +25,7 @@ Important semantics:
 * an individual LPR/GOP sign is not a pronunciation-error decision rule;
 * canonical log posterior is the whole target-sequence posterior, not a local
   phone correctness probability;
+* special morae require duration/context evidence for educational feedback;
 * these values are research features, not a learner-facing score;
 * no product /100 mapping is implemented here.
 """
@@ -33,11 +38,15 @@ from typing import Any, Dict, Mapping, Sequence
 
 import numpy as np
 
-from .japanese_phoneme_gop import ctc_forward_logprob, segmental_competitor_ids
+from .japanese_phoneme_gop import (
+    SPECIAL_MORA_TOKENS,
+    ctc_forward_logprob,
+    segmental_competitor_ids,
+)
 
 
 REFERENCE_METHOD = "paper_sd_norm_forward_v1"
-METHOD = "paper_sd_norm_forward_japanese_phone_mask_v2"
+METHOD = "paper_sd_norm_forward_japanese_position_mask_v3"
 REFERENCE_IMPLEMENTATION = "frank613/CTC-based-GOP:taslpro26/gop_sf_sd_norm.py"
 
 
@@ -145,8 +154,8 @@ def sd_norm_alternative_graph_forward(
     all-token wildcard semantics (except CTC blank/dynamic duplicate-path
     exclusions). Supplying token ids constrains only the wildcard phone state;
     deterministic canonical states and original frame probabilities remain
-    untouched. This is crucial: we do not renormalize the acoustic model after
-    discarding non-phone wildcard alternatives.
+    untouched. We do not renormalize the acoustic model after discarding
+    non-phone wildcard alternatives.
     """
     probs = np.asarray(probabilities, dtype=np.float64)
     if probs.ndim != 2 or probs.shape[0] <= 0 or probs.shape[1] <= 1:
@@ -312,7 +321,13 @@ def compute_segmentation_free_norm_features(
     model_id: str = "",
     revision: str = "",
 ) -> SegmentationFreeNormResult:
-    """Compute Japanese phone-masked SD graph GOP normalization + ``Occ(i)``."""
+    """Compute Japanese position-masked normalized SD graph features.
+
+    Ordinary positions use only ordinary segmental wildcard phones. Special
+    mora positions use only their own canonical token at the wildcard state;
+    the alternative graph's skip path still provides deletion evidence. This
+    mirrors the construct separation used by the enumerated/restricted paths.
+    """
     raw = np.asarray(logits, dtype=np.float64)
     log_probs = _log_softmax(raw)
     probs = np.exp(log_probs)
@@ -342,8 +357,9 @@ def compute_segmentation_free_norm_features(
         )
 
     token_ids = [int(vocab[phone]) for phone in phones]
-    wildcard_ids = segmental_competitor_ids(vocab, blank_id=int(blank_id))
-    if not wildcard_ids:
+    ordinary_wildcard_ids = segmental_competitor_ids(vocab, blank_id=int(blank_id))
+    ordinary_position_count = sum(phone not in SPECIAL_MORA_TOKENS for phone in phones)
+    if ordinary_position_count > 0 and not ordinary_wildcard_ids:
         return SegmentationFreeNormResult(
             available=False,
             model_id=model_id,
@@ -351,11 +367,11 @@ def compute_segmentation_free_norm_features(
             method=METHOD,
             canonical_phones=phones,
             evidence=[],
-            summary={"reason": "no_phone_tokens_for_wildcard_graph"},
-            warnings=["empty_phone_wildcard_inventory"],
+            summary={"reason": "no_phone_tokens_for_ordinary_wildcard_graph"},
+            warnings=["empty_ordinary_phone_wildcard_inventory"],
         )
     id_to_phone = {int(index): str(phone) for phone, index in vocab.items()}
-    wildcard_phones = [id_to_phone[token_id] for token_id in wildcard_ids]
+    ordinary_wildcard_phones = [id_to_phone[token_id] for token_id in ordinary_wildcard_ids]
 
     canonical_lp = ctc_forward_logprob(log_probs, token_ids, blank_id=int(blank_id))
     if not math.isfinite(canonical_lp):
@@ -372,13 +388,19 @@ def compute_segmentation_free_norm_features(
 
     rows: list[SdNormForwardResult] = []
     warnings: list[str] = []
+    position_wildcard_sizes: list[int] = []
     for index, phone in enumerate(phones):
+        if phone in SPECIAL_MORA_TOKENS:
+            position_wildcard_ids = [token_ids[index]]
+        else:
+            position_wildcard_ids = ordinary_wildcard_ids
+        position_wildcard_sizes.append(len(position_wildcard_ids))
         denominator_lp, occ_i = sd_norm_alternative_graph_forward(
             probs,
             token_ids,
             phone_index=index,
             blank_id=int(blank_id),
-            wildcard_token_ids=wildcard_ids,
+            wildcard_token_ids=position_wildcard_ids,
         )
         rows.append(
             SdNormForwardResult(
@@ -396,6 +418,7 @@ def compute_segmentation_free_norm_features(
     gop_values = np.asarray([row.gop_sf_sd_norm for row in rows], dtype=np.float64)
     if np.any(~np.isfinite(occ_values)) or np.any(occ_values < 0):
         warnings.append("invalid_occ_i_detected")
+    special_count = sum(phone in SPECIAL_MORA_TOKENS for phone in phones)
     return SegmentationFreeNormResult(
         available=True,
         model_id=model_id,
@@ -406,12 +429,23 @@ def compute_segmentation_free_norm_features(
         summary={
             "reference_implementation": REFERENCE_IMPLEMENTATION,
             "low_level_reference_method": REFERENCE_METHOD,
-            "japanese_adaptation": "phone_only_wildcard_mask",
+            "japanese_adaptation": "position_specific_ordinary_vs_special_mora_wildcard_mask",
             "paper_reference_all_token_semantics_preserved_by_low_level_default": True,
-            "wildcard_phone_inventory": wildcard_phones,
-            "wildcard_phone_inventory_size": len(wildcard_phones),
+            # Backward-compatible key: this now denotes the ordinary segmental
+            # wildcard inventory only, not every position-specific candidate set.
+            "wildcard_phone_inventory": ordinary_wildcard_phones,
+            "wildcard_phone_inventory_size": len(ordinary_wildcard_phones),
+            "ordinary_wildcard_phone_inventory": ordinary_wildcard_phones,
+            "ordinary_wildcard_phone_inventory_size": len(ordinary_wildcard_phones),
             "wildcard_excludes_ctc_blank": True,
             "wildcard_excludes_nonsegmental_control_pause_tokens": True,
+            "ordinary_wildcard_excludes_special_mora_tokens": True,
+            "position_specific_wildcard_policy": True,
+            "special_mora_policy": "canonical_wildcard_plus_graph_deletion_path_only",
+            "special_mora_position_count": special_count,
+            "ordinary_position_count": ordinary_position_count,
+            "position_wildcard_size_min": min(position_wildcard_sizes),
+            "position_wildcard_size_max": max(position_wildcard_sizes),
             "phone_count": len(phones),
             "frame_count": int(raw.shape[0]),
             "canonical_log_posterior_is_utterance_sequence_level": True,
@@ -422,6 +456,7 @@ def compute_segmentation_free_norm_features(
             "occ_i_min": float(np.min(occ_values)),
             "occ_i_max": float(np.max(occ_values)),
             "occ_i_is_physical_phone_duration": False,
+            "special_mora_occ_i_is_physical_duration": False,
             "individual_feature_is_pronunciation_decision": False,
             "requires_labeled_downstream_validation": True,
             "score_mapped": False,
