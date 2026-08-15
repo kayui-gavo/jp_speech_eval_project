@@ -23,6 +23,7 @@ on:
       - "ver1.3/scripts/prepare_cache.py"
       - "ver1.3/scripts/audit_reference_boundary_provenance.py"
       - "ver1.3/scripts/validate_research_manifest.py"
+      - "ver1.3/scripts/build_research_splits.py"
       - "ver1.3/data/research_eval/**"
       - "ver1.3/tests/test_audio_input_domains.py"
       - "ver1.3/tests/test_reference_boundary_provenance.py"
@@ -32,6 +33,7 @@ on:
       - "ver1.3/tests/test_rhythm_dtw.py"
       - "ver1.3/tests/test_ssl_reference_panel.py"
       - "ver1.3/tests/test_research_manifest.py"
+      - "ver1.3/tests/test_research_splits.py"
       - "ver1.3/tests/test_app_core_mvp.py"
       - ".github/workflows/baseline-evolution-light-tests.yml"
 
@@ -76,4 +78,5 @@ jobs:
             tests/test_rhythm_dtw.py \
             tests/test_ssl_reference_panel.py \
             tests/test_research_manifest.py \
+            tests/test_research_splits.py \
             tests/test_app_core_mvp.py
