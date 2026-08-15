@@ -1,23 +1,28 @@
-"""Paper-aligned normalized segmentation-free CTC GOP diagnostics.
+"""Normalized segmentation-free CTC GOP diagnostics with Japanese hardening.
 
-This module independently re-implements the SD alternative-graph forward
-recursion published with Cao et al., *Segmentation-Free Goodness of
-Pronunciation* (IEEE TASLP 2026 / arXiv:2507.16838).  The authors' public
-``taslpro26/gop_sf_sd_norm.py`` code uses normalized forward variables over an
-arbitrary-token state and reports both the alternative-graph likelihood and
-``Occ(i)``.  We reproduce that algorithm in NumPy so it can be regression-
-tested and combined with this project's existing LPP/LPR feature extractor.
+The low-level :func:`sd_norm_alternative_graph_forward` independently
+re-implements the normalized SD alternative-graph recursion published with Cao
+et al., *Segmentation-Free Goodness of Pronunciation* (IEEE TASLP 2026 /
+arXiv:2507.16838).  With ``wildcard_token_ids=None`` it preserves the authors'
+all-token reference semantics and is regression-tested against their public
+implementation.
+
+Japanese phone-CTC vocabularies in this project also contain tokenizer/control
+symbols and pause labels. Those are not legitimate phone substitutions. The
+high-level :func:`compute_segmentation_free_norm_features` therefore uses the
+same recursion with a Japanese **phone-only wildcard mask**. This is an
+explicit project adaptation, not silently claimed to be byte-for-byte identical
+to the paper's backend vocabulary.
 
 Important semantics:
 
 * ``Occ(i)`` is occupancy/activation of the alternative graph's central state;
   it is **not** a physical phone duration and must never be exposed as one.
-* an individual LPR sign is not a pronunciation-error decision rule;
+* an individual LPR/GOP sign is not a pronunciation-error decision rule;
+* canonical log posterior is the whole target-sequence posterior, not a local
+  phone correctness probability;
 * these values are research features, not a learner-facing score;
 * no product /100 mapping is implemented here.
-
-The implementation is intentionally named ``paper_sd_norm_forward_v1`` rather
-than claiming that the whole Japanese assessment pipeline reproduces the paper.
 """
 
 from __future__ import annotations
@@ -28,10 +33,11 @@ from typing import Any, Dict, Mapping, Sequence
 
 import numpy as np
 
-from .japanese_phoneme_gop import ctc_forward_logprob
+from .japanese_phoneme_gop import ctc_forward_logprob, segmental_competitor_ids
 
 
-METHOD = "paper_sd_norm_forward_v1"
+REFERENCE_METHOD = "paper_sd_norm_forward_v1"
+METHOD = "paper_sd_norm_forward_japanese_phone_mask_v2"
 REFERENCE_IMPLEMENTATION = "frank613/CTC-based-GOP:taslpro26/gop_sf_sd_norm.py"
 
 
@@ -92,25 +98,55 @@ def _validate_sequence(token_ids: Sequence[int], *, vocab_size: int, blank_id: i
     return seq
 
 
+def _wildcard_mask(
+    vocab_size: int,
+    *,
+    blank_id: int,
+    wildcard_token_ids: Sequence[int] | None,
+) -> np.ndarray:
+    if wildcard_token_ids is None:
+        mask = np.ones(int(vocab_size), dtype=bool)
+    else:
+        mask = np.zeros(int(vocab_size), dtype=bool)
+        for raw_id in wildcard_token_ids:
+            token_id = int(raw_id)
+            if token_id < 0 or token_id >= int(vocab_size):
+                raise ValueError(f"wildcard token id outside vocabulary: {token_id}")
+            mask[token_id] = True
+    mask[int(blank_id)] = False
+    if not np.any(mask):
+        raise ValueError("wildcard token inventory is empty after blank exclusion")
+    return mask
+
+
+def _apply_wildcard_mask(values: np.ndarray, allowed: np.ndarray) -> np.ndarray:
+    out = np.asarray(values, dtype=np.float64).copy()
+    out[~allowed] = 0.0
+    return out
+
+
 def sd_norm_alternative_graph_forward(
     probabilities: np.ndarray,
     token_ids: Sequence[int],
     *,
     phone_index: int,
     blank_id: int,
+    wildcard_token_ids: Sequence[int] | None = None,
 ) -> tuple[float, float]:
-    """Return ``(log p(L_SD), Occ(i))`` using the paper's normalized forward DP.
+    """Return ``(log p(L_SD), Occ(i))`` using normalized forward DP.
 
     ``probabilities`` has shape ``(frames, vocabulary)`` and each frame must sum
-    to one.  The recursion uses an extra vocabulary axis only at the wildcard
-    phone state.  Forward variables are normalized at each frame; the sum of
-    log normalization constants recovers the graph log posterior while the
+    to one. The recursion uses an extra vocabulary axis only at the wildcard
+    phone state. Forward variables are normalized at each frame; the sum of log
+    normalization constants recovers the graph log posterior while the
     normalized wildcard-state mass summed over time gives ``Occ(i)``.
 
-    The disambiguation/skip-path rules follow the authors' public TASLP-2026
-    implementation.  This routine intentionally keeps the paper-reference
-    all-token alternative semantics; Japanese-specific competitor filtering is
-    a separate modeling choice and is not silently mixed into this function.
+    If ``wildcard_token_ids`` is ``None`` the function follows the paper's
+    all-token wildcard semantics (except CTC blank/dynamic duplicate-path
+    exclusions). Supplying token ids constrains only the wildcard phone state;
+    deterministic canonical states and original frame probabilities remain
+    untouched. This is crucial: we do not renormalize the acoustic model after
+    discarding non-phone wildcard alternatives.
     """
     probs = np.asarray(probabilities, dtype=np.float64)
     if probs.ndim != 2 or probs.shape[0] <= 0 or probs.shape[1] <= 1:
@@ -126,11 +162,16 @@ def sd_norm_alternative_graph_forward(
     pos = int(phone_index)
     if pos < 0 or pos >= len(seq):
         raise ValueError("phone_index is outside the canonical sequence")
+    allowed_wildcard = _wildcard_mask(
+        vocab_size,
+        blank_id=int(blank_id),
+        wildcard_token_ids=wildcard_token_ids,
+    )
 
     state_count = 2 * len(seq) + 1
-    # Deterministic CTC states use vocabulary slot 0 as storage.  The wildcard
+    # Deterministic CTC states use vocabulary slot 0 as storage. The wildcard
     # label state uses the whole last axis to retain which alternative token is
-    # active.  This storage axis is independent of the actual CTC blank id.
+    # active. This storage axis is independent of the actual CTC blank id.
     alpha = np.zeros((state_count, frames, vocab_size), dtype=np.float64)
     alpha_bar = np.zeros(frames, dtype=np.float64)
     next_label_id = None if pos == len(seq) - 1 else int(seq[pos + 1])
@@ -141,8 +182,7 @@ def sd_norm_alternative_graph_forward(
         # is handled explicitly to avoid duplicate paths, matching the paper code.
         if len(seq) > 1:
             alpha[3, 0, 0] = probs[0, seq[1]]
-        alpha[1, 0, :] = probs[0, :]
-        alpha[1, 0, blank_id] = 0.0
+        alpha[1, 0, :] = _apply_wildcard_mask(probs[0, :], allowed_wildcard)
         if next_label_id is not None:
             alpha[1, 0, next_label_id] = 0.0
         alpha_bar[0] = float(np.sum(alpha[:, 0, :]))
@@ -195,8 +235,8 @@ def sd_norm_alternative_graph_forward(
                 continue
 
             if pos == label_pos - 1:
-                # Exit from the wildcard state into the following canonical
-                # label, including the paper's explicit deletion/skip handling.
+                # Exit from wildcard state into the following canonical label,
+                # including explicit deletion/skip handling.
                 label_id = seq[label_pos]
                 incoming_wildcard = alpha[state - 2, t - 1, :].copy()
                 incoming_wildcard[blank_id] = 0.0
@@ -215,28 +255,40 @@ def sd_norm_alternative_graph_forward(
                 ) * probs[t, label_id] + skip_empty + skip_token
                 continue
 
-            # Current label is the wildcard/arbitrary token.  Staying in the
-            # state preserves token identity (identity transition); entering it
-            # can occur from the preceding blank and, where legal, by skip.
+            # Current label is wildcard/arbitrary phone. Staying in the state
+            # preserves token identity; entering can occur from preceding blank
+            # and, where legal, by skip.
             if state == 1:
-                empty_prob = alpha[state - 1, t - 1, 0] * probs[t, :].copy()
-                empty_prob[blank_id] = 0.0
+                empty_prob = _apply_wildcard_mask(
+                    alpha[state - 1, t - 1, 0] * probs[t, :],
+                    allowed_wildcard,
+                )
                 if next_label_id is not None:
                     empty_prob[next_label_id] = 0.0
-                stay = alpha[state, t - 1, :] * probs[t, :]
+                stay = _apply_wildcard_mask(
+                    alpha[state, t - 1, :] * probs[t, :],
+                    allowed_wildcard,
+                )
                 if next_label_id is not None:
                     stay[next_label_id] = 0.0
                 alpha[state, t, :] = stay + empty_prob
             else:
-                skip_prob = alpha[state - 2, t - 1, 0] * probs[t, :].copy()
+                skip_prob = _apply_wildcard_mask(
+                    alpha[state - 2, t - 1, 0] * probs[t, :],
+                    allowed_wildcard,
+                )
                 skip_prob[seq[label_pos - 1]] = 0.0
-                skip_prob[blank_id] = 0.0
-                empty_prob = alpha[state - 1, t - 1, 0] * probs[t, :].copy()
-                empty_prob[blank_id] = 0.0
+                empty_prob = _apply_wildcard_mask(
+                    alpha[state - 1, t - 1, 0] * probs[t, :],
+                    allowed_wildcard,
+                )
                 if next_label_id is not None:
                     skip_prob[next_label_id] = 0.0
                     empty_prob[next_label_id] = 0.0
-                stay = alpha[state, t - 1, :] * probs[t, :]
+                stay = _apply_wildcard_mask(
+                    alpha[state, t - 1, :] * probs[t, :],
+                    allowed_wildcard,
+                )
                 if next_label_id is not None:
                     stay[next_label_id] = 0.0
                 alpha[state, t, :] = stay + skip_prob + empty_prob
@@ -260,7 +312,7 @@ def compute_segmentation_free_norm_features(
     model_id: str = "",
     revision: str = "",
 ) -> SegmentationFreeNormResult:
-    """Compute paper-aligned SD-graph GOP normalization + ``Occ(i)`` per phone."""
+    """Compute Japanese phone-masked SD graph GOP normalization + ``Occ(i)``."""
     raw = np.asarray(logits, dtype=np.float64)
     log_probs = _log_softmax(raw)
     probs = np.exp(log_probs)
@@ -290,6 +342,21 @@ def compute_segmentation_free_norm_features(
         )
 
     token_ids = [int(vocab[phone]) for phone in phones]
+    wildcard_ids = segmental_competitor_ids(vocab, blank_id=int(blank_id))
+    if not wildcard_ids:
+        return SegmentationFreeNormResult(
+            available=False,
+            model_id=model_id,
+            revision=revision,
+            method=METHOD,
+            canonical_phones=phones,
+            evidence=[],
+            summary={"reason": "no_phone_tokens_for_wildcard_graph"},
+            warnings=["empty_phone_wildcard_inventory"],
+        )
+    id_to_phone = {int(index): str(phone) for phone, index in vocab.items()}
+    wildcard_phones = [id_to_phone[token_id] for token_id in wildcard_ids]
+
     canonical_lp = ctc_forward_logprob(log_probs, token_ids, blank_id=int(blank_id))
     if not math.isfinite(canonical_lp):
         return SegmentationFreeNormResult(
@@ -311,6 +378,7 @@ def compute_segmentation_free_norm_features(
             token_ids,
             phone_index=index,
             blank_id=int(blank_id),
+            wildcard_token_ids=wildcard_ids,
         )
         rows.append(
             SdNormForwardResult(
@@ -337,8 +405,17 @@ def compute_segmentation_free_norm_features(
         evidence=rows,
         summary={
             "reference_implementation": REFERENCE_IMPLEMENTATION,
+            "low_level_reference_method": REFERENCE_METHOD,
+            "japanese_adaptation": "phone_only_wildcard_mask",
+            "paper_reference_all_token_semantics_preserved_by_low_level_default": True,
+            "wildcard_phone_inventory": wildcard_phones,
+            "wildcard_phone_inventory_size": len(wildcard_phones),
+            "wildcard_excludes_ctc_blank": True,
+            "wildcard_excludes_nonsegmental_control_pause_tokens": True,
             "phone_count": len(phones),
             "frame_count": int(raw.shape[0]),
+            "canonical_log_posterior_is_utterance_sequence_level": True,
+            "canonical_log_posterior_is_phone_local": False,
             "gop_sf_sd_norm_mean": float(np.mean(gop_values)),
             "gop_sf_sd_norm_median": float(np.median(gop_values)),
             "occ_i_mean": float(np.mean(occ_values)),
