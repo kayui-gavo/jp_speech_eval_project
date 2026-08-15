@@ -69,7 +69,7 @@ def transcribe_language_aware(
     model_name: str = "small",
     provider: str = "auto",
     *,
-    word_timestamps: bool = False,
+    word_timestamps: bool = True,
 ) -> AsrTranscript:
     """Transcribe without forcing Japanese and keep language evidence.
 
@@ -78,9 +78,10 @@ def transcribe_language_aware(
     translation task from being requested. Callers can then reject confident
     non-Japanese speech before creating a Japanese pseudo-reference.
 
-    ``word_timestamps=True`` is an optional faster-whisper evidence channel for
-    spontaneous-fluency analysis. Timestamp absence never makes a transcript
-    invalid and must not lower a learner score.
+    Faster-whisper word timestamps are enabled by default for free-speaking
+    flows because they are useful audit evidence for pause location. Timestamp
+    absence never makes a transcript invalid and must not lower a learner score.
+    Callers doing language detection only can disable them explicitly.
     """
     provider = provider.lower().strip()
     if provider in {"auto", "faster-whisper", "faster_whisper"}:
@@ -109,8 +110,14 @@ def detect_spoken_language(
     model_name: str = "small",
     provider: str = "auto",
 ) -> AsrTranscript:
-    """Obtain independent language evidence without forcing Japanese."""
-    return transcribe_language_aware(y, sr, model_name=model_name, provider=provider)
+    """Obtain independent language evidence without paying for word timing."""
+    return transcribe_language_aware(
+        y,
+        sr,
+        model_name=model_name,
+        provider=provider,
+        word_timestamps=False,
+    )
 
 
 def _try_faster_whisper(
