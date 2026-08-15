@@ -19,6 +19,9 @@ WEAK_REFERENCE_MODES = {
     "kanade_asr_confirmed_voice_reference",
 }
 
+TARGET_MATCH_STATUSES = {"pass", "uncertain", "marginal", "partial"}
+TARGET_MISMATCH_STATUSES = {"fail", "failed", "content_mismatch"}
+
 
 def _number(value: Any) -> Optional[float]:
     try:
@@ -86,6 +89,12 @@ def _dimension(
     }
 
 
+def _target_relative_allowed(details: Mapping[str, Any]) -> bool:
+    content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
+    status = str(content.get("status") or "unknown")
+    return status in TARGET_MATCH_STATUSES
+
+
 def _mapped_clarity_evidence(details: Mapping[str, Any]) -> tuple[Optional[float], str, str]:
     shadow = details.get("shadow") if isinstance(details.get("shadow"), Mapping) else {}
     ssl = shadow.get("ssl_pronunciation") if isinstance(shadow.get("ssl_pronunciation"), Mapping) else {}
@@ -110,10 +119,24 @@ def _mapped_clarity_evidence(details: Mapping[str, Any]) -> tuple[Optional[float
 def _clarity_proxy(
     result: Mapping[str, Any],
     details: Mapping[str, Any],
+    *,
+    allow_target_relative: bool,
 ) -> tuple[float, str, str, str, str]:
     mapped, mapped_source, mapped_construct = _mapped_clarity_evidence(details)
     if mapped is not None:
         return mapped, mapped_source, mapped_construct, "medium", "mapped_pronunciation_evidence"
+
+    # A different but valid Japanese sentence must not look "unclear" merely
+    # because it disagrees with the fixed target. Target agreement is content
+    # evidence, not a reference-independent clarity measure.
+    if not allow_target_relative:
+        return (
+            70.0,
+            "product_prior",
+            "broad_clarity_prior_without_target_independent_measurement",
+            "low",
+            "reference_independent_prior_fallback",
+        )
 
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
     kana_similarity = _number(content.get("kana_similarity"))
@@ -133,7 +156,7 @@ def _clarity_proxy(
             "asr_target_agreement",
         )
 
-    if acoustic_score is not None and content_status not in {"unknown", "general_japanese"}:
+    if acoustic_score is not None:
         value = 55.0 + 35.0 * _clip01(acoustic_score)
         return (
             value,
@@ -225,6 +248,7 @@ def _intonation_proxy(
     details: Mapping[str, Any],
     *,
     mode: str,
+    allow_reference_relative: bool,
 ) -> tuple[float, str, str, str, str]:
     prosody = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
@@ -238,7 +262,8 @@ def _intonation_proxy(
     alignment_available = bool(alignment.get("available", True)) and not bool(alignment.get("used_equal_fallback"))
 
     if (
-        raw is not None
+        allow_reference_relative
+        and raw is not None
         and note not in {"no_valid_f0", "insufficient_valid_mora_f0"}
         and contour_corr is not None
         and valid_mora >= 3
@@ -256,18 +281,19 @@ def _intonation_proxy(
             "mora_contour_primary",
         )
 
-    fallback, fallback_source, fallback_conf = _f0_pair_fallback(result, details)
-    if fallback is not None:
-        if weak_reference:
-            fallback = 72.0 + 0.55 * (fallback - 72.0)
-            fallback_conf = "low"
-        return (
-            fallback,
-            fallback_source,
-            "partial_reference_relative_f0_contour_similarity",
-            fallback_conf,
-            "partial_f0_fallback",
-        )
+    if allow_reference_relative:
+        fallback, fallback_source, fallback_conf = _f0_pair_fallback(result, details)
+        if fallback is not None:
+            if weak_reference:
+                fallback = 72.0 + 0.55 * (fallback - 72.0)
+                fallback_conf = "low"
+            return (
+                fallback,
+                fallback_source,
+                "partial_reference_relative_f0_contour_similarity",
+                fallback_conf,
+                "partial_f0_fallback",
+            )
 
     tone = details.get("tone") if isinstance(details.get("tone"), Mapping) else {}
     pitch_range = _number(tone.get("pitch_range_log"))
@@ -285,30 +311,23 @@ def _intonation_proxy(
     return 70.0, "product_prior", "broad_intonation_prior_without_reliable_f0", "low", "prior_fallback"
 
 
-def build_consumer_score_dimensions(
+def build_consumer_score_components(
     result: Mapping[str, Any],
-    user_facing: Mapping[str, Any],
     *,
     mode: str,
 ) -> List[Dict[str, Any]]:
-    """Build four always-display C-end practice dimensions."""
+    """Build the four semantic practice components independently of score gates.
+
+    These are product heuristics, not calibrated educational measurements. The
+    same component builder is consumed by both the C-end dimension renderer and
+    the overall practice-score policy so their semantics cannot silently drift.
+    """
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
-
-    score_available = user_facing.get("display_score") is not None
-    if not score_available:
-        return [
-            _dimension(key, label, None, source_field="", construct=construct, available=False, confidence="unavailable")
-            for key, label, construct in (
-                ("delivery_fluency", "流暢さ", "speed_and_breakdown_fluency"),
-                ("clarity", "明瞭さ", "machine_intelligibility_and_phonetic_clarity_proxy"),
-                ("mora_timing", "リズム", "japanese_timing_structure_proxy"),
-                ("intonation", "抑揚", "phrase_sentence_f0_movement_proxy"),
-            )
-        ]
+    target_relative = _target_relative_allowed(details)
 
     rate_score = _number(fluency.get("rate_score"))
     pause_score = _number(fluency.get("pause_score"))
@@ -318,7 +337,11 @@ def build_consumer_score_dimensions(
         fluency_value = delivery_legacy if delivery_legacy is not None else 70.0
     fluency_conf = "high" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "medium"
 
-    clarity_value, clarity_source, clarity_construct, clarity_conf, clarity_tier = _clarity_proxy(result, details)
+    clarity_value, clarity_source, clarity_construct, clarity_conf, clarity_tier = _clarity_proxy(
+        result,
+        details,
+        allow_target_relative=target_relative,
+    )
 
     legacy_timing = _number(result.get("pronunciation_score"))
     duration_ratio = _number(reliability.get("duration_ratio_to_reference"))
@@ -326,23 +349,35 @@ def build_consumer_score_dimensions(
         duration_ratio = _number(content.get("duration_ratio"))
     duration_score = _duration_match_score(duration_ratio)
     alignment_available = bool(alignment.get("available", True)) and not bool(alignment.get("used_equal_fallback"))
-    if alignment_available and legacy_timing is not None:
+
+    if target_relative and alignment_available and legacy_timing is not None:
         rhythm_value = _blend([(legacy_timing, 0.78), (duration_score, 0.22)]) or legacy_timing
         rhythm_conf = "medium"
         rhythm_tier = "local_mora_plus_global_duration"
         rhythm_source = "pronunciation_score+duration_ratio_to_reference"
-    else:
+    elif target_relative:
         rhythm_value = _blend([(rate_score, 0.62), (duration_score, 0.38)])
         if rhythm_value is None:
             rhythm_value = legacy_timing if legacy_timing is not None else 70.0
         rhythm_conf = "low"
         rhythm_tier = "broad_timing_fallback"
         rhythm_source = "rate_score+duration_ratio_to_reference"
+    else:
+        # Off-target/free Japanese gets a broad, reference-independent rhythm
+        # practice score rather than being penalized for the wrong sentence.
+        rhythm_value = rate_score if rate_score is not None else 70.0
+        rhythm_conf = "low"
+        rhythm_tier = "reference_independent_rate_fallback"
+        rhythm_source = "details.fluency.rate_score"
 
     intonation_value, intonation_source, intonation_construct, intonation_conf, intonation_tier = _intonation_proxy(
-        result, details, mode=str(mode or "")
+        result,
+        details,
+        mode=str(mode or ""),
+        allow_reference_relative=target_relative,
     )
 
+    mismatch_note = " target-relative evidence disabled because the spoken Japanese did not match the fixed target." if not target_relative else ""
     return [
         _dimension(
             "delivery_fluency",
@@ -364,7 +399,7 @@ def build_consumer_score_dimensions(
             construct=clarity_construct,
             confidence=clarity_conf,
             evidence_tier=clarity_tier,
-            note="broad machine-intelligibility/phonetic-clarity practice proxy; not recording quality and not a formal human comprehensibility score",
+            note="broad machine-intelligibility/phonetic-clarity practice proxy; not recording quality and not a formal human comprehensibility score." + mismatch_note,
         ),
         _dimension(
             "mora_timing",
@@ -372,10 +407,14 @@ def build_consumer_score_dimensions(
             rhythm_value,
             available=True,
             source_field=rhythm_source,
-            construct="japanese_timing_structure_with_mora_special_mora_and_global_tempo_evidence",
+            construct=(
+                "japanese_timing_structure_with_mora_special_mora_and_global_tempo_evidence"
+                if target_relative
+                else "reference_independent_broad_japanese_timing_proxy"
+            ),
             confidence=rhythm_conf,
             evidence_tier=rhythm_tier,
-            note="Japanese rhythm is not assumed to be perfectly equal-mora timing",
+            note="Japanese rhythm is not assumed to be perfectly equal-mora timing." + mismatch_note,
         ),
         _dimension(
             "intonation",
@@ -386,6 +425,27 @@ def build_consumer_score_dimensions(
             construct=intonation_construct,
             confidence=intonation_conf,
             evidence_tier=intonation_tier,
-            note="phrase/sentence intonation practice proxy; not strict lexical pitch-accent correctness",
+            note="phrase/sentence intonation practice proxy; not strict lexical pitch-accent correctness." + mismatch_note,
         ),
     ]
+
+
+def build_consumer_score_dimensions(
+    result: Mapping[str, Any],
+    user_facing: Mapping[str, Any],
+    *,
+    mode: str,
+) -> List[Dict[str, Any]]:
+    """Build four always-display C-end practice dimensions."""
+    score_available = user_facing.get("display_score") is not None
+    if not score_available:
+        return [
+            _dimension(key, label, None, source_field="", construct=construct, available=False, confidence="unavailable")
+            for key, label, construct in (
+                ("delivery_fluency", "流暢さ", "speed_and_breakdown_fluency"),
+                ("clarity", "明瞭さ", "machine_intelligibility_and_phonetic_clarity_proxy"),
+                ("mora_timing", "リズム", "japanese_timing_structure_proxy"),
+                ("intonation", "抑揚", "phrase_sentence_f0_movement_proxy"),
+            )
+        ]
+    return build_consumer_score_components(result, mode=mode)
