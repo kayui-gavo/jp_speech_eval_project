@@ -110,7 +110,10 @@ class SegmentationFreeGopNormTest(unittest.TestCase):
         self.assertFalse(result.summary["individual_feature_is_pronunciation_decision"])
         self.assertTrue(result.summary["requires_labeled_downstream_validation"])
         self.assertEqual(result.summary["low_level_reference_method"], REFERENCE_METHOD)
-        self.assertEqual(result.summary["japanese_adaptation"], "phone_only_wildcard_mask")
+        self.assertEqual(
+            result.summary["japanese_adaptation"],
+            "position_specific_ordinary_vs_special_mora_wildcard_mask",
+        )
         self.assertFalse(result.summary["canonical_log_posterior_is_phone_local"])
         self.assertEqual(len(result.evidence), 3)
         self.assertTrue(all(row.occ_i >= 0 for row in result.evidence))
@@ -151,6 +154,79 @@ class SegmentationFreeGopNormTest(unittest.TestCase):
         self.assertNotIn("sil", inventory)
         self.assertNotIn("UNK", inventory)
         self.assertTrue(result.summary["wildcard_excludes_nonsegmental_control_pause_tokens"])
+        self.assertTrue(result.summary["ordinary_wildcard_excludes_special_mora_tokens"])
+
+    def test_special_mora_position_uses_canonical_wildcard_plus_graph_deletion_only(self) -> None:
+        # PAD, a, k, N, cl. The target a-N-k contains an ordinary/special/
+        # ordinary sequence so the high-level adapter must switch masks by
+        # position without changing the low-level reference recurrence.
+        vocab = {"PAD": 0, "a": 1, "k": 2, "N": 3, "cl": 4}
+        logits = np.full((13, 5), -7.0, dtype=np.float64)
+        logits[:, 0] = 0.0
+        logits[0, 0] = 9.0
+        logits[1:3, 1] = 10.0
+        logits[3:5, 0] = 9.0
+        logits[5:7, 3] = 10.0
+        logits[7:9, 0] = 9.0
+        logits[9:11, 2] = 10.0
+        logits[11:, 0] = 9.0
+
+        result = compute_segmentation_free_norm_features(
+            logits,
+            ["a", "N", "k"],
+            vocab=vocab,
+            blank_id=0,
+            model_id="synthetic-japanese",
+            revision="test",
+        )
+        self.assertTrue(result.available)
+        self.assertEqual(result.summary["special_mora_position_count"], 1)
+        self.assertEqual(result.summary["ordinary_position_count"], 2)
+        self.assertEqual(
+            result.summary["special_mora_policy"],
+            "canonical_wildcard_plus_graph_deletion_path_only",
+        )
+        self.assertEqual(result.summary["position_wildcard_size_min"], 1)
+        self.assertEqual(result.summary["position_wildcard_size_max"], 2)
+        self.assertFalse(result.summary["special_mora_occ_i_is_physical_duration"])
+
+        shifted = logits - np.max(logits, axis=1, keepdims=True)
+        probs = np.exp(shifted)
+        probs /= np.sum(probs, axis=1, keepdims=True)
+        expected_lp, expected_occ = sd_norm_alternative_graph_forward(
+            probs,
+            [1, 3, 2],
+            phone_index=1,
+            blank_id=0,
+            wildcard_token_ids=[3],
+        )
+        n_row = result.evidence[1]
+        self.assertAlmostEqual(n_row.denominator_graph_log_posterior, expected_lp, places=10)
+        self.assertAlmostEqual(n_row.occ_i, expected_occ, places=10)
+
+    def test_all_special_mora_target_does_not_require_ordinary_wildcard_inventory(self) -> None:
+        # High-level Japanese semantics should still be defined even if a tiny
+        # synthetic vocabulary contains only blank and one special-mora target.
+        logits = np.asarray(
+            [
+                [8.0, 0.0],
+                [0.0, 8.0],
+                [8.0, 0.0],
+            ],
+            dtype=np.float64,
+        )
+        result = compute_segmentation_free_norm_features(
+            logits,
+            ["N"],
+            vocab={"PAD": 0, "N": 1},
+            blank_id=0,
+            model_id="synthetic-special-only",
+            revision="test",
+        )
+        self.assertTrue(result.available)
+        self.assertEqual(result.summary["ordinary_wildcard_phone_inventory"], [])
+        self.assertEqual(result.summary["special_mora_position_count"], 1)
+        self.assertEqual(result.summary["ordinary_position_count"], 0)
 
     def test_rejects_blank_inside_canonical_sequence(self) -> None:
         with self.assertRaises(ValueError):
