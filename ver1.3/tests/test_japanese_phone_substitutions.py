@@ -67,15 +67,15 @@ class JapaneseRestrictedSubstitutionPolicyTest(unittest.TestCase):
 class RestrictedSegmentationFreeGopTest(unittest.TestCase):
     @staticmethod
     def _logits() -> tuple[np.ndarray, dict[str, int]]:
-        vocab = {"PAD": 0, "s": 1, "z": 2, "sh": 3, "ts": 4, "k": 5}
+        vocab = {"PAD": 0, "s": 1, "z": 2, "sh": 3, "ts": 4, "k": 5, "g": 6, "ky": 7}
         # Strong CTC path for s,k with blanks between labels.
         logits = np.asarray(
             [
-                [5.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 6.0, 1.0, 1.2, 1.5, 0.0],
-                [5.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0, 6.0],
-                [5.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 6.0, 1.0, 1.2, 1.5, 0.0, 0.0, 0.0],
+                [5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 6.0, 1.0, 1.0],
+                [5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             ],
             dtype=np.float64,
         )
@@ -96,7 +96,8 @@ class RestrictedSegmentationFreeGopTest(unittest.TestCase):
         self.assertFalse(result.product_calibrated)
         self.assertEqual(result.summary["search_space"], "position_specific_restricted_japanese_phonology")
         self.assertEqual(set(result.rows[0].candidate_phones), {"s", "z", "sh", "ts"})
-        self.assertEqual(set(result.rows[1].candidate_phones), {"k"}) | ({"g", "ky"} & set(vocab)))
+        self.assertEqual(set(result.rows[1].candidate_phones), {"k", "g", "ky"})
+        self.assertEqual(result.summary["fallback_position_count"], 0)
 
     def test_restricted_vs_unrestricted_is_comparison_not_fusion(self) -> None:
         logits, vocab = self._logits()
