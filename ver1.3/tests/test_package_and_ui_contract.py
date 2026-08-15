@@ -66,18 +66,18 @@ class PackageAndUiContractTest(unittest.TestCase):
         self.assertIn("score_dimensions", response.user_facing)
         self.assertFalse(response.user_facing["display_total_score"])
 
-    def test_user_facing_score_dimensions_have_product_labels(self) -> None:
+    def test_user_facing_score_dimensions_have_semantic_product_labels(self) -> None:
         client = SpeechEvaluationClient(SpeechEvalConfig(cache_path="cache/ramen_kudasai"))
         with patch("jp_speech_eval.api.evaluate_mode", return_value=_raw_result()):
             response = client.evaluate(EvaluationRequest(audio_path="user.wav", mode="reference"))
         dims = response.user_facing["score_dimensions"]
         labels = [item["label"] for item in dims]
-        self.assertEqual(labels, ["発音の明瞭さ", "拍のリズム", "読み方のなめらかさ", "高低アクセント"])
-        self.assertEqual([item["key"] for item in dims], ["pronunciation_clarity", "mora_rhythm", "delivery_fluency", "pitch_accent"])
+        self.assertEqual(labels, ["流暢さ", "明瞭さ", "リズム", "抑揚"])
+        self.assertEqual([item["key"] for item in dims], ["delivery_fluency", "clarity", "mora_timing", "intonation"])
         self.assertNotIn("韻律", labels)
-        self.assertNotIn("音調", labels)
+        self.assertNotIn("高低アクセント", labels)
 
-    def test_pitch_guard_blocks_pitch_accent_dimension_value_but_keeps_debug_prosody(self) -> None:
+    def test_lexical_pitch_guard_does_not_remove_sentence_intonation_dimension(self) -> None:
         raw = _raw_result()
         raw["details"]["verified_level"] = "auto_pyopenjtalk"
         raw["details"]["pitch_target_source"] = "auto_pyopenjtalk"
@@ -85,8 +85,10 @@ class PackageAndUiContractTest(unittest.TestCase):
         with patch("jp_speech_eval.api.evaluate_mode", return_value=raw):
             response = client.evaluate(EvaluationRequest(audio_path="user.wav", mode="reference"))
         dims = {item["key"]: item for item in response.user_facing["score_dimensions"]}
-        self.assertFalse(dims["pitch_accent"]["available"])
-        self.assertIsNone(dims["pitch_accent"]["value"])
+        self.assertNotIn("pitch_accent", dims)
+        self.assertTrue(dims["intonation"]["available"])
+        self.assertIsNotNone(dims["intonation"]["value"])
+        self.assertIn("not strict lexical pitch-accent", dims["intonation"]["note"])
         self.assertEqual(response.raw_result["prosody_score"], 80)
 
     def test_public_practice_score_has_single_authoritative_value(self) -> None:
