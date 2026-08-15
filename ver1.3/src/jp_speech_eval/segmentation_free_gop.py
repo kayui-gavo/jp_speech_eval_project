@@ -1,21 +1,19 @@
 """Alignment-free Japanese phone features inspired by FGOP-CTC-SF-SD.
 
-The implementation in this module deliberately avoids forced phone boundaries.
-For each canonical phone it evaluates the exact CTC posterior of:
+For each canonical phone position this module evaluates exact fixed-sequence CTC
+posteriors for the canonical target, one-position substitutions, and deletion.
+No external phone boundary is required.
 
-* the canonical phone sequence;
-* every one-phone substitution at that position; and
-* deletion of that phone.
+Japanese adaptation:
 
-This produces the LPP/LPR feature family described for segmentation-free GOP
-features (FGOP-SF) while keeping the implementation transparent for Stage-0
-validation.  It enumerates the SD alternatives instead of using the paper's
-more efficient alternative graph, and it does not yet implement Occ(i)
-activation-length normalization.  Therefore the method name is explicitly
-``enumerated_fgop_ctc_sf_sd_features_v1`` rather than claiming full
-GOP-SF-Norm compatibility.
+* ordinary clarity positions compete only with ordinary segmental phones;
+* ``N`` and ``cl`` remain canonical targets but use canonical-vs-deletion
+  evidence only in this generic Japanese path;
+* pause/control tokens are never pronunciation alternatives;
+* raw SD-GOP/LPR values remain research features and are not mapped to /100.
 
-Nothing here maps evidence to a learner-facing score.
+The implementation enumerates alternatives transparently. The optimized
+normalized SD graph + ``Occ(i)`` lives in ``segmentation_free_gop_norm``.
 """
 
 from __future__ import annotations
@@ -27,6 +25,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 import numpy as np
 
 from .japanese_phoneme_gop import (
+    SPECIAL_MORA_TOKENS,
     JapanesePhoneCtcBackend,
     ctc_forward_logprob,
     project_japanese_ctc_logits,
@@ -35,7 +34,7 @@ from .japanese_phoneme_gop import (
 )
 
 
-METHOD = "enumerated_fgop_ctc_sf_sd_features_v1"
+METHOD = "enumerated_fgop_ctc_sf_sd_japanese_v2"
 
 
 @dataclass(frozen=True)
@@ -108,15 +107,36 @@ def _unavailable(
 ) -> SegmentationFreeGopResult:
     return SegmentationFreeGopResult(
         available=False,
-        model_id=model_id,
-        revision=revision,
+        model_id=str(model_id),
+        revision=str(revision),
         method=METHOD,
         canonical_phones=list(canonical_phones),
         feature_phone_inventory=[],
         evidence=[],
-        summary={"reason": reason},
-        warnings=[warning],
+        summary={"reason": str(reason)},
+        warnings=[str(warning)],
+        score_mapped=False,
+        product_calibrated=False,
     )
+
+
+def _ordinary_substitution_ids(
+    vocab: Mapping[str, int],
+    *,
+    blank_id: int,
+    supplied: Optional[Sequence[int]],
+    vocab_size: int,
+) -> list[int]:
+    legal_default = set(segmental_competitor_ids(vocab, blank_id=int(blank_id)))
+    if supplied is None:
+        return sorted(legal_default)
+    return sorted({
+        int(token_id)
+        for token_id in supplied
+        if 0 <= int(token_id) < int(vocab_size)
+        and int(token_id) != int(blank_id)
+        and int(token_id) in legal_default
+    })
 
 
 def compute_enumerated_fgop_sf_sd_features(
@@ -129,17 +149,13 @@ def compute_enumerated_fgop_sf_sd_features(
     model_id: str = "",
     revision: str = "",
 ) -> SegmentationFreeGopResult:
-    """Compute exact CTC LPP/LPR features for substitutions + deletion.
+    """Compute exact alignment-free substitution/deletion features.
 
-    For phone ``i``, the feature vector contains the canonical log posterior
-    (LPP) and ``log p(canonical) - log p(alternative)`` for every substitution
-    phone plus deletion.  The scalar ``gop_sf_sd`` uses the sum of all SD
-    alternative sequence probabilities as the denominator.  The canonical
-    phone itself is included among the substitution alternatives, matching the
-    ``any phone or empty`` SD set; its LPR is therefore numerically zero.
-
-    This is alignment-free with respect to phone boundaries, but it is not the
-    paper's optimized graph implementation and has no Occ(i) normalization.
+    Ordinary phone positions use the ordinary segmental candidate inventory and
+    always include the canonical phone itself in the SD denominator. Special
+    mora targets ``N``/``cl`` use only canonical + deletion here; their main
+    educational interpretation still requires dedicated timing/context
+    evidence.
     """
     raw = np.asarray(logits, dtype=np.float64)
     log_probs = _log_softmax(raw)
@@ -162,26 +178,21 @@ def compute_enumerated_fgop_sf_sd_features(
             warning="phone_inventory_mismatch",
         )
         return SegmentationFreeGopResult(
-            **{
-                **result.__dict__,
-                "summary": {**result.summary, "missing_phones": missing},
-            }
+            **{**result.__dict__, "summary": {**result.summary, "missing_phones": missing}}
         )
 
     token_ids = [int(vocab[phone]) for phone in phones]
-    if substitution_token_ids is None:
-        substitution_ids = segmental_competitor_ids(vocab, blank_id=int(blank_id))
-    else:
-        substitution_ids = sorted({
-            int(token_id)
-            for token_id in substitution_token_ids
-            if 0 <= int(token_id) < raw.shape[1] and int(token_id) != int(blank_id)
-        })
-    if not substitution_ids:
-        raise ValueError("no segmental substitution tokens are available")
-
+    ordinary_ids = _ordinary_substitution_ids(
+        vocab,
+        blank_id=int(blank_id),
+        supplied=substitution_token_ids,
+        vocab_size=raw.shape[1],
+    )
+    if not ordinary_ids:
+        raise ValueError("no ordinary segmental substitution tokens are available")
     id_to_phone = {int(token_id): str(phone) for phone, token_id in vocab.items()}
-    substitution_phones = [id_to_phone[token_id] for token_id in substitution_ids]
+    ordinary_phones = [id_to_phone[token_id] for token_id in ordinary_ids]
+
     canonical_lp = ctc_forward_logprob(log_probs, token_ids, blank_id=int(blank_id))
     if not math.isfinite(canonical_lp):
         return _unavailable(
@@ -193,40 +204,37 @@ def compute_enumerated_fgop_sf_sd_features(
         )
 
     rows: list[SegmentationFreePhoneFeature] = []
+    candidate_counts: list[int] = []
     for index, (canonical_phone, canonical_id) in enumerate(zip(phones, token_ids)):
+        if canonical_phone in SPECIAL_MORA_TOKENS:
+            position_ids = [canonical_id]
+        else:
+            position_ids = sorted(set(ordinary_ids) | {canonical_id})
+        candidate_counts.append(len(position_ids))
+
         substitution_logps: Dict[str, float] = {}
         substitution_lprs: Dict[str, float] = {}
         alternative_logps: list[float] = []
-
-        for alternative_id in substitution_ids:
+        for alternative_id in position_ids:
             sequence = list(token_ids)
             sequence[index] = int(alternative_id)
-            alternative_lp = ctc_forward_logprob(
-                log_probs,
-                sequence,
-                blank_id=int(blank_id),
-            )
+            alternative_lp = ctc_forward_logprob(log_probs, sequence, blank_id=int(blank_id))
             alternative_phone = id_to_phone[int(alternative_id)]
             substitution_logps[alternative_phone] = float(alternative_lp)
             substitution_lprs[alternative_phone] = float(canonical_lp - alternative_lp)
             alternative_logps.append(float(alternative_lp))
 
         deleted_sequence = token_ids[:index] + token_ids[index + 1 :]
-        deletion_lp = ctc_forward_logprob(
-            log_probs,
-            deleted_sequence,
-            blank_id=int(blank_id),
-        )
+        deletion_lp = ctc_forward_logprob(log_probs, deleted_sequence, blank_id=int(blank_id))
         deletion_lpr = float(canonical_lp - deletion_lp)
         alternative_logps.append(float(deletion_lp))
 
         denominator_lp = _logsumexp(alternative_logps)
         gop_sf_sd = float(canonical_lp - denominator_lp)
-
         noncanonical_candidates: list[tuple[float, str, Optional[str]]] = [
             (float(lp), "substitution", phone)
             for phone, lp in substitution_logps.items()
-            if phone != canonical_phone
+            if int(vocab[phone]) != canonical_id
         ]
         noncanonical_candidates.append((float(deletion_lp), "deletion", None))
         best_lp, best_type, best_phone = max(noncanonical_candidates, key=lambda item: item[0])
@@ -251,41 +259,49 @@ def compute_enumerated_fgop_sf_sd_features(
         )
 
     values = np.asarray([row.gop_sf_sd for row in rows], dtype=np.float64)
-    best_ratios = np.asarray(
-        [row.best_noncanonical_log_posterior_ratio for row in rows],
-        dtype=np.float64,
-    )
+    best_ratios = np.asarray([row.best_noncanonical_log_posterior_ratio for row in rows], dtype=np.float64)
     warnings: list[str] = []
     if np.any(best_ratios < 0):
         warnings.append("one_or_more_noncanonical_sd_alternatives_outscore_canonical_sequence")
 
+    special_count = sum(phone in SPECIAL_MORA_TOKENS for phone in phones)
     return SegmentationFreeGopResult(
         available=True,
-        model_id=model_id,
-        revision=revision,
+        model_id=str(model_id),
+        revision=str(revision),
         method=METHOD,
         canonical_phones=phones,
-        feature_phone_inventory=substitution_phones,
+        feature_phone_inventory=ordinary_phones,
         evidence=rows,
         summary={
             "canonical_ctc_log_posterior": float(canonical_lp),
             "phone_count": len(phones),
-            "feature_phone_inventory_size": len(substitution_phones),
-            "feature_vector_dimensions_per_phone": len(substitution_phones) + 2,
+            "ordinary_feature_phone_inventory_size": len(ordinary_phones),
+            "special_mora_position_count": special_count,
+            "candidate_count_min": min(candidate_counts),
+            "candidate_count_max": max(candidate_counts),
+            "candidate_count_varies_by_phone": len(set(candidate_counts)) > 1,
+            "ordinary_position_includes_canonical_substitution": True,
+            "special_mora_policy": "canonical_plus_deletion_only",
             "gop_sf_sd_mean": float(np.mean(values)),
             "gop_sf_sd_median": float(np.median(values)),
             "gop_sf_sd_min": float(np.min(values)),
             "best_noncanonical_lpr_min": float(np.min(best_ratios)),
             "phones_where_noncanonical_outscores_canonical": int(np.sum(best_ratios < 0)),
-            "alignment_free_phone_boundary_requirement": True,
+            "alignment_free": True,
+            "requires_external_phone_boundaries": False,
             "includes_substitution": True,
             "includes_deletion": True,
             "includes_insertion": False,
             "occ_activation_normalization_implemented": False,
             "efficient_alternative_graph_implemented": False,
-            "interpretation": "raw_fgop_sf_sd_style_features_not_pronunciation_score",
+            "cross_phone_raw_gop_comparison_requires_caution": True,
+            "individual_lpr_sign_is_pronunciation_error_rule": False,
+            "interpretation": "raw_alignment_free_Japanese_phone_features_not_pronunciation_score",
         },
         warnings=warnings,
+        score_mapped=False,
+        product_calibrated=False,
     )
 
 
@@ -296,7 +312,7 @@ def evaluate_backend_fgop_sf_sd_shadow(
     *,
     sr: int = 16000,
 ) -> SegmentationFreeGopResult:
-    """Infer logical Japanese CTC logits and compute alignment-free SD features."""
+    """Infer logical Japanese CTC logits and compute alignment-free features."""
     backend._load()  # package-private research backend; validates pinned model contract
     waveform = np.asarray(audio, dtype=np.float32).reshape(-1)
     clean_phones, _dropped = sanitize_canonical_phones(canonical_phones)
@@ -304,29 +320,11 @@ def evaluate_backend_fgop_sf_sd_shadow(
     revision = str(backend.revision)
 
     if waveform.size == 0:
-        return _unavailable(
-            model_id=model_id,
-            revision=revision,
-            canonical_phones=clean_phones,
-            reason="empty_audio",
-            warning="empty_audio",
-        )
+        return _unavailable(model_id=model_id, revision=revision, canonical_phones=clean_phones, reason="empty_audio", warning="empty_audio")
     if not np.isfinite(waveform).all():
-        return _unavailable(
-            model_id=model_id,
-            revision=revision,
-            canonical_phones=clean_phones,
-            reason="nonfinite_audio",
-            warning="nonfinite_audio",
-        )
+        return _unavailable(model_id=model_id, revision=revision, canonical_phones=clean_phones, reason="nonfinite_audio", warning="nonfinite_audio")
     if int(sr) != backend._expected_sample_rate():
-        return _unavailable(
-            model_id=model_id,
-            revision=revision,
-            canonical_phones=clean_phones,
-            reason="sampling_rate_mismatch",
-            warning="sampling_rate_mismatch",
-        )
+        return _unavailable(model_id=model_id, revision=revision, canonical_phones=clean_phones, reason="sampling_rate_mismatch", warning="sampling_rate_mismatch")
 
     inputs = backend.processor(waveform, sampling_rate=sr, return_tensors="pt")
     model_inputs = {key: value.to(backend.device) for key, value in inputs.items()}
@@ -335,32 +333,14 @@ def evaluate_backend_fgop_sf_sd_shadow(
     raw_logits = output.logits.squeeze(0).detach().cpu().numpy()
     raw_vocab = backend.vocabulary()
     if raw_logits.ndim != 2:
-        return _unavailable(
-            model_id=model_id,
-            revision=revision,
-            canonical_phones=clean_phones,
-            reason="unexpected_model_output_shape",
-            warning="unexpected_model_output_shape",
-        )
+        return _unavailable(model_id=model_id, revision=revision, canonical_phones=clean_phones, reason="unexpected_model_output_shape", warning="unexpected_model_output_shape")
     config_vocab = int(getattr(backend.model.config, "vocab_size", 0) or 0)
     if raw_logits.shape[1] != config_vocab:
-        return _unavailable(
-            model_id=model_id,
-            revision=revision,
-            canonical_phones=clean_phones,
-            reason="model_output_vocab_size_mismatch",
-            warning="model_output_vocab_size_mismatch",
-        )
+        return _unavailable(model_id=model_id, revision=revision, canonical_phones=clean_phones, reason="model_output_vocab_size_mismatch", warning="model_output_vocab_size_mismatch")
 
     logical_logits, logical_vocab, _projection = project_japanese_ctc_logits(raw_logits, raw_vocab)
     if "PAD" not in logical_vocab:
-        return _unavailable(
-            model_id=model_id,
-            revision=revision,
-            canonical_phones=clean_phones,
-            reason="logical_blank_token_missing",
-            warning="logical_blank_token_missing",
-        )
+        return _unavailable(model_id=model_id, revision=revision, canonical_phones=clean_phones, reason="logical_blank_token_missing", warning="logical_blank_token_missing")
     return compute_enumerated_fgop_sf_sd_features(
         logical_logits,
         clean_phones,
