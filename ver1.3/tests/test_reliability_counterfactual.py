@@ -6,6 +6,7 @@ import soundfile as sf
 from jp_speech_eval.reliability_counterfactual import (
     reliability_cap_triggers,
     rescore_without_reliability_caps,
+    summarize_counterfactual_reports,
 )
 
 
@@ -75,10 +76,52 @@ def test_counterfactual_replays_raw_scorers_without_changing_product(tmp_path) -
     y = 0.15 * np.sin(2.0 * np.pi * 200.0 * t)
     sf.write(wav, y, sr, subtype="FLOAT")
 
-    report = rescore_without_reliability_caps(_result_fixture(), wav_path=wav)
+    report = rescore_without_reliability_caps(_result_fixture(), wav_path=wav, sample_rate=sr)
     assert report["available"] is True
     assert report["product_behavior_changed"] is False
     assert report["observed_legacy_product_scores"]["pronunciation"] == 60
     assert report["counterfactual_without_reliability_caps"]["pronunciation"] > 60
     assert report["counterfactual_minus_observed"]["pronunciation"] > 0
     assert report["counterfactual_without_reliability_caps"]["total"] >= report["observed_legacy_product_scores"]["total"]
+
+
+def test_summary_is_descriptive_and_does_not_choose_a_policy() -> None:
+    reports = [
+        {
+            "available": True,
+            "counterfactual_minus_observed": {
+                "pronunciation": 20,
+                "prosody": 10,
+                "fluency": 0,
+                "tone": 0,
+                "total": 12,
+            },
+            "cap_triggers": {
+                "alignment_equal_fallback": True,
+                "mora_evidence_below_threshold": True,
+                "f0_coverage_below_0_50": False,
+                "overall_reliability_below_0_75": True,
+            },
+        },
+        {
+            "available": True,
+            "counterfactual_minus_observed": {
+                "pronunciation": 0,
+                "prosody": 0,
+                "fluency": 0,
+                "tone": 0,
+                "total": 0,
+            },
+            "cap_triggers": {
+                "alignment_equal_fallback": False,
+                "mora_evidence_below_threshold": False,
+                "f0_coverage_below_0_50": False,
+                "overall_reliability_below_0_75": False,
+            },
+        },
+    ]
+    summary = summarize_counterfactual_reports(reports)
+    assert summary["report_count"] == 2
+    assert summary["positive_total_delta_count"] == 1
+    assert summary["trigger_counts"]["alignment_equal_fallback"] == 1
+    assert summary["decision"] == "none"
