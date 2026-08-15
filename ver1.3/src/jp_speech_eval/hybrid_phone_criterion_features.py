@@ -2,12 +2,17 @@
 
 Alignment-free CTC-GOP avoids forced phone boundaries and can model
 substitution/deletion evidence, while recent GOP work also finds value in
-logit-based features and uncertainty.  Rather than choosing one family before
+logit-based features and uncertainty. Rather than choosing one family before
 Japanese learner validation, this module joins them with explicit provenance.
 
-The frame-local branch still depends on a CTC Viterbi support path.  Its support
-frames are **not** physical phone boundaries/durations.  The resulting bundle
-is therefore a supervised-research design matrix, not a pronunciation score.
+The frame-local branch still depends on a CTC Viterbi support path. Its support
+frames are **not** physical phone boundaries/durations. In addition, Japanese
+special morae ``N`` and ``cl`` are tagged as a separate construct: their raw
+frame-local numbers may be retained for research, but they are not ordinary
+segmental-clarity features and must not be silently mixed into a clarity model.
+
+The resulting bundle is therefore a supervised-research design matrix, not a
+pronunciation score.
 """
 
 from __future__ import annotations
@@ -15,17 +20,22 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List
 
+from .japanese_phoneme_gop import SPECIAL_MORA_TOKENS
 from .phone_criterion_features import PhoneCriterionFeatureBundle
 from .phoneme_gop import PhoneGopResult
 
 
-SCHEMA = "hybrid_phone_criterion_feature_bundle_v1"
+SCHEMA = "hybrid_phone_criterion_feature_bundle_v2"
 
 
 @dataclass(frozen=True)
 class HybridPhoneCriterionRow:
     phone_index: int
     canonical_phone: str
+    construct_role: str
+    frame_local_ordinary_clarity_feature_applicable: bool
+    alignment_free_substitution_feature_applicable: bool
+    alignment_free_deletion_feature_applicable: bool
     frame_local_mean_logit_margin: float
     frame_local_max_logit_margin: float
     frame_local_posterior_gop_margin: float
@@ -94,7 +104,13 @@ def build_hybrid_phone_criterion_bundle(
     frame_local: PhoneGopResult,
     criterion: PhoneCriterionFeatureBundle,
 ) -> HybridPhoneCriterionBundle:
-    """Strictly join Viterbi/logit and alignment-free feature families."""
+    """Strictly join Viterbi/logit and alignment-free feature families.
+
+    The join preserves every raw research feature, but adds explicit construct
+    applicability flags so downstream criterion code can build separate
+    ordinary-segmental and special-mora models instead of accidentally mixing
+    them.
+    """
     model_id = str(criterion.model_id or frame_local.model_id or "")
     revision = str(criterion.revision or "")
     if not frame_local.available:
@@ -114,10 +130,16 @@ def build_hybrid_phone_criterion_bundle(
             return _unavailable("phone_index_mismatch", model_id=model_id, revision=revision)
         if str(frame_row.canonical_phone) != str(af_row.canonical_phone):
             return _unavailable("canonical_phone_row_mismatch", model_id=model_id, revision=revision)
+        phone = str(frame_row.canonical_phone)
+        special_mora = phone in SPECIAL_MORA_TOKENS
         rows.append(
             HybridPhoneCriterionRow(
                 phone_index=int(frame_row.phone_index),
-                canonical_phone=str(frame_row.canonical_phone),
+                canonical_phone=phone,
+                construct_role=("special_mora_timing" if special_mora else "ordinary_segmental_clarity"),
+                frame_local_ordinary_clarity_feature_applicable=not special_mora,
+                alignment_free_substitution_feature_applicable=not special_mora,
+                alignment_free_deletion_feature_applicable=True,
                 frame_local_mean_logit_margin=float(frame_row.mean_logit_margin),
                 frame_local_max_logit_margin=float(frame_row.max_logit_margin),
                 frame_local_posterior_gop_margin=float(frame_row.posterior_gop_margin),
@@ -135,6 +157,7 @@ def build_hybrid_phone_criterion_bundle(
             )
         )
 
+    special_count = sum(row.construct_role == "special_mora_timing" for row in rows)
     return HybridPhoneCriterionBundle(
         available=True,
         schema=SCHEMA,
@@ -144,6 +167,8 @@ def build_hybrid_phone_criterion_bundle(
         rows=rows,
         summary={
             "phone_count": len(rows),
+            "ordinary_segmental_row_count": len(rows) - special_count,
+            "special_mora_row_count": special_count,
             "contains_frame_local_logit_features": True,
             "contains_frame_local_posterior_features": True,
             "contains_frame_local_uncertainty": True,
@@ -152,11 +177,14 @@ def build_hybrid_phone_criterion_bundle(
             "frame_local_support_requires_ctc_viterbi_path": True,
             "frame_local_support_is_physical_phone_boundary": False,
             "frame_local_support_frame_count_is_physical_duration": False,
+            "special_mora_frame_local_raw_values_are_ordinary_clarity_features": False,
+            "special_mora_requires_construct_specific_feature_selection": True,
+            "special_mora_primary_local_alignment_free_feature": "deletion_lpr_with_timing_context_required",
             "feature_family_selection_requires_japanese_l2_criterion": True,
             "phone_specific_weighting_not_learned_yet": True,
             "cross_model_raw_averaging_allowed": False,
             "individual_feature_is_pronunciation_decision": False,
-            "intended_use": "speaker_held_out_labeled_Japanese_MDD_or_pronunciation_regression",
+            "intended_use": "speaker_held_out_labeled_Japanese_MDD_or_pronunciation_regression_with_construct_specific_feature_selection",
             "product_score_changed": False,
         },
         warnings=sorted(set(list(frame_local.warnings) + list(criterion.warnings))),
