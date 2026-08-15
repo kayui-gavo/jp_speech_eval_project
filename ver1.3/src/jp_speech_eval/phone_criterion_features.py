@@ -1,19 +1,27 @@
 """Criterion-ready assembly of Japanese phone research features.
 
-This module joins the transparent enumerated segmentation-free feature family
-(LPP/LPR/substitution/deletion) with the published SD normalized-forward
+This module joins the transparent enumerated alignment-free feature family
+(LPP/LPR/substitution/deletion) with the normalized SD alternative-graph
 ``Occ(i)`` diagnostics. It creates a stable machine-readable bundle for future
-labeled criterion experiments while deliberately refusing any correctness or
-learner-facing score mapping.
+expert-labeled criterion experiments while deliberately refusing any
+correctness or learner-facing score mapping.
 
 A bundle is model-specific evidence. Raw values from different phone-CTC
 backbones must not be averaged or assumed to share a calibrated scale.
 
+Japanese construct boundary:
+
+* ordinary phones are tagged ``ordinary_segmental_clarity``;
+* ``N`` and ``cl`` are tagged ``special_mora_timing``;
+* special-mora deletion evidence remains available, but substitution evidence
+  is not an ordinary segmental-clarity feature and normalized ``Occ(i)`` is not
+  a physical duration.
+
 Important semantic detail: ``canonical_log_posterior`` in the enumerated
 extractor is the log posterior of the *whole canonical phone sequence*. It is
-therefore identical across rows for one utterance. The legacy field is retained
-for schema compatibility, but the summary explicitly marks it as an
-utterance-level context feature rather than a phone-local correctness signal.
+therefore identical across rows for one utterance. The field is retained for
+schema continuity but is explicitly marked as utterance-level context rather
+than a phone-local correctness signal.
 """
 
 from __future__ import annotations
@@ -24,17 +32,23 @@ from typing import Any, Dict, List
 
 import numpy as np
 
+from .japanese_phoneme_gop import SPECIAL_MORA_TOKENS
 from .segmentation_free_gop import SegmentationFreeGopResult
 from .segmentation_free_gop_norm import SegmentationFreeNormResult
 
 
-SCHEMA = "phone_criterion_feature_bundle_v1"
+SCHEMA = "phone_criterion_feature_bundle_v2"
 
 
 @dataclass(frozen=True)
 class PhoneCriterionFeatureRow:
     phone_index: int
     canonical_phone: str
+    construct_role: str
+    ordinary_segmental_clarity_feature_applicable: bool
+    substitution_feature_applicable: bool
+    deletion_feature_applicable: bool
+    normalized_occ_is_physical_duration: bool
     # Backward-compatible names. Both values describe the whole canonical
     # sequence, not the local phone in isolation.
     canonical_log_posterior: float
@@ -96,7 +110,8 @@ def build_phone_criterion_feature_bundle(
 
     The function is intentionally strict. A mismatch in model provenance,
     phone sequence, row count or phone identity is treated as unavailable rather
-    than silently aligning unrelated evidence.
+    than silently aligning unrelated evidence. Construct-role metadata is added
+    here, before any downstream criterion model can select features.
     """
     model_id = str(enumerated.model_id or normalized.model_id or "")
     revision = str(enumerated.revision or normalized.revision or "")
@@ -117,8 +132,6 @@ def build_phone_criterion_feature_bundle(
     if frame_count <= 0:
         return _unavailable("normalized_frame_count_missing", model_id=model_id, revision=revision)
 
-    # This invariant is intentional: the enumerated canonical numerator is the
-    # same whole-sequence posterior for every phone-specific alternative set.
     sequence_numerators = [float(row.canonical_log_posterior) for row in enumerated.evidence]
     if sequence_numerators and not np.allclose(sequence_numerators, sequence_numerators[0], rtol=0.0, atol=1e-9):
         return _unavailable("canonical_sequence_logposterior_inconsistent_across_rows", model_id=model_id, revision=revision)
@@ -141,16 +154,23 @@ def build_phone_criterion_feature_bundle(
         if any(not math.isfinite(float(value)) for value in values):
             return _unavailable("nonfinite_phone_feature", model_id=model_id, revision=revision)
 
+        phone = str(enum_row.canonical_phone)
+        special_mora = phone in SPECIAL_MORA_TOKENS
         rows.append(
             PhoneCriterionFeatureRow(
                 phone_index=int(enum_row.phone_index),
-                canonical_phone=str(enum_row.canonical_phone),
+                canonical_phone=phone,
+                construct_role=("special_mora_timing" if special_mora else "ordinary_segmental_clarity"),
+                ordinary_segmental_clarity_feature_applicable=not special_mora,
+                substitution_feature_applicable=not special_mora,
+                deletion_feature_applicable=True,
+                normalized_occ_is_physical_duration=False,
                 canonical_log_posterior=float(enum_row.canonical_log_posterior),
                 canonical_log_posterior_per_frame=float(enum_row.canonical_log_posterior) / frame_count,
                 deletion_lpr=float(enum_row.deletion_log_posterior_ratio),
                 substitution_lprs={
-                    str(phone): float(value)
-                    for phone, value in enum_row.substitution_log_posterior_ratios.items()
+                    str(candidate): float(value)
+                    for candidate, value in enum_row.substitution_log_posterior_ratios.items()
                 },
                 enumerated_gop_sf_sd=float(enum_row.gop_sf_sd),
                 normalized_graph_gop_sf_sd=float(norm_row.gop_sf_sd_norm),
@@ -166,16 +186,22 @@ def build_phone_criterion_feature_bundle(
         )
 
     utterance_sequence_lp = sequence_numerators[0] if sequence_numerators else None
+    special_count = sum(row.construct_role == "special_mora_timing" for row in rows)
     return PhoneCriterionFeatureBundle(
         available=True,
         schema=SCHEMA,
         model_id=model_id,
         revision=revision,
         canonical_phones=list(enumerated.canonical_phones),
+        # This inventory is the ordinary substitution search inventory. Special
+        # mora canonical tokens may still occur in rows but are not generic
+        # substitution candidates.
         substitution_phone_inventory=list(enumerated.feature_phone_inventory),
         rows=rows,
         summary={
             "phone_count": len(rows),
+            "ordinary_segmental_row_count": len(rows) - special_count,
+            "special_mora_row_count": special_count,
             "frame_count": frame_count,
             "utterance_canonical_sequence_log_posterior": utterance_sequence_lp,
             "utterance_canonical_sequence_log_posterior_per_frame": (
@@ -184,12 +210,17 @@ def build_phone_criterion_feature_bundle(
             "row_field_canonical_log_posterior_is_utterance_sequence_level": True,
             "row_field_canonical_log_posterior_is_phone_local": False,
             "row_field_canonical_log_posterior_repeated_across_phone_rows": True,
+            "substitution_phone_inventory_is_ordinary_segmental": True,
+            "special_mora_substitution_feature_applicable": False,
+            "special_mora_deletion_feature_applicable": True,
+            "special_mora_occ_i_is_physical_duration": False,
+            "construct_specific_feature_selection_required": True,
             "feature_family": "joint_LPP_LPR_enumerated_SD_graph_GOP_Occ",
             "model_specific_raw_scale": True,
             "cross_model_raw_averaging_allowed": False,
             "individual_feature_is_pronunciation_decision": False,
             "requires_labeled_phone_or_human_criterion": True,
-            "intended_use": "future_labeled_MDD_or_pronunciation_regression_research",
+            "intended_use": "future_labeled_Japanese_MDD_or_pronunciation_regression_with_construct_specific_feature_selection",
             "product_score_changed": False,
         },
         warnings=sorted(set(list(enumerated.warnings) + list(normalized.warnings))),
@@ -229,6 +260,9 @@ def compare_shared_suffix_locality(
 
     left_rows = left.rows[-suffix:]
     right_rows = right.rows[-suffix:]
+    if any(x.construct_role != y.construct_role for x, y in zip(left_rows, right_rows)):
+        return {"available": False, "reason": "shared_suffix_construct_role_mismatch"}
+
     gop_delta = np.asarray(
         [
             abs(float(x.normalized_graph_gop_sf_sd) - float(y.normalized_graph_gop_sf_sd))
@@ -248,6 +282,7 @@ def compare_shared_suffix_locality(
         "available": True,
         "shared_suffix_phone_count": suffix,
         "shared_suffix_phones": a[-suffix:],
+        "shared_suffix_construct_roles": [row.construct_role for row in left_rows],
         "left_prefix_phone_count": len(a) - suffix,
         "right_prefix_phone_count": len(b) - suffix,
         "normalized_graph_gop_abs_delta_mean": float(np.mean(gop_delta)),
