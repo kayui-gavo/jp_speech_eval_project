@@ -1,15 +1,15 @@
-"""Restricted-substitution alignment-free GOP research wrapper.
+"""Restricted-substitution alignment-free GOP research features.
 
 Recent alignment-free GOP work reports benefits from restricting substitution
 alternatives using phonological knowledge instead of enumerating an entire
-phone inventory.  This module applies that idea conservatively to the Japanese
-phone-CTC research stack without changing the validated unrestricted extractor.
+phone inventory. This module applies that idea conservatively to the Japanese
+phone-CTC research stack without changing the established unrestricted path.
 
 Important boundaries:
 - candidate neighborhoods are Japanese research hypotheses, not learner labels;
 - ``N`` and ``cl`` use canonical-vs-deletion evidence only here;
 - no value is mapped to pronunciation correctness or a learner-facing /100;
-- unrestricted and restricted values are never averaged together.
+- unrestricted and restricted values are compared, never averaged together.
 """
 
 from __future__ import annotations
@@ -21,10 +21,7 @@ from typing import Any, Dict, Mapping, Sequence
 import numpy as np
 
 from .japanese_phone_substitutions import substitution_token_ids_by_position
-from .segmentation_free_gop import (
-    SegmentationFreePhoneFeature,
-    compute_enumerated_fgop_sf_sd_features,
-)
+from .japanese_phoneme_gop import ctc_forward_logprob
 
 
 METHOD = "restricted_enumerated_fgop_ctc_sf_sd_v1"
@@ -77,7 +74,11 @@ def _unavailable(
     revision: str,
     canonical_phones: Sequence[str],
     warnings: Sequence[str] = (),
+    extra_summary: Mapping[str, Any] | None = None,
 ) -> RestrictedSegmentationFreeGopResult:
+    summary: Dict[str, Any] = {"reason": str(reason)}
+    if extra_summary:
+        summary.update(dict(extra_summary))
     return RestrictedSegmentationFreeGopResult(
         available=False,
         method=METHOD,
@@ -86,9 +87,28 @@ def _unavailable(
         canonical_phones=[str(x) for x in canonical_phones],
         rows=[],
         candidate_provenance=[],
-        summary={"reason": str(reason)},
+        summary=summary,
         warnings=list(warnings) or [str(reason)],
     )
+
+
+def _log_softmax(logits: np.ndarray) -> np.ndarray:
+    values = np.asarray(logits, dtype=np.float64)
+    if values.ndim != 2 or values.shape[0] <= 0 or values.shape[1] <= 1:
+        raise ValueError("CTC logits must have shape (frames, vocabulary)")
+    if not np.isfinite(values).all():
+        raise ValueError("CTC logits contain non-finite values")
+    maxima = np.max(values, axis=1, keepdims=True)
+    shifted = values - maxima
+    return shifted - np.log(np.sum(np.exp(shifted), axis=1, keepdims=True))
+
+
+def _logsumexp(values: Sequence[float]) -> float:
+    finite = np.asarray([float(v) for v in values if math.isfinite(float(v))], dtype=np.float64)
+    if finite.size == 0:
+        return -np.inf
+    maximum = float(np.max(finite))
+    return maximum + math.log(float(np.sum(np.exp(finite - maximum))))
 
 
 def compute_restricted_fgop_sf_sd_features(
@@ -101,15 +121,25 @@ def compute_restricted_fgop_sf_sd_features(
     revision: str = "",
     fallback_to_unrestricted: bool = True,
 ) -> RestrictedSegmentationFreeGopResult:
-    """Compute target-position-specific restricted substitution features.
+    """Compute exact CTC RPS substitution/deletion features per target phone.
 
-    The established unrestricted implementation accepts one substitution set
-    for the entire utterance.  To avoid changing that audited code path, this
-    wrapper runs it once per target position with that position's Japanese
-    candidate set and keeps only the corresponding row.  This is intentionally
-    slower but transparent for Stage-0 research; an optimized graph version can
-    replace it only after criterion evidence supports the restricted policy.
+    Unlike the first prototype, this implementation computes the canonical CTC
+    posterior once and evaluates only the alternatives for the current target
+    position. Complexity therefore scales with the actual restricted candidate
+    count instead of repeatedly recomputing every utterance position.
     """
+    raw = np.asarray(logits, dtype=np.float64)
+    try:
+        log_probs = _log_softmax(raw)
+    except ValueError as exc:
+        return _unavailable(
+            "invalid_ctc_logits",
+            model_id=model_id,
+            revision=revision,
+            canonical_phones=canonical_phones,
+            warnings=[str(exc)],
+        )
+
     phones = [str(phone) for phone in canonical_phones if str(phone)]
     if not phones:
         return _unavailable(
@@ -120,15 +150,24 @@ def compute_restricted_fgop_sf_sd_features(
         )
     missing = sorted({phone for phone in phones if phone not in vocab})
     if missing:
-        result = _unavailable(
+        return _unavailable(
             "canonical_phone_not_in_logical_vocabulary",
             model_id=model_id,
             revision=revision,
             canonical_phones=phones,
             warnings=["phone_inventory_mismatch"],
+            extra_summary={"missing_phones": missing},
         )
-        result.summary["missing_phones"] = missing
-        return result
+
+    token_ids = [int(vocab[phone]) for phone in phones]
+    canonical_lp = ctc_forward_logprob(log_probs, token_ids, blank_id=int(blank_id))
+    if not math.isfinite(canonical_lp):
+        return _unavailable(
+            "canonical_ctc_logposterior_nonfinite",
+            model_id=model_id,
+            revision=revision,
+            canonical_phones=phones,
+        )
 
     by_position, provenance = substitution_token_ids_by_position(
         phones,
@@ -139,7 +178,7 @@ def compute_restricted_fgop_sf_sd_features(
     rows: list[RestrictedPhoneFeature] = []
     warnings: list[str] = []
 
-    for index, canonical_phone in enumerate(phones):
+    for index, (canonical_phone, canonical_id) in enumerate(zip(phones, token_ids)):
         candidate_ids = list(by_position.get(index, ()))
         if not candidate_ids:
             return _unavailable(
@@ -149,28 +188,41 @@ def compute_restricted_fgop_sf_sd_features(
                 canonical_phones=phones,
                 warnings=[f"empty_candidate_set:{index}:{canonical_phone}"],
             )
-        result = compute_enumerated_fgop_sf_sd_features(
-            logits,
-            phones,
-            vocab=vocab,
-            blank_id=int(blank_id),
-            substitution_token_ids=candidate_ids,
-            model_id=model_id,
-            revision=revision,
-        )
-        if not result.available or len(result.evidence) != len(phones):
-            return _unavailable(
-                "restricted_position_evaluation_failed",
-                model_id=model_id,
-                revision=revision,
-                canonical_phones=phones,
-                warnings=[*result.warnings, f"failed_position:{index}:{canonical_phone}"],
-            )
-        source: SegmentationFreePhoneFeature = result.evidence[index]
+
+        substitution_logps: Dict[str, float] = {}
+        substitution_lprs: Dict[str, float] = {}
+        denominator_terms: list[float] = []
+        for alternative_id in candidate_ids:
+            sequence = list(token_ids)
+            sequence[index] = int(alternative_id)
+            alternative_lp = ctc_forward_logprob(log_probs, sequence, blank_id=int(blank_id))
+            alternative_phone = id_to_phone[int(alternative_id)]
+            substitution_logps[alternative_phone] = float(alternative_lp)
+            substitution_lprs[alternative_phone] = float(canonical_lp - alternative_lp)
+            denominator_terms.append(float(alternative_lp))
+
+        deleted_sequence = token_ids[:index] + token_ids[index + 1 :]
+        deletion_lp = ctc_forward_logprob(log_probs, deleted_sequence, blank_id=int(blank_id))
+        deletion_lpr = float(canonical_lp - deletion_lp)
+        denominator_terms.append(float(deletion_lp))
+        denominator_lp = _logsumexp(denominator_terms)
+        gop_sf_sd = float(canonical_lp - denominator_lp)
+
+        noncanonical: list[tuple[float, str, str | None]] = [
+            (lp, "substitution", phone)
+            for phone, lp in substitution_logps.items()
+            if int(vocab[phone]) != canonical_id
+        ]
+        noncanonical.append((float(deletion_lp), "deletion", None))
+        best_lp, best_type, best_phone = max(noncanonical, key=lambda item: item[0])
         meta = provenance[index]
         candidate_phones = tuple(
             sorted(id_to_phone[token_id] for token_id in candidate_ids if token_id in id_to_phone)
         )
+        best_lpr = float(canonical_lp - best_lp)
+        if best_lpr < 0.0:
+            warnings.append("one_or_more_restricted_alternatives_outscore_canonical_sequence")
+
         rows.append(
             RestrictedPhoneFeature(
                 phone_index=index,
@@ -179,23 +231,15 @@ def compute_restricted_fgop_sf_sd_features(
                 candidate_count=len(candidate_phones),
                 search_policy=str(meta.get("policy") or ""),
                 fallback_used=bool(meta.get("fallback_used")),
-                canonical_log_posterior=float(source.canonical_log_posterior),
-                gop_sf_sd=float(source.gop_sf_sd),
-                deletion_lpr=float(source.deletion_log_posterior_ratio),
-                substitution_lprs={
-                    str(phone): float(value)
-                    for phone, value in source.substitution_log_posterior_ratios.items()
-                },
-                best_noncanonical_type=str(source.best_noncanonical_alternative_type),
-                best_noncanonical_phone=(
-                    str(source.best_noncanonical_alternative_phone)
-                    if source.best_noncanonical_alternative_phone is not None
-                    else None
-                ),
-                best_noncanonical_lpr=float(source.best_noncanonical_log_posterior_ratio),
+                canonical_log_posterior=float(canonical_lp),
+                gop_sf_sd=gop_sf_sd,
+                deletion_lpr=deletion_lpr,
+                substitution_lprs=substitution_lprs,
+                best_noncanonical_type=best_type,
+                best_noncanonical_phone=best_phone,
+                best_noncanonical_lpr=best_lpr,
             )
         )
-        warnings.extend(result.warnings)
 
     values = np.asarray([row.gop_sf_sd for row in rows], dtype=np.float64)
     best = np.asarray([row.best_noncanonical_lpr for row in rows], dtype=np.float64)
@@ -217,6 +261,8 @@ def compute_restricted_fgop_sf_sd_features(
         rows=rows,
         candidate_provenance=provenance,
         summary={
+            "canonical_ctc_log_posterior": float(canonical_lp),
+            "frame_count": int(raw.shape[0]),
             "phone_count": len(rows),
             "candidate_count_min": min(counts),
             "candidate_count_max": max(counts),
@@ -229,6 +275,10 @@ def compute_restricted_fgop_sf_sd_features(
             "search_space": "position_specific_restricted_japanese_phonology",
             "special_mora_policy": "canonical_plus_deletion_only",
             "criterion_validated_for_japanese_l2": False,
+            "alignment_free_phone_boundary_requirement": True,
+            "includes_substitution": True,
+            "includes_deletion": True,
+            "includes_insertion": False,
             "interpretation": "restricted_alignment_free_research_feature_not_pronunciation_score",
         },
         warnings=sorted(set(warnings)),
@@ -258,6 +308,7 @@ def compare_restricted_vs_unrestricted(
                 "rps_candidate_count": rps.candidate_count,
                 "rps_search_policy": rps.search_policy,
                 "rps_gop_sf_sd": rps.gop_sf_sd,
+                "ups_candidate_count": len(ups.substitution_log_posterior_ratios),
                 "ups_gop_sf_sd": float(ups.gop_sf_sd),
                 "rps_minus_ups": float(rps.gop_sf_sd - float(ups.gop_sf_sd)),
                 "rps_best_noncanonical_phone": rps.best_noncanonical_phone,
@@ -265,9 +316,13 @@ def compare_restricted_vs_unrestricted(
                 "same_best_noncanonical_phone": rps.best_noncanonical_phone == ups.best_noncanonical_alternative_phone,
             }
         )
+    rps_counts = [row["rps_candidate_count"] for row in rows]
+    ups_counts = [row["ups_candidate_count"] for row in rows]
     return {
         "available": True,
         "rows": rows,
+        "candidate_count_reduction_mean": float(np.mean(ups_counts) - np.mean(rps_counts)),
+        "candidate_count_ratio_mean": float(np.mean(rps_counts) / np.mean(ups_counts)) if np.mean(ups_counts) > 0 else None,
         "interpretation": "RPS_vs_UPS_search_space_diagnostic_not_pronunciation_quality",
         "raw_values_must_not_be_averaged": True,
         "product_score_changed": False,
