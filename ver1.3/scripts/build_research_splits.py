@@ -13,9 +13,12 @@ import hashlib
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Sequence
 
-from validate_research_manifest import load_manifest, validate_manifest_rows
+try:  # package-style import in tests / `python -m`
+    from scripts.validate_research_manifest import load_manifest, validate_manifest_rows
+except ImportError:  # direct `python scripts/build_research_splits.py`
+    from validate_research_manifest import load_manifest, validate_manifest_rows
 
 
 SPLIT_SCHEMA = "research_group_split_v1"
