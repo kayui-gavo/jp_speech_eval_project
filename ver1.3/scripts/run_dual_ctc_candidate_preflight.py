@@ -6,6 +6,10 @@ It uses only repository-bundled audio and never changes a product score. The
 artifact includes frame-local logit/posterior evidence, alignment-free phone
 features, Japanese position-masked SD/Occ(i), a strict hybrid criterion bundle,
 and explicit CTC posterior peakiness/uncertainty diagnostics.
+
+Posterior peakiness uses the *acoustic* phone inventory, including special
+morae N/cl. That inventory is intentionally broader than the ordinary clarity
+competitor set.
 """
 
 from __future__ import annotations
@@ -33,7 +37,10 @@ from jp_speech_eval.hybrid_phone_criterion_features import (  # noqa: E402
     SCHEMA as HYBRID_SCHEMA,
     build_hybrid_phone_criterion_bundle,
 )
-from jp_speech_eval.japanese_phoneme_gop import segmental_competitor_ids  # noqa: E402
+from jp_speech_eval.japanese_phone_inventory import (  # noqa: E402
+    acoustic_phone_token_ids,
+    inventory_semantics,
+)
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import (  # noqa: E402
     SCHEMA as CRITERION_SCHEMA,
@@ -133,12 +140,16 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
         norm_payload = norm.to_dict()
         criterion_payload = criterion.to_dict()
         hybrid_payload = hybrid.to_dict()
-        phone_ids = segmental_competitor_ids(logical_vocab, blank_id=blank_id)
+        phone_ids = acoustic_phone_token_ids(logical_vocab, blank_id=blank_id)
         posterior_payload = compute_ctc_posterior_diagnostics(
             logical_logits,
             blank_id=blank_id,
             phone_token_ids=phone_ids,
         ).to_dict()
+        posterior_payload["phone_inventory_semantics"] = inventory_semantics(
+            logical_vocab,
+            blank_id=blank_id,
+        )
     except Exception as exc:
         reason = f"norm_or_diagnostic_extraction_failed:{type(exc).__name__}"
         norm_payload = {
@@ -193,7 +204,7 @@ def main() -> None:
     correct_lp = correct["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     wrong_lp = wrong["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     payload = {
-        "schema": "dual_ctc_candidate_preflight_v7",
+        "schema": "dual_ctc_candidate_preflight_v8",
         "model_id": args.model,
         "revision": args.revision,
         "audio": str(BUNDLED_AUDIO.relative_to(ROOT)),
@@ -205,6 +216,7 @@ def main() -> None:
         "individual_lpr_sign_is_pronunciation_error_rule": False,
         "occ_i_is_physical_phone_duration": False,
         "ctc_peakiness_is_pronunciation_score": False,
+        "ctc_peakiness_phone_inventory_includes_special_morae": True,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
         "criterion_schema": CRITERION_SCHEMA,
@@ -235,6 +247,7 @@ def main() -> None:
     print("hybrid criterion bundle available:", correct["hybrid_criterion_feature_bundle"].get("available"))
     print("CTC top1 posterior mean:", posterior.get("top1_posterior_mean"))
     print("CTC blank-top1 fraction:", posterior.get("blank_top1_fraction"))
+    print("CTC posterior acoustic phone count:", posterior.get("phone_token_count"))
     print("PRODUCT SCORE: UNCHANGED / SHADOW ONLY")
 
 
