@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Run Japanese restricted-substitution GOP features on official JVS anchors.
 
-This is an automatic native false-alarm preflight. It does *not* infer that a
-negative local margin is a pronunciation error; instead it measures how often
-a restricted phonological alternative out-scores the canonical target on
-known native speech.
+This is an automatic native false-alarm pressure test. It does *not* infer that
+a negative local margin is a pronunciation error.
 
-The target phone sequence is built from the reviewed kana reading stored in the
-JVS manifest. Surface-kanji G2P is explicitly prohibited here because a prior
-audit found ``明王`` could be analyzed as ``あきらおう`` rather than the intended
-``みょうおう``; that target-side bug created a spurious identical error block
-across all three native speakers.
+The JVS target uses the manifest's explicit reviewed logical-phone sequence.
+Neither surface-kanji G2P nor re-G2P of the kana reading is accepted as the
+phone target: Stage-0 found both paths could alter ``明王 / みょうおう`` and
+create repeated pseudo-errors across native speakers.
 """
 
 from __future__ import annotations
@@ -40,6 +37,7 @@ from run_official_jvs_phone_ctc_anchor_preflight import (  # noqa: E402
     BeatriceInfer,
     TARGET_TEXT,
     _load_manifest,
+    _reviewed_target,
     _source_provenance,
 )
 
@@ -53,23 +51,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _manifest_reading(rows: list[Dict[str, Any]]) -> str:
-    readings = {str(row.get("target_reading") or "").strip() for row in rows}
-    if "" in readings or len(readings) != 1:
-        raise ValueError("JVS manifest must provide one reviewed target_reading for every anchor")
-    if any(str(row.get("target_text") or "") != TARGET_TEXT for row in rows):
-        raise ValueError("JVS manifest target text drift detected")
-    if any(bool(row.get("automatic_surface_g2p_is_safe_for_anchor", True)) for row in rows):
-        raise ValueError("JVS manifest must explicitly block automatic surface G2P for this anchor")
-    return readings.pop()
-
-
 def main() -> None:
     args = parse_args()
     sample_rows = _load_manifest(Path(args.manifest))
-    target_reading = _manifest_reading(sample_rows)
-    target = build_japanese_target_evidence(TARGET_TEXT, reading_override=target_reading)
+    target_reading, reviewed_phones = _reviewed_target(sample_rows)
+    target = build_japanese_target_evidence(
+        TARGET_TEXT,
+        reading_override=target_reading,
+        phones_override=reviewed_phones,
+    )
     phones, dropped = sanitize_canonical_phones(target.phones)
+    if dropped or phones != reviewed_phones:
+        raise RuntimeError("reviewed JVS phone override changed during target sanitization")
     model = BeatriceInfer(allow_download=bool(args.allow_download), device=args.device)
 
     rows: list[Dict[str, Any]] = []
@@ -145,11 +138,13 @@ def main() -> None:
         if row.get("restricted_candidate_ratio_vs_unrestricted") is not None
     ]
     payload = {
-        "schema": "jvs_restricted_gop_native_preflight_v2",
+        "schema": "jvs_restricted_gop_native_preflight_v3",
         "target_text": TARGET_TEXT,
         "target_reading": target_reading,
         "target_reading_source": "reviewed_manifest_override",
-        "automatic_surface_g2p_used": False,
+        "target_phone_source": "reviewed_logical_phone_override_v1",
+        "automatic_surface_g2p_used_for_phone_target": False,
+        "automatic_kana_g2p_used_for_phone_target": False,
         "target_phones": phones,
         "dropped_nonsegmental_target_tokens": dropped,
         "model_id": model.model_id,
@@ -167,6 +162,8 @@ def main() -> None:
             "native_noncanonical_outscore_rate_max": max(native_rates) if native_rates else None,
             "restricted_candidate_ratio_vs_unrestricted_mean": statistics.mean(candidate_ratios) if candidate_ratios else None,
             "target_reading_reviewed_before_phone_scoring": True,
+            "target_phone_sequence_explicitly_reviewed": True,
+            "text_frontend_g2p_is_authoritative_phone_source": False,
             "interpretation": "native_false_alarm_pressure_test_not_pronunciation_validity",
             "required_next_step": "compare_on_labeled_or_controlled_learner_errors_before_any_clarity_mapping",
         },
@@ -175,6 +172,7 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {output}")
+    print("reviewed target phone count:", len(phones))
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
     print("HUMAN RECORDING GATE: UNCHANGED / BLOCKED")
     print("PRODUCT SCORE: UNCHANGED / RESEARCH FEATURE ONLY")
