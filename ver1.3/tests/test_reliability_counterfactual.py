@@ -63,10 +63,25 @@ def _result_fixture() -> dict:
 
 def test_cap_trigger_audit_mirrors_legacy_predicates() -> None:
     triggers = reliability_cap_triggers(_result_fixture())
+    assert triggers["applicable"] is True
     assert triggers["alignment_equal_fallback"] is True
     assert triggers["mora_evidence_below_threshold"] is True
     assert triggers["f0_coverage_below_0_50"] is True
     assert triggers["overall_reliability_below_0_75"] is True
+
+
+def test_broad_mode_missing_mora_evidence_is_not_miscounted_as_cap_trigger() -> None:
+    broad = {
+        "alignment_mode": "none",
+        "moras": ["ア", "イ"],
+        "mora_table": [],
+        "details": {"reliability": {"overall": 0.5, "f0_coverage": 0.2}},
+    }
+    triggers = reliability_cap_triggers(broad)
+    assert triggers["applicable"] is False
+    assert triggers["mora_evidence_below_threshold"] is False
+    assert triggers["f0_coverage_below_0_50"] is False
+    assert triggers["overall_reliability_below_0_75"] is False
 
 
 def test_counterfactual_replays_raw_scorers_without_changing_product(tmp_path) -> None:
@@ -79,10 +94,31 @@ def test_counterfactual_replays_raw_scorers_without_changing_product(tmp_path) -
     report = rescore_without_reliability_caps(_result_fixture(), wav_path=wav, sample_rate=sr)
     assert report["available"] is True
     assert report["product_behavior_changed"] is False
-    assert report["observed_legacy_product_scores"]["pronunciation"] == 60
+    assert report["observed_legacy_evaluator_scores"]["pronunciation"] == 60
     assert report["counterfactual_without_reliability_caps"]["pronunciation"] > 60
     assert report["counterfactual_minus_observed"]["pronunciation"] > 0
-    assert report["counterfactual_without_reliability_caps"]["total"] >= report["observed_legacy_product_scores"]["total"]
+    assert report["counterfactual_without_reliability_caps"]["total"] >= report["observed_legacy_evaluator_scores"]["total"]
+    assert report["counterfactual_exactness"]["tone"] is True
+
+
+def test_wav_free_replay_keeps_tone_missing_but_total_exact_when_tone_weight_zero() -> None:
+    report = rescore_without_reliability_caps(_result_fixture(), wav_path=None)
+    assert report["available"] is True
+    assert report["source_wav_available"] is False
+    assert report["counterfactual_without_reliability_caps"]["tone"] is None
+    assert report["counterfactual_exactness"]["tone"] is False
+    assert report["counterfactual_exactness"]["total"] is True
+    assert report["counterfactual_without_reliability_caps"]["total"] is not None
+
+
+def test_wav_free_total_is_unavailable_when_tone_has_positive_weight() -> None:
+    result = _result_fixture()
+    result["details"]["aggregate"]["weights"]["tone"] = 0.10
+    report = rescore_without_reliability_caps(result, wav_path=None)
+    assert report["available"] is False
+    assert report["availability_reason"] == "weighted_component_missing"
+    assert report["counterfactual_without_reliability_caps"]["tone"] is None
+    assert report["counterfactual_without_reliability_caps"]["total"] is None
 
 
 def test_summary_is_descriptive_and_does_not_choose_a_policy() -> None:
@@ -93,10 +129,11 @@ def test_summary_is_descriptive_and_does_not_choose_a_policy() -> None:
                 "pronunciation": 20,
                 "prosody": 10,
                 "fluency": 0,
-                "tone": 0,
+                "tone": None,
                 "total": 12,
             },
             "cap_triggers": {
+                "applicable": True,
                 "alignment_equal_fallback": True,
                 "mora_evidence_below_threshold": True,
                 "f0_coverage_below_0_50": False,
@@ -109,19 +146,28 @@ def test_summary_is_descriptive_and_does_not_choose_a_policy() -> None:
                 "pronunciation": 0,
                 "prosody": 0,
                 "fluency": 0,
-                "tone": 0,
+                "tone": None,
                 "total": 0,
             },
             "cap_triggers": {
+                "applicable": True,
                 "alignment_equal_fallback": False,
                 "mora_evidence_below_threshold": False,
                 "f0_coverage_below_0_50": False,
                 "overall_reliability_below_0_75": False,
             },
         },
+        {
+            "available": False,
+            "counterfactual_minus_observed": {},
+            "cap_triggers": {"applicable": False},
+        },
     ]
     summary = summarize_counterfactual_reports(reports)
-    assert summary["report_count"] == 2
+    assert summary["report_count"] == 3
+    assert summary["applicable_count"] == 2
+    assert summary["non_applicable_count"] == 1
     assert summary["positive_total_delta_count"] == 1
     assert summary["trigger_counts"]["alignment_equal_fallback"] == 1
+    assert summary["delta_stats"]["tone"]["n"] == 0
     assert summary["decision"] == "none"
