@@ -15,7 +15,7 @@ relative timing. They have no /100 mapping and no user-facing threshold.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Sequence
+from typing import Any, Dict, Sequence
 
 import numpy as np
 
@@ -29,8 +29,6 @@ def _path_array(path: Any) -> np.ndarray:
         raise ValueError("DTW path must have shape (steps, 2) with at least two steps")
     if np.any(value < 0):
         raise ValueError("DTW path indices must be non-negative")
-    # Chronological order is convenient but not required for grouping. Keep a
-    # deterministic order in case a caller passes a backtracked path.
     order = np.lexsort((value[:, 1], value[:, 0]))
     return value[order]
 
@@ -58,6 +56,8 @@ def template_to_learner_trace(path: Any, reference_frame_count: int) -> np.ndarr
 
 
 def _moving_average(values: np.ndarray, window_frames: int) -> np.ndarray:
+    """Smooth without fabricating slope changes at utterance boundaries."""
+
     window = int(window_frames)
     if window <= 1:
         return values.astype(float, copy=True)
@@ -65,10 +65,11 @@ def _moving_average(values: np.ndarray, window_frames: int) -> np.ndarray:
         raise ValueError("moving-average window must be odd")
     if len(values) < window:
         return values.astype(float, copy=True)
-    radius = window // 2
-    padded = np.pad(values.astype(float), (radius, radius), mode="edge")
     kernel = np.full(window, 1.0 / window, dtype=float)
-    return np.convolve(padded, kernel, mode="valid")
+    # ``valid`` intentionally drops the unsupported edge centers. Edge padding
+    # would flatten the endpoints of a perfectly linear warp trace and create
+    # artificial local tempo irregularity.
+    return np.convolve(values.astype(float), kernel, mode="valid")
 
 
 def tempo_irregularity_from_dtw_path(
@@ -80,18 +81,15 @@ def tempo_irregularity_from_dtw_path(
     """Compute McIntosh-style local tempo irregularity from a DTW path.
 
     A perfectly constant local pacing ratio has irregularity near zero even if
-    the learner is globally faster/slower. This is intentional: global duration
-    mismatch is a separate rhythm/tempo feature.
+    the learner is globally faster/slower. Global duration mismatch is reported
+    separately by the shadow orchestrator.
     """
 
     trace = template_to_learner_trace(path, reference_frame_count)
     smoothed = _moving_average(trace, smoothing_frames)
     if len(smoothed) < 3:
-        raise ValueError("at least three mapped template frames are required")
+        raise ValueError("at least three smoothed template frames are required")
 
-    # Central difference over a three-frame window. Template-frame x spacing is
-    # two frames, so divide by 2. DTW monotonicity should keep slopes >= 0; tiny
-    # numerical negatives are clipped before converting to a warp angle.
     slopes = (smoothed[2:] - smoothed[:-2]) / 2.0
     slopes = np.maximum(slopes, 0.0)
     angles = np.arctan(slopes)
@@ -108,6 +106,7 @@ def tempo_irregularity_from_dtw_path(
         "warp_angle_std_rad": float(np.std(angles)),
         "angle_count": int(len(angles)),
         "smoothing_frames": int(smoothing_frames),
+        "edge_policy": "valid_window_centers_only",
         "interpretation": "lower_is_more_locally_uniform_relative_tempo_shadow_only",
         "score_mapped": False,
         "product_calibrated": False,
