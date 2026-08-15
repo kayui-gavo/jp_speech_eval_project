@@ -9,9 +9,9 @@ anchor, not learner-error validation.
 Stage-0 found two target-side frontend hazards for this sentence: ambiguous
 surface kanji and a second-pass kana reanalysis that gave two identical lexical
 ``みょうおう`` occurrences different phone sequences. The current anchor
-therefore requires both a reviewed kana reading and an explicit reviewed
-logical-phone sequence from the manifest. Neither surface nor kana G2P is
-allowed to overwrite that phone target.
+therefore requires a reviewed kana reading, an explicit reviewed logical-phone
+sequence, and per-phone construct roles from the manifest. Neither surface nor
+kana G2P is allowed to overwrite that phone target.
 """
 
 from __future__ import annotations
@@ -49,6 +49,8 @@ from jp_speech_eval.vad import trim_to_speech  # noqa: E402
 
 
 TARGET_TEXT = "また、東寺のように、五大明王と呼ばれる、主要な明王の中央に配されることも多い。"
+ORDINARY_ROLE = "ordinary_segmental_clarity"
+LONG_VOWEL_ROLE = "long_vowel_timing"
 DISTIL_REVISION = "01ffc3e5b0e49ba34180d50c48ea4111aa041cfd"
 WAVLM_REVISION = "47fa985035342365bcec4948bd821aaf58dd778a"
 
@@ -137,12 +139,16 @@ def _source_provenance(sample: Dict[str, Any]) -> Dict[str, Any]:
 def _load_manifest(path: Path) -> list[Dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     schema = str(payload.get("schema") or "")
-    if schema != "jvs_official_samples_manifest_v5":
+    if schema != "jvs_official_samples_manifest_v6":
         raise ValueError(
-            f"JVS phone preflight requires reviewed-phone manifest v5, got {schema!r}"
+            f"JVS phone preflight requires construct-aware reviewed-phone manifest v6, got {schema!r}"
         )
     if not bool(payload.get("target_phone_override_required")):
         raise ValueError("JVS manifest must require explicit target phone override")
+    if not bool(payload.get("target_phone_construct_roles_required")):
+        raise ValueError("JVS manifest must require per-phone construct roles")
+    if bool(payload.get("long_vowel_extension_is_ordinary_segmental_clarity", True)):
+        raise ValueError("JVS manifest must keep long-vowel extension out of ordinary clarity")
     rows = list(payload.get("samples") or [])
     if {str(row.get("speaker")) for row in rows} != {"jvs001", "jvs002", "jvs003"}:
         raise ValueError("JVS manifest must contain exactly jvs001/jvs002/jvs003")
@@ -168,6 +174,23 @@ def _reviewed_target(rows: Sequence[Dict[str, Any]]) -> tuple[str, list[str]]:
     if any(bool(row.get("automatic_kana_g2p_is_phone_exact_for_anchor", True)) for row in rows):
         raise ValueError("JVS anchor must explicitly forbid treating kana G2P as phone-exact")
     return readings.pop(), list(phone_sequences.pop())
+
+
+def _reviewed_roles(rows: Sequence[Dict[str, Any]], phones: Sequence[str]) -> list[str]:
+    role_sequences = {
+        tuple(str(role).strip() for role in (row.get("target_phone_roles") or []))
+        for row in rows
+    }
+    if () in role_sequences or len(role_sequences) != 1:
+        raise ValueError("JVS manifest requires one reviewed target_phone_roles sequence for all speakers")
+    roles = list(role_sequences.pop())
+    if len(roles) != len(phones):
+        raise ValueError("JVS phone-role sequence length does not match reviewed phone sequence")
+    allowed = {ORDINARY_ROLE, LONG_VOWEL_ROLE}
+    invalid = sorted(set(roles) - allowed)
+    if invalid:
+        raise ValueError(f"unsupported JVS construct roles: {invalid}")
+    return roles
 
 
 class BeatriceInfer:
@@ -239,6 +262,7 @@ def main() -> None:
     args = parse_args()
     rows = _load_manifest(Path(args.manifest))
     reading, reviewed_phones = _reviewed_target(rows)
+    reviewed_roles = _reviewed_roles(rows, reviewed_phones)
     target = build_japanese_target_evidence(
         TARGET_TEXT,
         reading_override=reading,
@@ -286,7 +310,7 @@ def main() -> None:
 
     samples = [results_by_speaker[str(row["speaker"])] for row in rows]
     payload = {
-        "schema": "jvs_native_phone_ctc_anchor_preflight_v4",
+        "schema": "jvs_native_phone_ctc_anchor_preflight_v5",
         "source": "official_JVS_public_sample_links_ephemeral",
         "target_text": TARGET_TEXT,
         "target_reading": reading,
@@ -297,6 +321,9 @@ def main() -> None:
         "known_surface_g2p_failure_fixed": "明王:surface ambiguity",
         "known_kana_reanalysis_failure_fixed": "both identical みょうおう occurrences share reviewed phone block",
         "target_phones": phones,
+        "target_phone_roles": reviewed_roles,
+        "long_vowel_extension_is_ordinary_segmental_clarity": False,
+        "long_vowel_timing_position_count": int(sum(role == LONG_VOWEL_ROLE for role in reviewed_roles)),
         "dropped_nonsegmental_target_tokens": dropped,
         "native_audio_has_phone_error_labels": False,
         "control_is_pronunciation_error_label": False,
@@ -312,6 +339,7 @@ def main() -> None:
     print(f"wrote {output}")
     print("target reading override:", reading)
     print("target phone override count:", len(phones))
+    print("long-vowel timing positions:", payload["long_vowel_timing_position_count"])
     for sample in samples:
         for model in sample["models"]:
             metrics = model["metrics"]
