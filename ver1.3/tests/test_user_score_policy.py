@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from jp_speech_eval.score_contract import SCORE_CONTRACT_VERSION, SCORE_POLICY_ID
 from jp_speech_eval.user_score_policy import PRODUCT_COMPONENT_WEIGHTS, apply_user_score_policy
 
 
@@ -71,7 +72,9 @@ def test_product_score_is_available_and_uses_four_semantic_components():
     policy = apply_user_score_policy(_result())
     assert policy["display_score"] is not None
     assert set(policy["component_scores"]) == set(PRODUCT_COMPONENT_WEIGHTS)
-    assert policy["score_formula"]["policy"] == "semantic_four_component_product_heuristic_v1"
+    assert policy["score_contract_version"] == SCORE_CONTRACT_VERSION
+    assert policy["score_formula"]["policy"] == SCORE_POLICY_ID
+    assert policy["score_formula"]["version"] == SCORE_CONTRACT_VERSION
     assert policy["score_formula"]["weights"] == PRODUCT_COMPONENT_WEIGHTS
     assert policy["score_formula"]["product_calibrated"] is False
     assert policy["pronunciation_clarity_score"] == policy["component_scores"]["clarity"]["value"]
@@ -130,6 +133,7 @@ def test_unusable_recording_can_still_be_unscorable():
     assert policy["display_score"] is None
     assert policy["score_available"] is False
     assert policy["component_scores"] == {}
+    assert policy["score_contract_version"] == SCORE_CONTRACT_VERSION
 
 
 def test_content_mismatch_keeps_general_score_without_target_relative_penalty():
