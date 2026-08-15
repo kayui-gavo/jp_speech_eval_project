@@ -38,6 +38,7 @@ from jp_speech_eval.japanese_phoneme_gop import (  # noqa: E402
 )
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import (  # noqa: E402
+    SCHEMA as CRITERION_SCHEMA,
     build_phone_criterion_feature_bundle,
     compare_shared_suffix_locality,
 )
@@ -126,7 +127,7 @@ def _norm_and_posterior_features(
 def _failed_bundle(reason: str, model_id: str, revision: str, *, hybrid: bool = False) -> dict:
     return {
         "available": False,
-        "schema": HYBRID_SCHEMA if hybrid else "phone_criterion_feature_bundle_v1",
+        "schema": HYBRID_SCHEMA if hybrid else CRITERION_SCHEMA,
         "model_id": model_id,
         "revision": revision,
         "canonical_phones": [],
@@ -221,7 +222,7 @@ def main() -> None:
         shared_suffix = {"available": False, "reason": reason}
 
     payload = {
-        "schema": "segmentation_free_gop_bundled_preflight_v6",
+        "schema": "segmentation_free_gop_bundled_preflight_v7",
         "product_score_changed": False,
         "score_mapped": False,
         "human_recording_allowed": False,
@@ -230,6 +231,7 @@ def main() -> None:
         "ctc_peakiness_is_pronunciation_score": False,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
+        "criterion_schema": CRITERION_SCHEMA,
         "hybrid_criterion_schema": HYBRID_SCHEMA,
         "speech_region": region.to_dict(),
         "correct_target": correct_target.to_dict(),
@@ -270,6 +272,7 @@ def main() -> None:
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
     print("normalized SD method:", NORM_METHOD)
+    print("criterion schema:", CRITERION_SCHEMA)
     print("hybrid criterion schema:", HYBRID_SCHEMA)
     print("correct frame-local available:", correct_frame.available)
     print("correct alignment-free available:", correct.available)
