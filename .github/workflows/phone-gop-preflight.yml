@@ -101,6 +101,12 @@ jobs:
           --manifest outputs/jvs_official_samples_manifest.json
           --allow-download
           --output outputs/jvs_native_phone_ctc_anchor_preflight.json
+      - name: Run Beatrice restricted-substitution JVS native false-alarm preflight
+        run: >-
+          python scripts/run_jvs_restricted_gop_preflight.py
+          --manifest outputs/jvs_official_samples_manifest.json
+          --allow-download
+          --output outputs/jvs_restricted_gop_preflight.json
       - name: Remove downloaded JVS audio before artifact collection
         if: always()
         run: rm -rf outputs/jvs_official_samples
@@ -117,4 +123,5 @@ jobs:
             ver1.3/outputs/wavlm_dual_ctc_preflight_ci.json
             ver1.3/outputs/jvs_official_samples_manifest.json
             ver1.3/outputs/jvs_native_phone_ctc_anchor_preflight.json
+            ver1.3/outputs/jvs_restricted_gop_preflight.json
           if-no-files-found: warn
