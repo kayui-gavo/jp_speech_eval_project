@@ -30,7 +30,9 @@ class CtcPosteriorDiagnosticsTest(unittest.TestCase):
         self.assertGreater(result.top1_posterior_mean, 0.99)
         self.assertEqual(result.phone_token_count, 2)
         self.assertFalse(result.summary["universal_threshold_defined"])
+        self.assertFalse(result.summary["heuristic_alert_thresholds_defined"])
         self.assertFalse(result.summary["individual_frame_entropy_is_pronunciation_error"])
+        self.assertEqual(result.warnings, [])
 
     def test_diffuse_logits_have_higher_entropy_than_peaky_logits(self) -> None:
         diffuse = np.zeros((5, 4), dtype=np.float64)
@@ -51,7 +53,7 @@ class CtcPosteriorDiagnosticsTest(unittest.TestCase):
         )
         self.assertLess(diffuse_result.top1_posterior_mean, peaky_result.top1_posterior_mean)
 
-    def test_control_tokens_can_be_excluded_by_phone_inventory(self) -> None:
+    def test_control_tokens_can_be_excluded_by_phone_inventory_without_alert_threshold(self) -> None:
         logits = np.asarray([[0.0, 2.0, 1.0, 7.0]], dtype=np.float64)
         result = compute_ctc_posterior_diagnostics(
             logits,
@@ -61,7 +63,8 @@ class CtcPosteriorDiagnosticsTest(unittest.TestCase):
         self.assertEqual(result.phone_token_count, 2)
         # Token 3 dominates the frame but is deliberately outside phone mass.
         self.assertLess(result.phone_mass_mean, 0.05)
-        self.assertIn("low_mean_phone_probability_mass", result.warnings)
+        self.assertEqual(result.warnings, [])
+        self.assertFalse(result.summary["heuristic_alert_thresholds_defined"])
 
     def test_invalid_phone_inventory_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "phone token inventory is empty"):
