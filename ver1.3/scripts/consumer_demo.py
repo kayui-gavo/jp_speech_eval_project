@@ -45,43 +45,38 @@ def _is_consumer_entry_path(path: str) -> bool:
 
 def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwargs: Any) -> dict[str, Any]:
     payload = _base_render_user_facing_result(result, mode=mode, **kwargs)
+    resolved_mode = str(mode or result.get("details", {}).get("mode") or "reference")
     dimensions = build_consumer_score_dimensions(
         result,
         payload,
-        mode=str(mode or result.get("details", {}).get("mode") or "reference"),
+        mode=resolved_mode,
     )
     payload["score_dimensions"] = dimensions
 
-    # Consumer preview uses the four dimensions as one coherent surface.  Keep
-    # the legacy display score for audit, but when all four practice scores are
-    # available use an explicit equal-weight practice index rather than mixing
-    # a legacy three-factor total with the new four cards.
-    legacy_display = payload.get("display_score")
-    values = [
-        float(item["value"])
-        for item in dimensions
-        if item.get("available") and item.get("value") is not None
-    ]
-    if legacy_display is not None and len(values) == 4:
-        consumer_total = int(round(sum(values) / 4.0))
-        payload["legacy_display_score"] = legacy_display
-        payload["display_score"] = consumer_total
-        practice_score = payload.get("practice_score")
-        if isinstance(practice_score, dict):
-            practice_score["value"] = consumer_total
-
+    # The overall score is now computed by user_score_policy from the same four
+    # semantic components shown here. Do not replace it with a second launcher-
+    # only average: that previously made the visible total disagree with the
+    # actual product scoring policy and caused research/debug and consumer
+    # surfaces to report different totals for the same utterance.
     payload.setdefault("dimension_policy", {})
     payload["dimension_policy"].update({
-        "version": "consumer_semantics_v3_always_four",
+        "version": "consumer_semantics_v4_shared_total",
         "top_level_dimensions": ["delivery_fluency", "clarity", "mora_timing", "intonation"],
         "always_show_four_scores_after_japanese_acceptance": True,
         "evidence_degrades_before_score_disappears": True,
-        "consumer_total_policy": "equal_weight_mean_of_four_practice_dimensions",
+        "consumer_total_policy": "shared_semantic_four_component_product_heuristic_v1",
+        "consumer_total_weights": {
+            "clarity": 0.30,
+            "mora_timing": 0.25,
+            "delivery_fluency": 0.25,
+            "intonation": 0.20,
+        },
         "consumer_total_product_calibrated": False,
         "prosody_is_not_a_peer_label_to_intonation": True,
         "lexical_pitch_accent_is_not_top_level_intonation": True,
         "recording_quality_is_not_clarity": True,
         "legacy_pronunciation_timing_proxy_is_not_clarity": True,
+        "target_mismatch_disables_target_relative_dimension_evidence": True,
         "non_japanese_or_unusable_audio_can_still_be_no_score": True,
     })
     return payload
