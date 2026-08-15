@@ -7,13 +7,15 @@ well-motivated diagnostic contrasts used by the project's pilot protocol.
 
 The motivation follows recent alignment-free GOP work showing that restricting
 substitution alternatives with phonological knowledge can improve efficiency
-and MDD performance versus unrestricted substitution search.  That evidence is
+and MDD performance versus unrestricted substitution search. That evidence is
 from L2 English; therefore this Japanese inventory remains a research
 hypothesis until it is validated on labeled Japanese learner speech.
 
 Special morae ``N`` and ``cl`` are not ordinary segmental substitution targets.
-They require duration/context evidence and are handled outside this inventory.
-Likewise ``pau``/``sil`` and the CTC blank are never segmental alternatives.
+For those targets the restricted search keeps only the canonical token plus the
+deletion path supplied by the GOP routine; duration/context evidence remains
+separate. Likewise ``pau``/``sil`` and the CTC blank are never segmental
+alternatives.
 """
 
 from __future__ import annotations
@@ -33,11 +35,11 @@ ALLOPHONE_EQUIVALENCE = {
     "U": frozenset({"u", "U"}),
 }
 
-# Phone-level neighborhoods, not kana-level spelling confusions.  Entries are
+# Phone-level neighborhoods, not kana-level spelling confusions. Entries are
 # intentionally symmetric after normalization below.
 _SEED_NEIGHBORS: Dict[str, set[str]] = {
     # Vowels: all Japanese vowel categories are retained as substitution
-    # competitors.  The inventory is small and vowel-category errors need not
+    # competitors. The inventory is small and vowel-category errors need not
     # be forced into an arbitrary one-dimensional proximity order.
     "a": {"i", "u", "e", "o"},
     "i": {"a", "u", "e", "o"},
@@ -130,17 +132,44 @@ def restricted_substitution_phones(
     """Return Japanese phonology-informed substitution alternatives.
 
     The returned set only contains phones present in ``available_phones``.
-    ``N``/``cl`` and nonsegmental tokens are always excluded.  If a target has
-    no curated neighborhood, callers may explicitly fall back to the full
-    segmental inventory; this is recorded in provenance rather than hidden.
+    ``N``/``cl`` receive no ordinary phone substitutions: when available, only
+    the canonical token is retained so the calling GOP routine can compare it
+    against deletion. If an ordinary target has no curated neighborhood,
+    callers may explicitly fall back to the full segmental inventory; this is
+    recorded in provenance rather than hidden.
     """
     original = str(canonical_phone)
     logical = canonical_logical_phone(original)
+    raw_available = {str(phone) for phone in available_phones}
     available = {
         canonical_logical_phone(phone)
         for phone in available_phones
         if is_segmental_phone(canonical_logical_phone(phone))
     }
+
+    if logical in SPECIAL_MORA_TOKENS:
+        candidates = (logical,) if include_canonical and logical in raw_available else ()
+        return SubstitutionCandidateSet(
+            canonical_phone=original,
+            logical_phone=logical,
+            candidates=candidates,
+            policy="special_mora_canonical_plus_deletion_only",
+            status=POLICY_STATUS,
+            fallback_used=False,
+            fallback_reason=None,
+        )
+
+    if logical in NONSEGMENTAL_TOKENS:
+        return SubstitutionCandidateSet(
+            canonical_phone=original,
+            logical_phone=logical,
+            candidates=(),
+            policy="nonsegmental_excluded",
+            status=POLICY_STATUS,
+            fallback_used=False,
+            fallback_reason=None,
+        )
+
     curated = set(RESTRICTED_NEIGHBORS.get(logical, ())) & available
     fallback_used = False
     fallback_reason = None
