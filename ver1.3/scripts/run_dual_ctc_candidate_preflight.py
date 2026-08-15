@@ -4,7 +4,7 @@
 This is a Stage-0 shadow comparison against the existing Beatrice preflight.
 It uses only repository-bundled audio and never changes a product score. The
 artifact includes frame-local logit/posterior evidence, alignment-free phone
-features, Japanese phone-masked SD/Occ(i), a strict hybrid criterion bundle,
+features, Japanese position-masked SD/Occ(i), a strict hybrid criterion bundle,
 and explicit CTC posterior peakiness/uncertainty diagnostics.
 """
 
@@ -33,7 +33,10 @@ from jp_speech_eval.hybrid_phone_criterion_features import build_hybrid_phone_cr
 from jp_speech_eval.japanese_phoneme_gop import segmental_competitor_ids  # noqa: E402
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import build_phone_criterion_feature_bundle  # noqa: E402
-from jp_speech_eval.segmentation_free_gop_norm import compute_segmentation_free_norm_features  # noqa: E402
+from jp_speech_eval.segmentation_free_gop_norm import (  # noqa: E402
+    METHOD as NORM_METHOD,
+    compute_segmentation_free_norm_features,
+)
 from jp_speech_eval.vad import trim_to_speech  # noqa: E402
 
 
@@ -136,7 +139,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
             "available": False,
             "model_id": backend.model_id,
             "revision": backend.revision,
-            "method": "paper_sd_norm_forward_japanese_phone_mask_v2",
+            "method": NORM_METHOD,
             "canonical_phones": list(target.phones),
             "evidence": [],
             "summary": {"reason": reason, "detail": str(exc)},
@@ -184,7 +187,7 @@ def main() -> None:
     correct_lp = correct["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     wrong_lp = wrong["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     payload = {
-        "schema": "dual_ctc_candidate_preflight_v5",
+        "schema": "dual_ctc_candidate_preflight_v6",
         "model_id": args.model,
         "revision": args.revision,
         "audio": str(BUNDLED_AUDIO.relative_to(ROOT)),
@@ -197,6 +200,7 @@ def main() -> None:
         "occ_i_is_physical_phone_duration": False,
         "ctc_peakiness_is_pronunciation_score": False,
         "cross_model_raw_feature_averaging_allowed": False,
+        "normalized_sd_method": NORM_METHOD,
         "correct_target": correct,
         "wrong_target": wrong,
         "gain_controls": gain_rows,
@@ -212,6 +216,7 @@ def main() -> None:
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {output}")
     print(f"model: {args.model}@{args.revision}")
+    print(f"normalized SD method: {NORM_METHOD}")
     print(f"correct-minus-wrong sequence log posterior: {payload['sequence_logposterior_gap_correct_minus_wrong']}")
     norm_summary = correct["segmentation_free_norm"].get("summary", {})
     posterior = correct["ctc_posterior_diagnostics"]
