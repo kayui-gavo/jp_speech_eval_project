@@ -11,11 +11,21 @@ backbones must not be averaged or assumed to share a calibrated scale.
 
 Japanese construct boundary:
 
-* ordinary phones are tagged ``ordinary_segmental_clarity``;
-* ``N`` and ``cl`` are tagged ``special_mora_timing``;
-* special-mora deletion evidence remains available, but substitution evidence
-  is not an ordinary segmental-clarity feature and normalized ``Occ(i)`` is not
-  a physical duration.
+* ordinary onset/vowel phones can be tagged ``ordinary_segmental_clarity``;
+* ``N`` and ``cl`` are ``special_mora_timing``;
+* a repeated vowel token that realizes the extension mora of a lexical long
+  vowel can be tagged ``long_vowel_timing`` when target-side metadata proves
+  that role.
+
+A phone token by itself cannot identify the final case: the same ``o`` token can
+be a base vowel or a long-vowel extension. Callers may therefore provide
+explicit per-phone construct roles. If they do not, this builder uses only the
+safe token-level default (``N``/``cl`` special; everything else ordinary) and
+records that provenance explicitly.
+
+Timing-construct deletion evidence remains available for research, but generic
+ordinary-phone substitution/GOP features are marked inapplicable. Normalized
+``Occ(i)`` is never interpreted as a physical phone duration.
 
 Important semantic detail: ``canonical_log_posterior`` in the enumerated
 extractor is the log posterior of the *whole canonical phone sequence*. It is
@@ -28,16 +38,18 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import math
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 import numpy as np
 
+from .japanese_phone_roles import LONG_VOWEL_ROLE, ORDINARY_ROLE, SPECIAL_MORA_ROLE
 from .japanese_phoneme_gop import SPECIAL_MORA_TOKENS
 from .segmentation_free_gop import SegmentationFreeGopResult
 from .segmentation_free_gop_norm import SegmentationFreeNormResult
 
 
 SCHEMA = "phone_criterion_feature_bundle_v2"
+ALLOWED_CONSTRUCT_ROLES = frozenset({ORDINARY_ROLE, SPECIAL_MORA_ROLE, LONG_VOWEL_ROLE})
 
 
 @dataclass(frozen=True)
@@ -102,16 +114,45 @@ def _unavailable(reason: str, *, model_id: str = "", revision: str = "") -> Phon
     )
 
 
+def _resolve_construct_roles(
+    canonical_phones: Sequence[str],
+    construct_roles: Sequence[str] | None,
+) -> tuple[list[str], str] | str:
+    phones = [str(phone) for phone in canonical_phones]
+    if construct_roles is None:
+        roles = [
+            SPECIAL_MORA_ROLE if phone in SPECIAL_MORA_TOKENS else ORDINARY_ROLE
+            for phone in phones
+        ]
+        return roles, "safe_phone_token_default"
+
+    roles = [str(role).strip() for role in construct_roles]
+    if len(roles) != len(phones):
+        return "construct_role_count_mismatch"
+    invalid = sorted(set(roles) - ALLOWED_CONSTRUCT_ROLES)
+    if invalid:
+        return "unsupported_construct_role:" + ",".join(invalid)
+
+    for phone, role in zip(phones, roles):
+        is_special = phone in SPECIAL_MORA_TOKENS
+        if is_special and role != SPECIAL_MORA_ROLE:
+            return "special_mora_phone_role_mismatch"
+        if not is_special and role == SPECIAL_MORA_ROLE:
+            return "non_special_phone_marked_special_mora"
+    return roles, "explicit_target_metadata"
+
+
 def build_phone_criterion_feature_bundle(
     enumerated: SegmentationFreeGopResult,
     normalized: SegmentationFreeNormResult,
+    *,
+    construct_roles: Sequence[str] | None = None,
 ) -> PhoneCriterionFeatureBundle:
     """Join alignment-free feature families by canonical phone position.
 
     The function is intentionally strict. A mismatch in model provenance,
-    phone sequence, row count or phone identity is treated as unavailable rather
-    than silently aligning unrelated evidence. Construct-role metadata is added
-    here, before any downstream criterion model can select features.
+    phone sequence, row count, phone identity, or explicit construct metadata is
+    treated as unavailable rather than silently aligning unrelated evidence.
     """
     model_id = str(enumerated.model_id or normalized.model_id or "")
     revision = str(enumerated.revision or normalized.revision or "")
@@ -128,6 +169,11 @@ def build_phone_criterion_feature_bundle(
     if len(enumerated.evidence) != len(normalized.evidence):
         return _unavailable("feature_row_count_mismatch", model_id=model_id, revision=revision)
 
+    resolved = _resolve_construct_roles(enumerated.canonical_phones, construct_roles)
+    if isinstance(resolved, str):
+        return _unavailable(resolved, model_id=model_id, revision=revision)
+    roles, role_source = resolved
+
     frame_count = int(normalized.summary.get("frame_count") or 0)
     if frame_count <= 0:
         return _unavailable("normalized_frame_count_missing", model_id=model_id, revision=revision)
@@ -137,7 +183,7 @@ def build_phone_criterion_feature_bundle(
         return _unavailable("canonical_sequence_logposterior_inconsistent_across_rows", model_id=model_id, revision=revision)
 
     rows: List[PhoneCriterionFeatureRow] = []
-    for enum_row, norm_row in zip(enumerated.evidence, normalized.evidence):
+    for enum_row, norm_row, role in zip(enumerated.evidence, normalized.evidence, roles):
         if int(enum_row.phone_index) != int(norm_row.phone_index):
             return _unavailable("phone_index_mismatch", model_id=model_id, revision=revision)
         if str(enum_row.canonical_phone) != str(norm_row.canonical_phone):
@@ -155,14 +201,14 @@ def build_phone_criterion_feature_bundle(
             return _unavailable("nonfinite_phone_feature", model_id=model_id, revision=revision)
 
         phone = str(enum_row.canonical_phone)
-        special_mora = phone in SPECIAL_MORA_TOKENS
+        ordinary = role == ORDINARY_ROLE
         rows.append(
             PhoneCriterionFeatureRow(
                 phone_index=int(enum_row.phone_index),
                 canonical_phone=phone,
-                construct_role=("special_mora_timing" if special_mora else "ordinary_segmental_clarity"),
-                ordinary_segmental_clarity_feature_applicable=not special_mora,
-                substitution_feature_applicable=not special_mora,
+                construct_role=role,
+                ordinary_segmental_clarity_feature_applicable=ordinary,
+                substitution_feature_applicable=ordinary,
                 deletion_feature_applicable=True,
                 normalized_occ_is_physical_duration=False,
                 canonical_log_posterior=float(enum_row.canonical_log_posterior),
@@ -186,22 +232,28 @@ def build_phone_criterion_feature_bundle(
         )
 
     utterance_sequence_lp = sequence_numerators[0] if sequence_numerators else None
-    special_count = sum(row.construct_role == "special_mora_timing" for row in rows)
+    ordinary_count = sum(row.construct_role == ORDINARY_ROLE for row in rows)
+    special_count = sum(row.construct_role == SPECIAL_MORA_ROLE for row in rows)
+    long_vowel_count = sum(row.construct_role == LONG_VOWEL_ROLE for row in rows)
     return PhoneCriterionFeatureBundle(
         available=True,
         schema=SCHEMA,
         model_id=model_id,
         revision=revision,
         canonical_phones=list(enumerated.canonical_phones),
-        # This inventory is the ordinary substitution search inventory. Special
-        # mora canonical tokens may still occur in rows but are not generic
-        # substitution candidates.
+        # This inventory is the ordinary substitution search inventory. Timing
+        # constructs may still occur as canonical rows but are not generic
+        # ordinary-clarity substitution features.
         substitution_phone_inventory=list(enumerated.feature_phone_inventory),
         rows=rows,
         summary={
             "phone_count": len(rows),
-            "ordinary_segmental_row_count": len(rows) - special_count,
+            "ordinary_segmental_row_count": ordinary_count,
             "special_mora_row_count": special_count,
+            "long_vowel_timing_row_count": long_vowel_count,
+            "timing_construct_row_count": special_count + long_vowel_count,
+            "construct_role_source": role_source,
+            "explicit_construct_roles_used": role_source == "explicit_target_metadata",
             "frame_count": frame_count,
             "utterance_canonical_sequence_log_posterior": utterance_sequence_lp,
             "utterance_canonical_sequence_log_posterior_per_frame": (
@@ -214,6 +266,10 @@ def build_phone_criterion_feature_bundle(
             "special_mora_substitution_feature_applicable": False,
             "special_mora_deletion_feature_applicable": True,
             "special_mora_occ_i_is_physical_duration": False,
+            "long_vowel_substitution_feature_applicable": False,
+            "long_vowel_deletion_feature_applicable": True,
+            "long_vowel_occ_i_is_physical_duration": False,
+            "long_vowel_role_requires_target_side_provenance": True,
             "construct_specific_feature_selection_required": True,
             "feature_family": "joint_LPP_LPR_enumerated_SD_graph_GOP_Occ",
             "model_specific_raw_scale": True,
