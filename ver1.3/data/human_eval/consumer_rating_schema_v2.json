@@ -1,0 +1,94 @@
+{
+  "schema_version": "consumer_four_construct_rating_v2",
+  "purpose": "construct-matched human criterion for C-end practice dimensions; separate from pronunciation_accuracy",
+  "constructs": {
+    "clarity_comprehensibility": {
+      "label_ja": "明瞭さ",
+      "instruction_ja": "この発話は、日本語としてどの程度楽に内容を理解できますか。",
+      "scale": {
+        "1": "非常に理解しにくい",
+        "2": "理解しにくい",
+        "3": "やや理解しにくい",
+        "4": "ある程度理解できる",
+        "5": "比較的理解しやすい",
+        "6": "理解しやすい",
+        "7": "非常に楽に理解できる"
+      },
+      "excludes": ["recording_quality_as_ability", "native_likeness", "strict_phone_correctness"]
+    },
+    "fluency": {
+      "label_ja": "流暢さ",
+      "instruction_ja": "この発話は、話す速さ、間の取り方、言い直しなどを含めて、どの程度流暢に聞こえますか。",
+      "scale": {
+        "1": "非常に途切れがち",
+        "2": "途切れがち",
+        "3": "やや途切れがち",
+        "4": "ある程度流暢",
+        "5": "比較的流暢",
+        "6": "流暢",
+        "7": "非常に流暢"
+      }
+    },
+    "rhythm_naturalness": {
+      "label_ja": "リズム",
+      "instruction_ja": "音や拍の長さ、局所的な速さの変化を含めて、この発話のリズムはどの程度自然ですか。",
+      "scale": {
+        "1": "非常に不自然",
+        "2": "不自然",
+        "3": "やや不自然",
+        "4": "ある程度自然",
+        "5": "比較的自然",
+        "6": "自然",
+        "7": "非常に自然"
+      },
+      "explicit_non_rule": "do_not_instruct_raters_that_all_morae_should_have_equal_duration"
+    },
+    "intonation_naturalness": {
+      "label_ja": "抑揚",
+      "instruction_ja": "文・発話全体の音高の動きや句末の調子は、文脈に対してどの程度自然ですか。",
+      "scale": {
+        "1": "非常に不自然",
+        "2": "不自然",
+        "3": "やや不自然",
+        "4": "ある程度自然",
+        "5": "比較的自然",
+        "6": "自然",
+        "7": "非常に自然"
+      },
+      "excludes": ["strict_lexical_pitch_accent_as_headline_construct"]
+    }
+  },
+  "fields": {
+    "rater_id": {"type": "string", "required": true, "anonymized": true},
+    "sample_id": {"type": "string", "required": true},
+    "presentation_id": {"type": "string", "required": true},
+    "task_mode": {"type": "string", "enum": ["fixed_reading", "spontaneous", "controlled_dialogue"], "required": true},
+    "assigned_constructs": {"type": "array", "items_enum": ["clarity_comprehensibility", "fluency", "rhythm_naturalness", "intonation_naturalness"], "required": true},
+    "analyzable_yes_no": {"type": "string", "enum": ["yes", "no"], "required": true},
+    "clarity_comprehensibility_1to7": {"type": ["integer", "null"], "minimum": 1, "maximum": 7, "required": true},
+    "fluency_1to7": {"type": ["integer", "null"], "minimum": 1, "maximum": 7, "required": true},
+    "rhythm_naturalness_1to7": {"type": ["integer", "null"], "minimum": 1, "maximum": 7, "required": true},
+    "intonation_naturalness_1to7": {"type": ["integer", "null"], "minimum": 1, "maximum": 7, "required": true},
+    "intonation_context_available": {"type": "boolean", "required": true},
+    "optional_comment": {"type": ["string", "null"], "required": false},
+    "timestamp": {"type": "string", "format": "date-time", "required": true}
+  },
+  "conditional_rules": [
+    "If analyzable_yes_no is no, all four construct ratings must be null.",
+    "If analyzable_yes_no is yes, every assigned construct must have an integer rating from 1 through 7.",
+    "Unassigned construct ratings must be null.",
+    "Do not average the four construct labels during data collection.",
+    "Do not copy pronunciation_accuracy into clarity_comprehensibility."
+  ],
+  "listener_blinding_forbidden_fields": [
+    "speaker_identity",
+    "native_or_learner_label",
+    "l1",
+    "dataset_source",
+    "channel_condition",
+    "model_score",
+    "wavlm_distance",
+    "gop_score",
+    "product_score"
+  ]
+}
