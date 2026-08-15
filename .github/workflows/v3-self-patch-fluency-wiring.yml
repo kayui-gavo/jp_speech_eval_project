@@ -1,0 +1,42 @@
+name: v3-one-shot-fluency-word-timing-wiring
+
+on:
+  push:
+    branches:
+      - fluency-reliability-evolution-v3
+    paths:
+      - ".github/workflows/v3-self-patch-fluency-wiring.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fluency-reliability-evolution-v3
+      - name: Wire ASR word timestamps into fluency shadow
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("ver1.3/src/jp_speech_eval/transcript_assisted.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''        transcript_source=transcript_source,\n        silent_pause_threshold_sec=0.30,\n    )\n'''
+          new = '''        transcript_source=transcript_source,\n        silent_pause_threshold_sec=0.30,\n        word_timestamps=(\n            asr_info.get("words")\n            if isinstance(asr_info.get("words"), list)\n            else None\n        ),\n    )\n'''
+          if new in text:
+              print("wiring already present")
+              raise SystemExit(0)
+          if old not in text:
+              raise SystemExit("fluency wiring anchor not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit wiring
+        run: |
+          if git diff --quiet -- ver1.3/src/jp_speech_eval/transcript_assisted.py; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/src/jp_speech_eval/transcript_assisted.py
+          git commit -m "fluency: wire ASR word timestamps into breakdown shadow"
+          git push origin HEAD:fluency-reliability-evolution-v3
