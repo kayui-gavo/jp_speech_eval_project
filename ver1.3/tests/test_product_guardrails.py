@@ -225,10 +225,10 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertIn("alignment_fallback_broad_score_only", rendered["score_policy_warnings"])
         self.assertFalse(rendered["detail_feedback_allowed"])
         dims = {item["key"]: item for item in rendered["score_dimensions"]}
-        self.assertTrue(dims["pronunciation_clarity"]["available"])
-        self.assertTrue(dims["mora_rhythm"]["available"])
-        self.assertTrue(dims["delivery_fluency"]["available"])
-        self.assertFalse(dims["pitch_accent"]["available"])
+        self.assertEqual(set(dims), {"delivery_fluency", "clarity", "mora_timing", "intonation"})
+        self.assertTrue(all(item["available"] for item in dims.values()))
+        self.assertEqual(dims["mora_timing"]["confidence"], "low")
+        self.assertNotIn("pitch_accent", dims)
 
     def test_runtime_missing_threshold_metadata_is_debug_uncertain(self) -> None:
         import tempfile
@@ -476,7 +476,10 @@ class ProductGuardrailsTest(unittest.TestCase):
         self.assertNotEqual(rendered["status"], "debug_only")
         self.assertEqual(rendered["practice_score"]["value"], rendered["display_score"])
         dims = {item["key"]: item for item in rendered["score_dimensions"]}
-        self.assertFalse(dims["pitch_accent"]["available"])
+        self.assertEqual(set(dims), {"delivery_fluency", "clarity", "mora_timing", "intonation"})
+        self.assertTrue(all(item["available"] for item in dims.values()))
+        self.assertNotIn("pitch_accent", dims)
+        self.assertEqual(dims["intonation"]["confidence"], "low")
 
     def test_confirmed_weak_reference_downgrades_tts_pitch_proxy(self) -> None:
         fake_cache = Mock()
