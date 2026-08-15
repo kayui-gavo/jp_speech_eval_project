@@ -95,6 +95,25 @@ def _target_relative_allowed(details: Mapping[str, Any]) -> bool:
     return status in TARGET_MATCH_STATUSES
 
 
+def _alignment_state(
+    result: Mapping[str, Any],
+    details: Mapping[str, Any],
+) -> tuple[bool, bool, str]:
+    """Resolve alignment availability from both legacy and current fields.
+
+    Some evaluators historically wrote the fallback state only to the top-level
+    ``alignment_mode`` while ``details.alignment`` still looked nominal. A C-end
+    dimension must not treat equal-segmentation fallback as trustworthy local
+    alignment merely because the nested legacy object is stale.
+    """
+    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
+    mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
+    mode_lower = mode.lower()
+    fallback = bool(alignment.get("used_equal_fallback")) or "fallback" in mode_lower
+    available = bool(alignment.get("available", True)) and not fallback
+    return available, fallback, mode
+
+
 def _mapped_clarity_evidence(details: Mapping[str, Any]) -> tuple[Optional[float], str, str]:
     shadow = details.get("shadow") if isinstance(details.get("shadow"), Mapping) else {}
     ssl = shadow.get("ssl_pronunciation") if isinstance(shadow.get("ssl_pronunciation"), Mapping) else {}
@@ -126,9 +145,6 @@ def _clarity_proxy(
     if mapped is not None:
         return mapped, mapped_source, mapped_construct, "medium", "mapped_pronunciation_evidence"
 
-    # A different but valid Japanese sentence must not look "unclear" merely
-    # because it disagrees with the fixed target. Target agreement is content
-    # evidence, not a reference-independent clarity measure.
     if not allow_target_relative:
         return (
             70.0,
@@ -168,7 +184,8 @@ def _clarity_proxy(
 
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     dtw_cost = _number(alignment.get("normalized_dtw_cost"))
-    if dtw_cost is not None:
+    alignment_available, _alignment_fallback, _alignment_mode = _alignment_state(result, details)
+    if dtw_cost is not None and alignment_available:
         similarity = max(0.0, min(1.0, 1.0 - (dtw_cost - 3.4) / 1.8))
         value = 55.0 + 35.0 * similarity
         return (
@@ -179,9 +196,6 @@ def _clarity_proxy(
             "mfcc_reference_similarity",
         )
 
-    # Older/evidence-light evaluators can still report a passed content gate
-    # without the numeric ASR similarity. A passed target check is meaningful
-    # broad intelligibility evidence, but it is not phone-level correctness.
     if content_status == "pass":
         return (
             85.0,
@@ -264,12 +278,7 @@ def _f0_pair_fallback(result: Mapping[str, Any], details: Mapping[str, Any]) -> 
 
 
 def _legacy_phrase_intonation_fallback(prosody: Mapping[str, Any]) -> tuple[Optional[float], str]:
-    """Recover phrase-level evidence from older result schemas.
-
-    Do not use a legacy composite ``prosody_score`` here because it may include
-    lexical pitch-accent terms. We only accept fields whose semantics are phrase
-    or sentence intonation.
-    """
+    """Recover phrase-level evidence from older result schemas without lexical accent."""
     final_score = _number(prosody.get("final_intonation_score"))
     contour_corr = _number(prosody.get("contour_corr"))
     transition = _number(prosody.get("transition_agreement"))
@@ -297,23 +306,23 @@ def _intonation_proxy(
 ) -> tuple[float, str, str, str, str]:
     prosody = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
-    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     weak_reference = bool(details.get("weak_reference")) or mode in WEAK_REFERENCE_MODES
     raw = _number(result.get("prosody_score"))
     note = str(prosody.get("note") or "")
     contour_corr = _number(prosody.get("contour_corr"))
     valid_mora = int(_number(prosody.get("contour_valid_mora_count", prosody.get("valid_mora_count", 0))) or 0)
     f0_coverage = _clip01(reliability.get("f0_coverage"), default=0.0)
-    alignment_available = bool(alignment.get("available", True)) and not bool(alignment.get("used_equal_fallback"))
+    alignment_available, alignment_fallback, _alignment_mode = _alignment_state(result, details)
 
     if (
         allow_reference_relative
+        and alignment_available
         and raw is not None
         and note not in {"no_valid_f0", "insufficient_valid_mora_f0"}
         and contour_corr is not None
         and valid_mora >= 3
     ):
-        confidence = "high" if alignment_available and f0_coverage >= 0.65 and not weak_reference else "medium"
+        confidence = "high" if f0_coverage >= 0.65 and not weak_reference else "medium"
         value = raw
         if weak_reference:
             value = 72.0 + 0.60 * (value - 72.0)
@@ -326,10 +335,7 @@ def _intonation_proxy(
             "mora_contour_primary",
         )
 
-    if allow_reference_relative:
-        # Older result schemas can omit valid-mora count even though they retain
-        # phrase contour/final-intonation diagnostics. Prefer those semantics to
-        # the legacy composite prosody score, which may contain pitch accent.
+    if allow_reference_relative and alignment_available:
         legacy_phrase, legacy_source = _legacy_phrase_intonation_fallback(prosody)
         if legacy_phrase is not None and note not in {"no_valid_f0"}:
             confidence = "low" if weak_reference else "medium"
@@ -361,15 +367,21 @@ def _intonation_proxy(
     pitch_score = _number(tone.get("pitch_score"))
     if pitch_range is not None and pitch_score is not None:
         value = 72.0 + 0.55 * (pitch_score - 72.0)
+        source = "details.tone.pitch_score"
+        tier = "pitch_range_fallback"
+        if alignment_fallback:
+            source += "+alignment_fallback"
+            tier = "alignment_fallback_pitch_range_proxy"
         return (
             value,
-            "details.tone.pitch_score",
+            source,
             "reference_independent_pitch_movement_naturalness_proxy",
             "low",
-            "pitch_range_fallback",
+            tier,
         )
 
-    return 70.0, "product_prior", "broad_intonation_prior_without_reliable_f0", "low", "prior_fallback"
+    tier = "alignment_fallback_prior" if alignment_fallback else "prior_fallback"
+    return 70.0, "product_prior", "broad_intonation_prior_without_reliable_f0", "low", tier
 
 
 def build_consumer_score_components(
@@ -386,7 +398,6 @@ def build_consumer_score_components(
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
     reliability = details.get("reliability") if isinstance(details.get("reliability"), Mapping) else {}
-    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     content = details.get("content_match") if isinstance(details.get("content_match"), Mapping) else {}
     target_relative = _target_relative_allowed(details)
 
@@ -409,7 +420,7 @@ def build_consumer_score_components(
     if duration_ratio is None:
         duration_ratio = _number(content.get("duration_ratio"))
     duration_score = _duration_match_score(duration_ratio)
-    alignment_available = bool(alignment.get("available", True)) and not bool(alignment.get("used_equal_fallback"))
+    alignment_available, alignment_fallback, _alignment_mode = _alignment_state(result, details)
 
     if target_relative and alignment_available and legacy_timing is not None:
         rhythm_value = _blend([(legacy_timing, 0.78), (duration_score, 0.22)]) or legacy_timing
@@ -421,11 +432,9 @@ def build_consumer_score_components(
         if rhythm_value is None:
             rhythm_value = legacy_timing if legacy_timing is not None else 70.0
         rhythm_conf = "low"
-        rhythm_tier = "broad_timing_fallback"
+        rhythm_tier = "alignment_fallback_broad_timing" if alignment_fallback else "broad_timing_fallback"
         rhythm_source = "rate_score+duration_ratio_to_reference"
     else:
-        # Off-target/free Japanese gets a broad, reference-independent rhythm
-        # practice score rather than being penalized for the wrong sentence.
         rhythm_value = rate_score if rate_score is not None else 70.0
         rhythm_conf = "low"
         rhythm_tier = "reference_independent_rate_fallback"
@@ -439,6 +448,7 @@ def build_consumer_score_components(
     )
 
     mismatch_note = " target-relative evidence disabled because the spoken Japanese did not match the fixed target." if not target_relative else ""
+    alignment_note = " local alignment fell back, so target-local timing/F0 evidence was not used as if it were precise." if alignment_fallback else ""
     return [
         _dimension(
             "delivery_fluency",
@@ -475,7 +485,7 @@ def build_consumer_score_components(
             ),
             confidence=rhythm_conf,
             evidence_tier=rhythm_tier,
-            note="Japanese rhythm is not assumed to be perfectly equal-mora timing." + mismatch_note,
+            note="Japanese rhythm is not assumed to be perfectly equal-mora timing." + mismatch_note + alignment_note,
         ),
         _dimension(
             "intonation",
@@ -486,7 +496,7 @@ def build_consumer_score_components(
             construct=intonation_construct,
             confidence=intonation_conf,
             evidence_tier=intonation_tier,
-            note="phrase/sentence intonation practice proxy; not strict lexical pitch-accent correctness." + mismatch_note,
+            note="phrase/sentence intonation practice proxy; not strict lexical pitch-accent correctness." + mismatch_note + alignment_note,
         ),
     ]
 
