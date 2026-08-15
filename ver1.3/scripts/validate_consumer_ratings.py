@@ -48,12 +48,10 @@ def _rating(value: Any) -> int | None:
     text = _text(value)
     if not text:
         return None
-    number = int(text)
-    if str(number) != text and text not in {f"{number}.0"}:
-        # Reject 4.5 etc.; tolerate CSVs that serialized an integer as 4.0.
-        float_number = float(text)
-        if float_number != number:
-            raise ValueError("rating must be an integer")
+    number_float = float(text)
+    if not number_float.is_integer():
+        raise ValueError("rating must be an integer")
+    number = int(number_float)
     if number < 1 or number > 7:
         raise ValueError("rating must be between 1 and 7")
     return number
