@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from jp_speech_eval.consumer_dimension_policy import build_consumer_score_dimensions
+from jp_speech_eval.consumer_dimension_policy import (
+    build_consumer_score_components,
+    build_consumer_score_dimensions,
+)
 
 
 class ConsumerDimensionPolicyTest(unittest.TestCase):
@@ -89,7 +92,6 @@ class ConsumerDimensionPolicyTest(unittest.TestCase):
 
     def test_fluency_uses_speed_and_pause_not_pause_only(self) -> None:
         by_key = {item["key"]: item for item in self._dims()}
-        # 0.48 * 80 + 0.52 * 90 = 85.2
         self.assertEqual(by_key["delivery_fluency"]["value"], 85)
         self.assertEqual(by_key["delivery_fluency"]["evidence_tier"], "rate_plus_pause")
 
@@ -141,7 +143,6 @@ class ConsumerDimensionPolicyTest(unittest.TestCase):
         result["details"]["prosody"]["contour_valid_mora_count"] = 2
         result["details"]["prosody"]["contour_corr"] = None
         result["details"]["prosody"]["note"] = "insufficient_valid_mora_f0"
-        # Keep only two paired F0 values so the two-point direction fallback is exercised.
         for row in result["mora_table"][2:]:
             row["f0_hz"] = None
         by_key = {item["key"]: item for item in self._dims(result)}
@@ -168,6 +169,34 @@ class ConsumerDimensionPolicyTest(unittest.TestCase):
         self.assertEqual(intonation["value"], 70)
         self.assertEqual(intonation["evidence_tier"], "prior_fallback")
         self.assertEqual(intonation["confidence"], "low")
+
+    def test_valid_off_target_japanese_disables_target_relative_dimension_evidence(self) -> None:
+        result = self._result()
+        result["details"]["content_match"].update({
+            "status": "fail",
+            "kana_similarity": 0.05,
+            "score": 0.10,
+            "duration_ratio": 2.0,
+        })
+        # Deliberately make target-relative signals awful; they must not punish a
+        # user who spoke a different but valid Japanese sentence.
+        result["pronunciation_score"] = 15
+        result["prosody_score"] = 12
+        result["details"]["reliability"]["duration_ratio_to_reference"] = 2.0
+        result["details"]["fluency"]["rate_score"] = 82
+        result["details"]["tone"] = {"pitch_range_log": 0.25, "pitch_score": 84}
+
+        components = build_consumer_score_components(result, mode="reference")
+        by_key = {item["key"]: item for item in components}
+        self.assertEqual(by_key["clarity"]["value"], 70)
+        self.assertEqual(by_key["clarity"]["evidence_tier"], "reference_independent_prior_fallback")
+        self.assertNotIn("kana_similarity", by_key["clarity"]["source_field"])
+        self.assertEqual(by_key["mora_timing"]["value"], 82)
+        self.assertEqual(by_key["mora_timing"]["evidence_tier"], "reference_independent_rate_fallback")
+        self.assertNotIn("duration_ratio", by_key["mora_timing"]["source_field"])
+        self.assertNotEqual(by_key["intonation"]["value"], 12)
+        self.assertEqual(by_key["intonation"]["evidence_tier"], "pitch_range_fallback")
+        self.assertIn("target-relative evidence disabled", by_key["intonation"]["note"])
 
     def test_true_no_score_input_keeps_all_dimensions_unavailable(self) -> None:
         dims = self._dims(display_score=None)
