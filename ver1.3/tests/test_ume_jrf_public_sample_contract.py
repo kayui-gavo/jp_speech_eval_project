@@ -24,6 +24,14 @@ class UmeJrfPublicSampleContractTest(unittest.TestCase):
         self.assertEqual(rows["C1_001"]["category"], "difficult_sentence")
         self.assertEqual(rows["D1_001"]["category"], "minimal_pair_word")
 
+    def test_source_annotated_hito_reading_is_made_explicit_for_g2p(self) -> None:
+        rows = {row["sample_id"]: row for row in MODULE.SAMPLES}
+        a1 = rows["A1_001"]
+        self.assertIn("人 (ひと)いきれ", a1["source_display_text"])
+        self.assertIn("ひといきれ", a1["target_text"])
+        self.assertNotIn("人いきれ", a1["target_text"])
+        self.assertEqual(a1["reading_disambiguation"], "人(ひと) -> ひと")
+
     def test_minimal_pair_is_n_presence_absence_contrast(self) -> None:
         rows = {row["sample_id"]: row for row in MODULE.SAMPLES}
         self.assertEqual(rows["D1_001"]["target_text"], "じぶつ")
