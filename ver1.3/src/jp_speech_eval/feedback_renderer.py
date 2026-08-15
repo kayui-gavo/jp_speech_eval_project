@@ -74,6 +74,10 @@ def _mode_notice(policy: ScoringPolicy, gate: Any) -> str:
         return user_message("notice.kanade")
     if policy.weak_reference:
         return user_message("notice.weak_reference")
+    if policy.mode == "reference_mismatch_general_japanese":
+        return user_message("notice.general_japanese_fallback")
+    if policy.broad_mode:
+        return user_message("notice.general_japanese")
     if gate.allow_pitch_feedback:
         return user_message("notice.fixed_verified")
     return user_message("notice.fixed_limited")
