@@ -11,15 +11,22 @@ from jp_speech_eval.phone_construct_roles import (
     special_mora_support_rows,
 )
 from jp_speech_eval.phone_criterion_features import (
+    SCHEMA as CRITERION_SCHEMA,
     PhoneCriterionFeatureBundle,
     PhoneCriterionFeatureRow,
 )
 
 
 def _row(index: int, phone: str) -> PhoneCriterionFeatureRow:
+    special = phone in {"N", "cl"}
     return PhoneCriterionFeatureRow(
         phone_index=index,
         canonical_phone=phone,
+        construct_role=("special_mora_timing" if special else "ordinary_segmental_clarity"),
+        ordinary_segmental_clarity_feature_applicable=not special,
+        substitution_feature_applicable=not special,
+        deletion_feature_applicable=True,
+        normalized_occ_is_physical_duration=False,
         canonical_log_posterior=-10.0,
         canonical_log_posterior_per_frame=-0.1,
         deletion_lpr=2.0,
@@ -42,7 +49,7 @@ class PhoneConstructRoleTest(unittest.TestCase):
     def test_special_mora_rows_drop_ordinary_clarity_primary_features(self) -> None:
         bundle = PhoneCriterionFeatureBundle(
             available=True,
-            schema="phone_criterion_feature_bundle_v1",
+            schema=CRITERION_SCHEMA,
             model_id="synthetic",
             revision="test",
             canonical_phones=["k", "N", "cl"],
@@ -73,7 +80,7 @@ class PhoneConstructRoleTest(unittest.TestCase):
     def test_unavailable_criterion_bundle_fails_closed(self) -> None:
         bundle = PhoneCriterionFeatureBundle(
             available=False,
-            schema="phone_criterion_feature_bundle_v1",
+            schema=CRITERION_SCHEMA,
             model_id="synthetic",
             revision="test",
             canonical_phones=[],
