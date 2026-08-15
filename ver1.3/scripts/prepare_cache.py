@@ -18,6 +18,20 @@ def main() -> None:
         help="Optional externally generated pseudo-reference wav for the same text.",
     )
     parser.add_argument(
+        "--reference-alignment",
+        default=None,
+        help=(
+            "Optional phone alignment for --reference-wav using the exact same time base. "
+            "Supports MFA/Praat TextGrid or simple start-end-phone .lab files."
+        ),
+    )
+    parser.add_argument(
+        "--reference-alignment-method",
+        default="auto",
+        choices=["auto", "textgrid", "mfa", "mfa_japanese", "lab", "existing_label"],
+        help="How to parse --reference-alignment; auto infers .TextGrid or .lab.",
+    )
+    parser.add_argument(
         "--reference-source",
         default=None,
         help="Optional provenance label stored in cache metadata, e.g. kanade_voice_conditioned_pseudo_reference.",
@@ -41,6 +55,8 @@ def main() -> None:
         sr=args.sr,
         save_reference_wav=args.save_ref_wav,
         reference_wav_path=args.reference_wav,
+        reference_alignment_path=args.reference_alignment,
+        reference_alignment_method=args.reference_alignment_method,
         reference_source=args.reference_source,
         reference_id=args.reference_id,
         tts_backend=args.tts_backend,
