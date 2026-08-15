@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Benchmark Japanese restricted-substitution GOP on already-present audio.
 
-No corpus is downloaded and no new recording is requested.  Native/JANON group
+No corpus is downloaded and no new recording is requested. Native/JANON group
 labels are provenance only; non-native JANON speech has no inferred
-pronunciation-quality label.  The output is intended to compare RPS behavior,
-native false-alarm pressure and candidate-space reduction before any use in the
-C-end clarity score.
+pronunciation-quality label.
+
+The RPS SD-GOP denominator depends on each target phone's candidate set. This
+benchmark therefore does *not* average raw RPS GOP magnitudes across phones or
+clips as if they shared one scale. Group summaries are limited to search-space
+coverage and the descriptive rate at which a restricted noncanonical
+alternative out-scores the canonical sequence. Even that rate is not an error
+rate without phone-level criterion labels.
 """
 
 from __future__ import annotations
@@ -17,8 +22,6 @@ from pathlib import Path
 import statistics
 import sys
 from typing import Any, Dict
-
-import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -64,17 +67,25 @@ def _group_summary(rows: list[Dict[str, Any]]) -> Dict[str, Any]:
             for row in values
             if (value := _finite(row.get("noncanonical_outscore_rate"))) is not None
         ]
-        gop_means = [
+        candidate_ratios = [
             float(value)
             for row in values
-            if (value := _finite(row.get("restricted_gop_mean"))) is not None
+            if (value := _finite(row.get("restricted_candidate_ratio_vs_unrestricted"))) is not None
+        ]
+        fallback_rates = [
+            float(row.get("fallback_position_count", 0)) / max(int(row.get("phone_count", 0)), 1)
+            for row in values
+            if int(row.get("phone_count", 0)) > 0
         ]
         output[group] = {
             "n": len(values),
             "noncanonical_outscore_rate_mean": statistics.mean(negative_rates) if negative_rates else None,
             "noncanonical_outscore_rate_median": statistics.median(negative_rates) if negative_rates else None,
-            "restricted_gop_mean_of_clip_means": statistics.mean(gop_means) if gop_means else None,
-            "interpretation": "descriptive_group_distribution_not_pronunciation_quality",
+            "restricted_candidate_ratio_vs_unrestricted_mean": statistics.mean(candidate_ratios) if candidate_ratios else None,
+            "fallback_position_rate_mean": statistics.mean(fallback_rates) if fallback_rates else None,
+            "raw_restricted_gop_aggregated_as_quality": False,
+            "negative_margin_is_pronunciation_error": False,
+            "interpretation": "descriptive_search_space_and_native_or_unlabeled_behavior_not_pronunciation_quality",
         }
     return output
 
@@ -114,6 +125,7 @@ def main() -> None:
                     "status": "evaluated" if result.available else "restricted_gop_unavailable",
                     "speech_region": region.to_dict(),
                     "phones": phones,
+                    "phone_count": len(phones),
                     "dropped_nonsegmental_target_tokens": dropped,
                     "restricted": result.to_dict(),
                 }
@@ -125,13 +137,16 @@ def main() -> None:
                     {
                         "noncanonical_outscore_count": len(negative),
                         "noncanonical_outscore_rate": len(negative) / len(result.rows),
-                        "restricted_gop_mean": result.summary.get("gop_sf_sd_mean"),
                         "restricted_candidate_count_mean": result.summary.get("candidate_count_mean"),
                         "unrestricted_candidate_count": unrestricted_count,
                         "restricted_candidate_ratio_vs_unrestricted": (
                             float(result.summary["candidate_count_mean"]) / unrestricted_count
                             if unrestricted_count > 0 else None
                         ),
+                        "fallback_position_count": result.summary.get("fallback_position_count", 0),
+                        "raw_restricted_gop_available_as_feature": True,
+                        "raw_restricted_gop_aggregated_as_quality": False,
+                        "phone_dependent_denominator": True,
                     }
                 )
         except Exception as exc:
@@ -139,13 +154,16 @@ def main() -> None:
         rows.append(record)
 
     payload = {
-        "schema": "restricted_gop_existing_data_benchmark_v1",
+        "schema": "restricted_gop_existing_data_benchmark_v2",
         "model_id": str(backend.model_id),
         "revision": str(backend.revision),
         "new_human_recordings_used": False,
         "corpus_audio_downloaded": False,
         "learner_quality_labels_inferred": False,
         "negative_margin_is_pronunciation_error": False,
+        "phone_dependent_denominator": True,
+        "cross_phone_raw_gop_comparison_allowed": False,
+        "rps_vs_ups_raw_gop_direct_comparison_allowed": False,
         "score_mapped": False,
         "product_calibrated": False,
         "product_score_changed": False,
