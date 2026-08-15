@@ -127,7 +127,26 @@ class ConsumerDimensionPolicyTest(unittest.TestCase):
         self.assertTrue(rhythm["available"])
         self.assertIsInstance(rhythm["value"], int)
         self.assertEqual(rhythm["confidence"], "low")
-        self.assertEqual(rhythm["evidence_tier"], "broad_timing_fallback")
+        self.assertEqual(rhythm["evidence_tier"], "alignment_fallback_broad_timing")
+        self.assertIn("local alignment fell back", rhythm["note"])
+
+    def test_top_level_alignment_mode_alone_disables_local_timing_and_f0(self) -> None:
+        result = self._result()
+        # Simulates an older evaluator where only the top-level field records
+        # fallback and the nested alignment object still looks nominal.
+        result["alignment_mode"] = "cached_dtw_fallback_equal"
+        result["details"]["alignment"].update({
+            "available": True,
+            "used_equal_fallback": False,
+            "normalized_dtw_cost": 3.5,
+        })
+        by_key = {item["key"]: item for item in self._dims(result)}
+        self.assertEqual(by_key["mora_timing"]["confidence"], "low")
+        self.assertEqual(by_key["mora_timing"]["evidence_tier"], "alignment_fallback_broad_timing")
+        self.assertNotEqual(by_key["mora_timing"]["source_field"], "pronunciation_score+duration_ratio_to_reference")
+        self.assertEqual(by_key["intonation"]["confidence"], "low")
+        self.assertEqual(by_key["intonation"]["evidence_tier"], "alignment_fallback_pitch_range_proxy")
+        self.assertNotEqual(by_key["intonation"]["value"], result["prosody_score"])
 
     def test_primary_reference_f0_contour_gets_intonation_score(self) -> None:
         by_key = {item["key"]: item for item in self._dims()}
