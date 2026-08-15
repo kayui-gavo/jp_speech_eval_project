@@ -13,9 +13,14 @@ from .verified_targets import lookup_verified_target
 class JapaneseTargetEvidence:
     """Free, target-side linguistic evidence with explicit provenance.
 
-    This object describes how the *target* is expected to be read.  It must not
+    This object describes how the *target* is expected to be read. It must not
     be interpreted as acoustic evidence that the learner actually pronounced
     the target correctly.
+
+    Target phones are always generated from ``reading_kana`` (the resolved
+    pronunciation) rather than re-running G2P independently on surface kanji.
+    This prevents a verified/manual reading from disagreeing with the phone
+    sequence because of a second lexical analysis.
     """
 
     surface_text: str
@@ -59,8 +64,8 @@ def detect_pyopenjtalk_distribution() -> tuple[str, Optional[str], bool, List[st
     """Identify which distribution currently owns the `pyopenjtalk` import.
 
     `pyopenjtalk-plus` is a drop-in replacement and deliberately keeps the same
-    import name.  Having both distributions installed at once is ambiguous,
-    because both can install files into the same import package.  The GOP
+    import name. Having both distributions installed at once is ambiguous,
+    because both can install files into the same import package. The GOP
     preflight treats that state as blocked rather than guessing which code won.
     """
     plus_version = _installed_version("pyopenjtalk-plus")
@@ -94,11 +99,17 @@ def build_japanese_target_evidence(
     """Build Japanese reading/phone/accent metadata without paid services.
 
     A manual reading override intentionally suppresses automatic accent
-    interpretation.  OpenJTalk may know the original spelling but not the
+    interpretation. OpenJTalk may know the original spelling but not the
     researcher's intended pronunciation of a proper noun, so inventing an
     accent target from the mismatched lexical analysis would be unsafe.
 
-    `use_marine_shadow` is explicit and default-off.  It only stores marine's
+    Crucially, once a reading has been resolved (automatic, verified, or manual)
+    the phone sequence is generated from that reading. We do not independently
+    G2P the surface kanji a second time. This keeps ``reading_kana`` / morae /
+    phones internally coherent and lets a verified reading actually control
+    phone-level GOP.
+
+    `use_marine_shadow` is explicit and default-off. It only stores marine's
     full-context output as a second target-side opinion; it never replaces a
     verified/manual accent target or creates a user score.
     """
@@ -115,23 +126,28 @@ def build_japanese_target_evidence(
         reading_kana = frontend_input
         reading_source = "manual_override"
         moras = split_mora(reading_kana)
-        phones = _g2p_phones(pyopenjtalk, frontend_input)
+        phones = _g2p_phones(pyopenjtalk, reading_kana)
         fullcontext_labels = list(pyopenjtalk.extract_fullcontext(frontend_input, run_marine=False))
         accent_source = "unavailable_for_manual_reading_without_verified_accent"
         accent_phrases: List[Dict[str, Any]] = []
         verified_target_used = False
         warnings.append("manual_reading_override_disables_automatic_accent_target")
+        warnings.append("resolved_reading_drives_phone_sequence")
     else:
         frontend_input = text
         info = build_text_info(text)
         reading_kana = info.kana
         reading_source = "verified_target" if verified else "pyopenjtalk_g2p"
         moras = list(info.moras)
-        phones = _g2p_phones(pyopenjtalk, text)
+        # Phone evidence must follow the already-resolved reading. This matters
+        # especially when a verified target overrides an ambiguous kanji reading.
+        phones = _g2p_phones(pyopenjtalk, reading_kana)
         fullcontext_labels = list(pyopenjtalk.extract_fullcontext(text, run_marine=False))
         accent_source = str(info.pitch_target_source)
         accent_phrases = list(info.accent_phrases)
         verified_target_used = bool(verified)
+        if verified:
+            warnings.append("verified_reading_drives_phone_sequence")
 
     marine_available = False
     try:
