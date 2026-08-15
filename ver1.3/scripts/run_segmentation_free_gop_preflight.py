@@ -8,6 +8,12 @@ a strict construct-aware criterion-ready research bundle. CTC posterior
 peakiness/uncertainty is recorded as a model diagnostic, not a pronunciation
 score.
 
+Before criterion assembly, canonical kana is aligned to the target phone
+sequence and assigned explicit construct roles. Long-vowel extension morae are
+therefore kept out of ordinary segmental clarity instead of being inferred from
+the repeated vowel token alone. A construct-alignment failure makes the
+criterion/hybrid branch unavailable rather than falling back to an unsafe role.
+
 Peakiness diagnostics use the broader acoustic phone inventory including N/cl,
 not the stricter ordinary-clarity competitor inventory.
 """
@@ -37,6 +43,7 @@ from jp_speech_eval.japanese_phone_inventory import (  # noqa: E402
     acoustic_phone_token_ids,
     inventory_semantics,
 )
+from jp_speech_eval.japanese_phone_roles import infer_phone_construct_roles  # noqa: E402
 from jp_speech_eval.japanese_phoneme_gop import (  # noqa: E402
     JapanesePhoneCtcBackend,
     project_japanese_ctc_logits,
@@ -185,28 +192,57 @@ def main() -> None:
     wrong = evaluate_backend_fgop_sf_sd_shadow(
         backend, speech, wrong_target.phones, sr=audio.sr
     )
+    correct_roles = infer_phone_construct_roles(correct_target.reading_kana, correct.canonical_phones)
+    wrong_roles = infer_phone_construct_roles(wrong_target.reading_kana, wrong.canonical_phones)
     model_id = str(backend.model_id)
     revision = str(backend.revision)
     try:
         correct_norm_obj, correct_posterior_obj, correct_posterior = _norm_and_posterior_features(
-            backend, speech, correct_target.phones, sr=audio.sr
+            backend, speech, correct.canonical_phones, sr=audio.sr
         )
         wrong_norm_obj, wrong_posterior_obj, wrong_posterior = _norm_and_posterior_features(
-            backend, speech, wrong_target.phones, sr=audio.sr
+            backend, speech, wrong.canonical_phones, sr=audio.sr
         )
-        correct_bundle_obj = build_phone_criterion_feature_bundle(correct, correct_norm_obj)
-        wrong_bundle_obj = build_phone_criterion_feature_bundle(wrong, wrong_norm_obj)
-        correct_hybrid_obj = build_hybrid_phone_criterion_bundle(correct_frame, correct_bundle_obj)
-        wrong_hybrid_obj = build_hybrid_phone_criterion_bundle(wrong_frame, wrong_bundle_obj)
+
+        if correct_roles.available:
+            correct_bundle_obj = build_phone_criterion_feature_bundle(
+                correct,
+                correct_norm_obj,
+                construct_roles=correct_roles.roles,
+            )
+            correct_hybrid_obj = build_hybrid_phone_criterion_bundle(correct_frame, correct_bundle_obj)
+            correct_bundle = correct_bundle_obj.to_dict()
+            correct_hybrid = correct_hybrid_obj.to_dict()
+        else:
+            reason = f"target_construct_role_inference_failed:{correct_roles.summary.get('reason', 'unknown')}"
+            correct_bundle_obj = None
+            correct_bundle = _failed_bundle(reason, model_id, revision)
+            correct_hybrid = _failed_bundle(reason, model_id, revision, hybrid=True)
+
+        if wrong_roles.available:
+            wrong_bundle_obj = build_phone_criterion_feature_bundle(
+                wrong,
+                wrong_norm_obj,
+                construct_roles=wrong_roles.roles,
+            )
+            wrong_hybrid_obj = build_hybrid_phone_criterion_bundle(wrong_frame, wrong_bundle_obj)
+            wrong_bundle = wrong_bundle_obj.to_dict()
+            wrong_hybrid = wrong_hybrid_obj.to_dict()
+        else:
+            reason = f"target_construct_role_inference_failed:{wrong_roles.summary.get('reason', 'unknown')}"
+            wrong_bundle_obj = None
+            wrong_bundle = _failed_bundle(reason, model_id, revision)
+            wrong_hybrid = _failed_bundle(reason, model_id, revision, hybrid=True)
+
         correct_norm = correct_norm_obj.to_dict()
         wrong_norm = wrong_norm_obj.to_dict()
-        correct_bundle = correct_bundle_obj.to_dict()
-        wrong_bundle = wrong_bundle_obj.to_dict()
-        correct_hybrid = correct_hybrid_obj.to_dict()
-        wrong_hybrid = wrong_hybrid_obj.to_dict()
-        shared_suffix = compare_shared_suffix_locality(
-            correct_bundle_obj, wrong_bundle_obj
-        )
+        if correct_bundle_obj is not None and wrong_bundle_obj is not None:
+            shared_suffix = compare_shared_suffix_locality(correct_bundle_obj, wrong_bundle_obj)
+        else:
+            shared_suffix = {
+                "available": False,
+                "reason": "construct_role_inference_unavailable_for_one_or_both_targets",
+            }
     except Exception as exc:
         reason = f"norm_bundle_or_posterior_extraction_failed:{type(exc).__name__}"
         failed = {
@@ -231,7 +267,7 @@ def main() -> None:
         shared_suffix = {"available": False, "reason": reason}
 
     payload = {
-        "schema": "segmentation_free_gop_bundled_preflight_v8",
+        "schema": "segmentation_free_gop_bundled_preflight_v9",
         "product_score_changed": False,
         "score_mapped": False,
         "human_recording_allowed": False,
@@ -239,6 +275,8 @@ def main() -> None:
         "occ_i_is_physical_phone_duration": False,
         "ctc_peakiness_is_pronunciation_score": False,
         "ctc_peakiness_phone_inventory_includes_special_morae": True,
+        "construct_roles_inferred_before_criterion_assembly": True,
+        "long_vowel_extension_is_ordinary_segmental_clarity": False,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
         "criterion_schema": CRITERION_SCHEMA,
@@ -246,6 +284,8 @@ def main() -> None:
         "speech_region": region.to_dict(),
         "correct_target": correct_target.to_dict(),
         "wrong_target": wrong_target.to_dict(),
+        "correct_target_construct_roles": correct_roles.to_dict(),
+        "wrong_target_construct_roles": wrong_roles.to_dict(),
         "correct_frame_local": correct_frame.to_dict(),
         "wrong_frame_local": wrong_frame.to_dict(),
         "correct": correct.to_dict(),
@@ -269,12 +309,13 @@ def main() -> None:
             "downstream_labeled_interpretation_required": True,
             "ctc_peakiness_requires_model_level_monitoring": True,
             "special_mora_construct_specific_feature_selection_required": True,
+            "long_vowel_construct_specific_feature_selection_required": True,
             "note": (
                 "This artifact keeps Viterbi/logit and alignment-free feature families explicit, "
-                "joins them only for future supervised criterion experiments, tags special-mora "
-                "rows separately from ordinary clarity, and records CTC peakiness over the full "
-                "acoustic phone inventory. No individual feature is a direct mispronunciation "
-                "label and nothing is mapped to /100."
+                "joins them only for future supervised criterion experiments, assigns target-side "
+                "construct roles before criterion assembly, and records CTC peakiness over the full "
+                "acoustic phone inventory. Timing constructs are not ordinary clarity and no "
+                "individual feature is a direct mispronunciation label or /100 score."
             ),
         },
     }
@@ -287,6 +328,8 @@ def main() -> None:
     print("hybrid criterion schema:", HYBRID_SCHEMA)
     print("correct frame-local available:", correct_frame.available)
     print("correct alignment-free available:", correct.available)
+    print("correct construct roles available:", correct_roles.available)
+    print("correct long-vowel timing phones:", correct_roles.summary.get("long_vowel_timing_phone_count"))
     if correct.available:
         print(
             "diagnostic positions with a higher-posterior noncanonical SD alternative:",
@@ -310,14 +353,16 @@ def main() -> None:
         raise SystemExit(2)
     if not correct.available or not wrong.available:
         raise SystemExit(3)
-    if not bool(correct_norm.get("available")) or not bool(wrong_norm.get("available")):
+    if not correct_roles.available or not wrong_roles.available:
         raise SystemExit(4)
-    if not bool(correct_bundle.get("available")) or not bool(wrong_bundle.get("available")):
+    if not bool(correct_norm.get("available")) or not bool(wrong_norm.get("available")):
         raise SystemExit(5)
-    if not bool(correct_hybrid.get("available")) or not bool(wrong_hybrid.get("available")):
+    if not bool(correct_bundle.get("available")) or not bool(wrong_bundle.get("available")):
         raise SystemExit(6)
-    if not bool(correct_posterior.get("available")) or not bool(wrong_posterior.get("available")):
+    if not bool(correct_hybrid.get("available")) or not bool(wrong_hybrid.get("available")):
         raise SystemExit(7)
+    if not bool(correct_posterior.get("available")) or not bool(wrong_posterior.get("available")):
+        raise SystemExit(8)
 
 
 if __name__ == "__main__":
