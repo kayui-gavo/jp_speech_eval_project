@@ -4,6 +4,9 @@ import importlib.util
 from pathlib import Path
 import unittest
 
+from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence
+from jp_speech_eval.japanese_phoneme_gop import sanitize_canonical_phones
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -13,6 +16,12 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+
+def _phones(text: str) -> list[str]:
+    evidence = build_japanese_target_evidence(text)
+    phones, _dropped = sanitize_canonical_phones(evidence.phones)
+    return list(phones)
 
 
 class UmeJrfPublicSampleContractTest(unittest.TestCase):
@@ -38,6 +47,13 @@ class UmeJrfPublicSampleContractTest(unittest.TestCase):
         self.assertEqual(rows["D1_001"]["minimal_pair_partner"], "じんぶつ")
         self.assertEqual(rows["D1_002"]["target_text"], "じんぶつ")
         self.assertEqual(rows["D1_002"]["minimal_pair_partner"], "じぶつ")
+
+        short = _phones("じぶつ")
+        nasal = _phones("じんぶつ")
+        self.assertEqual(len(nasal), len(short) + 1)
+        candidates = [i for i in range(len(nasal)) if nasal[:i] + nasal[i + 1 :] == short]
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(nasal[candidates[0]], "N")
 
     def test_urls_are_official_nii_src_paths(self) -> None:
         self.assertEqual(MODULE.OFFICIAL_PAGE, "https://research.nii.ac.jp/src/en/UME-JRF.html")
