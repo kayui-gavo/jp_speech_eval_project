@@ -2,7 +2,7 @@
 
 This module intentionally contains product semantics, not model calibration.
 Changing a weight, display transform, public dimension meaning, or history
-comparability rule requires a new ``SCORE_CONTRACT_VERSION``.  Old records stay
+comparability rule requires a new ``SCORE_CONTRACT_VERSION``. Old records stay
 readable but must not be interpreted as directly comparable progress points.
 """
 
@@ -15,9 +15,6 @@ SCORE_CONTRACT_VERSION = "consumer_four_score_v2"
 EVIDENCE_SCHEMA_VERSION = "consumer_evidence_v2"
 SCORE_POLICY_ID = "semantic_four_component_product_heuristic_v2"
 
-# Internal component keys are kept stable because consumer_dimension_policy.py
-# already emits these names. Public labels remain the four product dimensions:
-# 明瞭さ / リズム / 流暢さ / 抑揚.
 PRODUCT_COMPONENT_WEIGHTS: Dict[str, float] = {
     "clarity": 0.30,
     "mora_timing": 0.25,
@@ -72,10 +69,7 @@ _BROAD_MODES = {
 
 
 def apply_display_transform(raw_weighted_score: float) -> float:
-    """Apply the frozen UX transform for this score contract.
-
-    This is deliberately not described as psychometric calibration.
-    """
+    """Apply the frozen UX transform for this score contract."""
 
     raw = float(raw_weighted_score)
     value = DISPLAY_ANCHOR + DISPLAY_STRETCH * (raw - DISPLAY_ANCHOR)
@@ -116,12 +110,7 @@ def mode_family(mode: Any) -> str:
 
 
 def reference_identity(result: Mapping[str, Any]) -> Optional[str]:
-    """Best-effort stable reference identity for progress comparability.
-
-    A fixed-reference score may change when its reference bank changes even if
-    the product formula is unchanged.  Prefer explicit reference IDs; fall back
-    to the cache prefix only for compatibility with existing results.
-    """
+    """Best-effort stable reference identity for progress comparability."""
 
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
     for value in (
@@ -154,11 +143,12 @@ def history_comparability(
 ) -> Dict[str, Any]:
     """Decide whether two product score records may be shown as progress.
 
-    Missing metadata is intentionally non-comparable.  This prevents legacy
-    scores from becoming fake improvement/regression after score-policy changes.
+    ``None`` means there is genuinely no previous record. An empty mapping is
+    different: it represents a legacy/unversioned record and is reported as
+    such so migration/audit code can distinguish the two cases.
     """
 
-    if not previous:
+    if previous is None:
         return {"comparable": False, "reason": "no_previous_record"}
 
     current_contract = str(current.get("score_contract_version") or "")
