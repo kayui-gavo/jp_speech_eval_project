@@ -1,12 +1,12 @@
 """Model-level CTC posterior diagnostics for pronunciation research.
 
 Standard CTC can be very peaky: most acoustic evidence collapses onto sparse
-frames, which can make posterior-derived GOP unstable.  These diagnostics make
+frames, which can make posterior-derived GOP unstable. These diagnostics make
 that model property explicit before any Japanese learner criterion mapping.
 
-They are **not** pronunciation scores and they do not define a universal
-"good" entropy or peakiness threshold.  The intended use is to compare pinned
-phone-CTC backbones and to explain why a downstream GOP feature may be brittle.
+They are **not** pronunciation scores and deliberately define no universal or
+engineering alert threshold. The intended use is descriptive comparison of
+pinned phone-CTC backbones followed by criterion validation.
 """
 
 from __future__ import annotations
@@ -106,12 +106,6 @@ def compute_ctc_posterior_diagnostics(
     conditional = phone_probs / np.maximum(phone_mass[:, None], np.finfo(np.float64).tiny)
     phone_entropy = _normalized_entropy(conditional, axis_size=len(phone_ids))
 
-    warnings: list[str] = []
-    if float(np.mean(phone_mass)) < 0.25:
-        warnings.append("low_mean_phone_probability_mass")
-    if float(np.mean(top1)) > 0.95:
-        warnings.append("very_peaky_mean_top1_posterior")
-
     return CtcPosteriorDiagnostics(
         available=True,
         schema=SCHEMA,
@@ -138,12 +132,13 @@ def compute_ctc_posterior_diagnostics(
             "interpretation": "model_posterior_peakiness_and_uncertainty_not_pronunciation_quality",
             "standard_ctc_peakiness_is_known_pronunciation_assessment_risk": True,
             "universal_threshold_defined": False,
+            "heuristic_alert_thresholds_defined": False,
             "cross_model_diagnostic_comparison_allowed": True,
             "raw_gop_cross_model_averaging_allowed": False,
             "individual_frame_entropy_is_pronunciation_error": False,
             "product_score_changed": False,
         },
-        warnings=warnings,
+        warnings=[],
         product_calibrated=False,
         score_mapped=False,
     )
