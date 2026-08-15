@@ -6,10 +6,12 @@ This preflight checks target-conditioned native behavior across the pinned
 Beatrice, DistilHuBERT and WavLM phone-CTC backbones. It is an engineering/native
 anchor, not learner-error validation.
 
-A Stage-0 audit discovered that automatic surface-kanji G2P could read ``明王``
-as ``あきらおう``. The anchor now *requires* the reviewed full-sentence kana
-reading stored in the manifest and builds phones from that reading. Reintroducing
-surface-only G2P for this anchor is treated as a provenance error.
+Stage-0 found two target-side frontend hazards for this sentence: ambiguous
+surface kanji and a second-pass kana reanalysis that gave two identical lexical
+``みょうおう`` occurrences different phone sequences. The current anchor
+therefore requires both a reviewed kana reading and an explicit reviewed
+logical-phone sequence from the manifest. Neither surface nor kana G2P is
+allowed to overwrite that phone target.
 """
 
 from __future__ import annotations
@@ -121,7 +123,9 @@ def _source_provenance(sample: Dict[str, Any]) -> Dict[str, Any]:
         "semantic_duration_verified": bool(sample.get("semantic_duration_verified", False)),
         "target_reading": sample.get("target_reading"),
         "target_reading_source": sample.get("target_reading_source"),
+        "target_phone_source": sample.get("target_phone_source"),
         "automatic_surface_g2p_is_safe_for_anchor": sample.get("automatic_surface_g2p_is_safe_for_anchor"),
+        "automatic_kana_g2p_is_phone_exact_for_anchor": sample.get("automatic_kana_g2p_is_phone_exact_for_anchor"),
     }
     if "bytes" in sample:
         provenance["bytes"] = sample.get("bytes")
@@ -133,8 +137,12 @@ def _source_provenance(sample: Dict[str, Any]) -> Dict[str, Any]:
 def _load_manifest(path: Path) -> list[Dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     schema = str(payload.get("schema") or "")
-    if schema not in {"jvs_official_samples_manifest_v2", "jvs_official_samples_manifest_v3", "jvs_official_samples_manifest_v4"}:
-        raise ValueError(f"unexpected JVS manifest schema: {schema!r}")
+    if schema != "jvs_official_samples_manifest_v5":
+        raise ValueError(
+            f"JVS phone preflight requires reviewed-phone manifest v5, got {schema!r}"
+        )
+    if not bool(payload.get("target_phone_override_required")):
+        raise ValueError("JVS manifest must require explicit target phone override")
     rows = list(payload.get("samples") or [])
     if {str(row.get("speaker")) for row in rows} != {"jvs001", "jvs002", "jvs003"}:
         raise ValueError("JVS manifest must contain exactly jvs001/jvs002/jvs003")
@@ -143,13 +151,23 @@ def _load_manifest(path: Path) -> list[Dict[str, Any]]:
     return rows
 
 
-def _reviewed_reading(rows: Sequence[Dict[str, Any]]) -> str:
+def _reviewed_target(rows: Sequence[Dict[str, Any]]) -> tuple[str, list[str]]:
     readings = {str(row.get("target_reading") or "").strip() for row in rows}
     if "" in readings or len(readings) != 1:
         raise ValueError("JVS manifest requires one reviewed target_reading for all speakers")
+    phone_sequences = {
+        tuple(str(phone).strip() for phone in (row.get("target_phones") or []))
+        for row in rows
+    }
+    if () in phone_sequences or len(phone_sequences) != 1:
+        raise ValueError("JVS manifest requires one non-empty reviewed target_phones sequence for all speakers")
+    if any(str(row.get("target_phone_source") or "") != "reviewed_logical_phone_override_v1" for row in rows):
+        raise ValueError("JVS manifest target_phone_source is not the reviewed override policy")
     if any(bool(row.get("automatic_surface_g2p_is_safe_for_anchor", True)) for row in rows):
         raise ValueError("JVS anchor must explicitly forbid automatic surface-only G2P")
-    return readings.pop()
+    if any(bool(row.get("automatic_kana_g2p_is_phone_exact_for_anchor", True)) for row in rows):
+        raise ValueError("JVS anchor must explicitly forbid treating kana G2P as phone-exact")
+    return readings.pop(), list(phone_sequences.pop())
 
 
 class BeatriceInfer:
@@ -220,9 +238,15 @@ def _build_model(key: str, model_id: str, revision: str, *, allow_download: bool
 def main() -> None:
     args = parse_args()
     rows = _load_manifest(Path(args.manifest))
-    reading = _reviewed_reading(rows)
-    target = build_japanese_target_evidence(TARGET_TEXT, reading_override=reading)
+    reading, reviewed_phones = _reviewed_target(rows)
+    target = build_japanese_target_evidence(
+        TARGET_TEXT,
+        reading_override=reading,
+        phones_override=reviewed_phones,
+    )
     phones, dropped = sanitize_canonical_phones(target.phones)
+    if dropped or phones != reviewed_phones:
+        raise RuntimeError("reviewed JVS phone override changed during target sanitization")
 
     loaded_samples = []
     for sample in rows:
@@ -262,13 +286,16 @@ def main() -> None:
 
     samples = [results_by_speaker[str(row["speaker"])] for row in rows]
     payload = {
-        "schema": "jvs_native_phone_ctc_anchor_preflight_v3",
+        "schema": "jvs_native_phone_ctc_anchor_preflight_v4",
         "source": "official_JVS_public_sample_links_ephemeral",
         "target_text": TARGET_TEXT,
         "target_reading": reading,
         "target_reading_source": "reviewed_manifest_override",
-        "automatic_surface_g2p_used": False,
-        "known_surface_g2p_failure_fixed": "明王:auto=あきらおう,target=みょうおう",
+        "target_phone_source": "reviewed_logical_phone_override_v1",
+        "automatic_surface_g2p_used_for_phone_target": False,
+        "automatic_kana_g2p_used_for_phone_target": False,
+        "known_surface_g2p_failure_fixed": "明王:surface ambiguity",
+        "known_kana_reanalysis_failure_fixed": "both identical みょうおう occurrences share reviewed phone block",
         "target_phones": phones,
         "dropped_nonsegmental_target_tokens": dropped,
         "native_audio_has_phone_error_labels": False,
@@ -284,6 +311,7 @@ def main() -> None:
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {output}")
     print("target reading override:", reading)
+    print("target phone override count:", len(phones))
     for sample in samples:
         for model in sample["models"]:
             metrics = model["metrics"]
