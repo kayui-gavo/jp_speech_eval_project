@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Automatic local phone-edit sanity test using ephemeral OpenJTalk TTS.
 
-This test is intentionally *not* learner validity.  It creates deterministic
+This test is intentionally *not* learner validity. It creates deterministic
 synthetic pairs whose canonical phone strings differ by one substitution or one
-deletion, then asks whether the target-conditioned restricted CTC evidence moves
-in the expected local direction.  The generated audio is never committed or
-uploaded.
+deletion, then asks whether target-conditioned restricted CTC evidence moves in
+the expected local direction. Generated audio is never committed or uploaded.
 
-Purpose: catch implementation/search-space bugs before spending human time.
+Each target edit is also checked against target-side construct-role metadata.
+This prevents an ordinary segment substitution control, a special-mora deletion
+and a long-vowel extension deletion from being silently pooled as the same
+construct merely because all are represented by phone tokens.
+
+Purpose: catch implementation/search-space/construct-provenance bugs before
+spending human recording time.
 """
 
 from __future__ import annotations
@@ -29,6 +34,12 @@ if str(SRC) not in sys.path:
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
+from jp_speech_eval.japanese_phone_roles import (  # noqa: E402
+    LONG_VOWEL_ROLE,
+    ORDINARY_ROLE,
+    SPECIAL_MORA_ROLE,
+    infer_phone_construct_roles,
+)
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.japanese_phoneme_gop import sanitize_canonical_phones  # noqa: E402
 from jp_speech_eval.restricted_segmentation_free_gop import compute_restricted_fgop_sf_sd_features  # noqa: E402
@@ -37,13 +48,14 @@ from run_official_jvs_phone_ctc_anchor_preflight import BeatriceInfer  # noqa: E
 
 
 CASES = (
-    {"case_id": "voicing_b_p", "target": "バスです。", "spoken_error": "パスです。", "edit_type": "substitution"},
-    {"case_id": "voicing_g_k", "target": "かぎです。", "spoken_error": "かきです。", "edit_type": "substitution"},
-    {"case_id": "affricate_ts_s", "target": "つきです。", "spoken_error": "すきです。", "edit_type": "substitution"},
-    {"case_id": "fricative_sh_s", "target": "しゃしんです。", "spoken_error": "さしんです。", "edit_type": "substitution"},
-    {"case_id": "affricate_ch_sh", "target": "ちずです。", "spoken_error": "しずです。", "edit_type": "substitution"},
-    {"case_id": "sokuon_deletion", "target": "かっこです。", "spoken_error": "かこです。", "edit_type": "deletion"},
-    {"case_id": "mora_n_deletion", "target": "みんなです。", "spoken_error": "みなです。", "edit_type": "deletion"},
+    {"case_id": "voicing_b_p", "target": "バスです。", "spoken_error": "パスです。", "edit_type": "substitution", "expected_construct_role": ORDINARY_ROLE},
+    {"case_id": "voicing_g_k", "target": "かぎです。", "spoken_error": "かきです。", "edit_type": "substitution", "expected_construct_role": ORDINARY_ROLE},
+    {"case_id": "affricate_ts_s", "target": "つきです。", "spoken_error": "すきです。", "edit_type": "substitution", "expected_construct_role": ORDINARY_ROLE},
+    {"case_id": "fricative_sh_s", "target": "しゃしんです。", "spoken_error": "さしんです。", "edit_type": "substitution", "expected_construct_role": ORDINARY_ROLE},
+    {"case_id": "affricate_ch_sh", "target": "ちずです。", "spoken_error": "しずです。", "edit_type": "substitution", "expected_construct_role": ORDINARY_ROLE},
+    {"case_id": "sokuon_deletion", "target": "かっこです。", "spoken_error": "かこです。", "edit_type": "deletion", "expected_construct_role": SPECIAL_MORA_ROLE},
+    {"case_id": "mora_n_deletion", "target": "みんなです。", "spoken_error": "みなです。", "edit_type": "deletion", "expected_construct_role": SPECIAL_MORA_ROLE},
+    {"case_id": "long_vowel_deletion", "target": "おばあさんです。", "spoken_error": "おばさんです。", "edit_type": "deletion", "expected_construct_role": LONG_VOWEL_ROLE},
 )
 
 
@@ -53,6 +65,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument("--device", default=None)
     return parser.parse_args()
+
+
+def _target_contract(text: str) -> tuple[list[str], dict[str, Any]]:
+    evidence = build_japanese_target_evidence(text)
+    phones, _ = sanitize_canonical_phones(evidence.phones)
+    role_result = infer_phone_construct_roles(evidence.reading_kana, phones)
+    return list(phones), role_result.to_dict()
 
 
 def _phones(text: str) -> list[str]:
@@ -125,19 +144,39 @@ def main() -> None:
     rows: list[Dict[str, Any]] = []
 
     for case in CASES:
-        target_phones = _phones(case["target"])
+        target_phones, target_roles = _target_contract(case["target"])
         error_phones = _phones(case["spoken_error"])
         edit = _single_edit(target_phones, error_phones, case["edit_type"])
         record: Dict[str, Any] = {
             **case,
             "target_phones": target_phones,
+            "target_construct_roles": target_roles,
             "spoken_error_phones": error_phones,
             "edit": edit,
             "synthetic_control_only": True,
             "learner_error_validity": False,
         }
+        if not bool(target_roles.get("available")):
+            record["status"] = "invalid_target_construct_roles"
+            rows.append(record)
+            continue
         if not edit.get("available"):
             record["status"] = "invalid_control_definition"
+            rows.append(record)
+            continue
+
+        index = int(edit["target_index"])
+        roles = list(target_roles.get("roles") or [])
+        if index >= len(roles):
+            record["status"] = "edit_index_outside_construct_roles"
+            rows.append(record)
+            continue
+        target_role = str(roles[index])
+        edit["target_construct_role"] = target_role
+        expected_role = str(case["expected_construct_role"])
+        record["construct_role_matches_control_design"] = target_role == expected_role
+        if target_role != expected_role:
+            record["status"] = "construct_role_control_mismatch"
             rows.append(record)
             continue
 
@@ -145,7 +184,6 @@ def main() -> None:
         error_audio = _synthesize(case["spoken_error"])
         correct = _evaluate(model, correct_audio, target_phones)
         erroneous = _evaluate(model, error_audio, target_phones)
-        index = int(edit["target_index"])
         if not correct.available or not erroneous.available:
             record.update(
                 {
@@ -162,15 +200,27 @@ def main() -> None:
         correct_row = correct.rows[index]
         error_row = erroneous.rows[index]
         if edit["edit_type"] == "substitution":
+            if target_role != ORDINARY_ROLE:
+                record["status"] = "substitution_control_on_nonordinary_construct"
+                rows.append(record)
+                continue
             error_phone = str(edit["error_phone"])
             candidate_present = error_phone in error_row.substitution_lprs
             correct_specific = correct_row.substitution_lprs.get(error_phone)
             error_specific = error_row.substitution_lprs.get(error_phone)
+            feature_interpretation = "target_specific_substitution_lpr"
         else:
             error_phone = None
             candidate_present = True
             correct_specific = correct_row.deletion_lpr
             error_specific = error_row.deletion_lpr
+            feature_interpretation = (
+                "long_vowel_extension_deletion_support_lpr"
+                if target_role == LONG_VOWEL_ROLE
+                else "special_mora_deletion_support_lpr"
+                if target_role == SPECIAL_MORA_ROLE
+                else "ordinary_phone_deletion_support_lpr"
+            )
 
         localized_direction_pass = (
             candidate_present
@@ -186,6 +236,8 @@ def main() -> None:
         record.update(
             {
                 "status": "evaluated",
+                "target_construct_role": target_role,
+                "target_specific_feature_interpretation": feature_interpretation,
                 "candidate_present": candidate_present,
                 "correct_target_specific_lpr": correct_specific,
                 "error_target_specific_lpr": error_specific,
@@ -201,19 +253,22 @@ def main() -> None:
                 "error_best_noncanonical_phone": error_row.best_noncanonical_phone,
                 "search_policy": error_row.search_policy,
                 "candidate_phones": list(error_row.candidate_phones),
+                "best_noncanonical_is_direct_correctness_label": False,
             }
         )
         rows.append(record)
 
     evaluated = [row for row in rows if row.get("status") == "evaluated"]
     payload = {
-        "schema": "controlled_tts_phone_edit_preflight_v1",
+        "schema": "controlled_tts_phone_edit_preflight_v2",
         "model_id": model.model_id,
         "revision": model.revision,
         "tts_backend": "pyopenjtalk_plus_hts",
         "generated_audio_committed": False,
         "generated_audio_uploaded": False,
         "synthetic_control_is_learner_validity": False,
+        "construct_roles_checked_before_acoustic_control": True,
+        "long_vowel_extension_is_ordinary_segmental_clarity": False,
         "score_mapped": False,
         "product_calibrated": False,
         "product_score_changed": False,
@@ -222,10 +277,14 @@ def main() -> None:
         "summary": {
             "case_count": len(rows),
             "evaluated_count": len(evaluated),
+            "ordinary_segmental_control_count": sum(row.get("target_construct_role") == ORDINARY_ROLE for row in evaluated),
+            "special_mora_control_count": sum(row.get("target_construct_role") == SPECIAL_MORA_ROLE for row in evaluated),
+            "long_vowel_control_count": sum(row.get("target_construct_role") == LONG_VOWEL_ROLE for row in evaluated),
             "localized_direction_pass_count": sum(bool(row.get("localized_direction_pass")) for row in evaluated),
             "strong_sign_flip_count": sum(bool(row.get("strong_sign_flip")) for row in evaluated),
             "all_candidates_present": all(bool(row.get("candidate_present")) for row in evaluated) if evaluated else False,
-            "interpretation": "synthetic_localization_sanity_only_not_Japanese_L2_pronunciation_validity",
+            "all_construct_roles_match_control_design": all(bool(row.get("construct_role_matches_control_design")) for row in evaluated) if evaluated else False,
+            "interpretation": "construct_audited_synthetic_localization_sanity_only_not_Japanese_L2_pronunciation_validity",
         },
     }
     output = Path(args.output)
