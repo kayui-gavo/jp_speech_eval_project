@@ -23,11 +23,12 @@ from typing import Any, Dict, Mapping, Sequence
 
 import numpy as np
 
+from .ctc_sequence import ctc_forward_logprob_vectorized
 from .japanese_phone_substitutions import substitution_token_ids_by_position
-from .japanese_phoneme_gop import ctc_forward_logprob
 
 
 METHOD = "restricted_enumerated_fgop_ctc_sf_sd_v1"
+CTC_FORWARD_IMPL = "rolling_vectorized_exact_ctc_v1"
 
 
 @dataclass(frozen=True)
@@ -128,7 +129,9 @@ def compute_restricted_fgop_sf_sd_features(
 
     The canonical CTC posterior is computed once. Only the alternatives for the
     current target position are then evaluated, so complexity scales with the
-    actual restricted candidate count.
+    actual restricted candidate count. Fixed-sequence posteriors use the exact
+    rolling/vectorized CTC recurrence, regression-tested against the earlier
+    scalar implementation including repeated-label paths.
 
     ``gop_sf_sd`` is retained as a model feature because a future criterion
     model may learn from it. It must not be compared directly across rows with
@@ -168,7 +171,9 @@ def compute_restricted_fgop_sf_sd_features(
         )
 
     token_ids = [int(vocab[phone]) for phone in phones]
-    canonical_lp = ctc_forward_logprob(log_probs, token_ids, blank_id=int(blank_id))
+    canonical_lp = ctc_forward_logprob_vectorized(
+        log_probs, token_ids, blank_id=int(blank_id)
+    )
     if not math.isfinite(canonical_lp):
         return _unavailable(
             "canonical_ctc_logposterior_nonfinite",
@@ -203,14 +208,18 @@ def compute_restricted_fgop_sf_sd_features(
         for alternative_id in candidate_ids:
             sequence = list(token_ids)
             sequence[index] = int(alternative_id)
-            alternative_lp = ctc_forward_logprob(log_probs, sequence, blank_id=int(blank_id))
+            alternative_lp = ctc_forward_logprob_vectorized(
+                log_probs, sequence, blank_id=int(blank_id)
+            )
             alternative_phone = id_to_phone[int(alternative_id)]
             substitution_logps[alternative_phone] = float(alternative_lp)
             substitution_lprs[alternative_phone] = float(canonical_lp - alternative_lp)
             denominator_terms.append(float(alternative_lp))
 
         deleted_sequence = token_ids[:index] + token_ids[index + 1 :]
-        deletion_lp = ctc_forward_logprob(log_probs, deleted_sequence, blank_id=int(blank_id))
+        deletion_lp = ctc_forward_logprob_vectorized(
+            log_probs, deleted_sequence, blank_id=int(blank_id)
+        )
         deletion_lpr = float(canonical_lp - deletion_lp)
         denominator_terms.append(float(deletion_lp))
         denominator_lp = _logsumexp(denominator_terms)
@@ -270,6 +279,8 @@ def compute_restricted_fgop_sf_sd_features(
         candidate_provenance=provenance,
         summary={
             "canonical_ctc_log_posterior": float(canonical_lp),
+            "ctc_forward_implementation": CTC_FORWARD_IMPL,
+            "ctc_forward_scalar_reference_regression_tested": True,
             "frame_count": int(raw.shape[0]),
             "phone_count": len(rows),
             "candidate_count_min": min(counts),
