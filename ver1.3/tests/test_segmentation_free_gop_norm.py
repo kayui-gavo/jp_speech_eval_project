@@ -115,12 +115,12 @@ class SegmentationFreeGopNormTest(unittest.TestCase):
         self.assertEqual(len(result.evidence), 3)
         self.assertTrue(all(row.occ_i >= 0 for row in result.evidence))
 
-    def test_high_level_japanese_wildcard_excludes_pause_and_control_tokens(self) -> None:
+    def test_high_level_japanese_wildcard_excludes_pause_control_and_special_mora_tokens(self) -> None:
         logits = np.asarray(
             [
-                [5.0, 2.0, 0.0, 0.0, 3.0, 3.0, 3.0],
-                [0.0, 5.0, 1.0, 0.5, 4.0, 4.0, 4.0],
-                [5.0, 1.0, 0.0, 0.0, 3.0, 3.0, 3.0],
+                [5.0, 2.0, 0.0, 0.0, 3.0, 3.0, 3.0, 1.0],
+                [0.0, 5.0, 1.0, 0.5, 4.0, 4.0, 4.0, 1.0],
+                [5.0, 1.0, 0.0, 0.0, 3.0, 3.0, 3.0, 1.0],
             ],
             dtype=np.float64,
         )
@@ -132,6 +132,7 @@ class SegmentationFreeGopNormTest(unittest.TestCase):
             "pau": 4,
             "sil": 5,
             "UNK": 6,
+            "cl": 7,
         }
         result = compute_segmentation_free_norm_features(
             logits,
@@ -143,7 +144,9 @@ class SegmentationFreeGopNormTest(unittest.TestCase):
         )
         self.assertTrue(result.available)
         inventory = set(result.summary["wildcard_phone_inventory"])
-        self.assertEqual(inventory, {"a", "i", "N"})
+        self.assertEqual(inventory, {"a", "i"})
+        self.assertNotIn("N", inventory)
+        self.assertNotIn("cl", inventory)
         self.assertNotIn("pau", inventory)
         self.assertNotIn("sil", inventory)
         self.assertNotIn("UNK", inventory)
