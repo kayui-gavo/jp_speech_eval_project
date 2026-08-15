@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       run_model_preflight:
-        description: "Download pinned Japanese phone-CTC models and run bundled/native-anchor preflight"
+        description: "Download pinned Japanese phone-CTC models and run bundled/native/learner-domain preflight"
         required: false
         default: true
         type: boolean
@@ -77,6 +77,11 @@ jobs:
           python scripts/download_official_jvs_samples.py
           --output-dir outputs/jvs_official_samples
           --manifest outputs/jvs_official_samples_manifest.json
+      - name: Download official UME-JRF public learner samples ephemerally
+        run: >-
+          python scripts/download_official_ume_jrf_samples.py
+          --output-dir outputs/ume_jrf_public_samples
+          --manifest outputs/ume_jrf_public_samples_manifest.json
       - name: Run pinned Beatrice backend preflight on bundled audio
         run: python scripts/run_phone_gop_preflight.py --allow-download --output outputs/phone_gop_preflight_ci.json
       - name: Run Beatrice segmentation-free SD and Occ feature preflight
@@ -107,6 +112,12 @@ jobs:
           --manifest outputs/jvs_official_samples_manifest.json
           --allow-download
           --output outputs/jvs_restricted_gop_preflight.json
+      - name: Run Beatrice official UME-JRF public learner-domain preflight
+        run: >-
+          python scripts/run_ume_jrf_public_phone_preflight.py
+          --manifest outputs/ume_jrf_public_samples_manifest.json
+          --allow-download
+          --output outputs/ume_jrf_public_phone_preflight.json
       - name: Run ephemeral OpenJTalk controlled local phone-edit preflight
         run: >-
           python scripts/run_controlled_tts_phone_edit_preflight.py
@@ -114,7 +125,11 @@ jobs:
           --output outputs/controlled_tts_phone_edit_preflight.json
       - name: Remove downloaded or synthesized audio before artifact collection
         if: always()
-        run: rm -rf outputs/jvs_official_samples outputs/controlled_tts_audio
+        run: >-
+          rm -rf
+          outputs/jvs_official_samples
+          outputs/ume_jrf_public_samples
+          outputs/controlled_tts_audio
       - name: Upload model preflight reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -129,5 +144,7 @@ jobs:
             ver1.3/outputs/jvs_official_samples_manifest.json
             ver1.3/outputs/jvs_native_phone_ctc_anchor_preflight.json
             ver1.3/outputs/jvs_restricted_gop_preflight.json
+            ver1.3/outputs/ume_jrf_public_samples_manifest.json
+            ver1.3/outputs/ume_jrf_public_phone_preflight.json
             ver1.3/outputs/controlled_tts_phone_edit_preflight.json
           if-no-files-found: warn
