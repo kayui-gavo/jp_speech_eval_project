@@ -29,7 +29,10 @@ from jp_speech_eval.dual_ctc_phone_candidate import (  # noqa: E402
     DISTILHUBERT_DUAL_CTC_MODEL,
     DualCtcPhoneCandidateBackend,
 )
-from jp_speech_eval.hybrid_phone_criterion_features import build_hybrid_phone_criterion_bundle  # noqa: E402
+from jp_speech_eval.hybrid_phone_criterion_features import (  # noqa: E402
+    SCHEMA as HYBRID_SCHEMA,
+    build_hybrid_phone_criterion_bundle,
+)
 from jp_speech_eval.japanese_phoneme_gop import segmental_competitor_ids  # noqa: E402
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import build_phone_criterion_feature_bundle  # noqa: E402
@@ -74,7 +77,7 @@ def _unavailable_bundle(reason: str, backend: DualCtcPhoneCandidateBackend) -> d
 def _unavailable_hybrid(reason: str, backend: DualCtcPhoneCandidateBackend) -> dict:
     return {
         "available": False,
-        "schema": "hybrid_phone_criterion_feature_bundle_v1",
+        "schema": HYBRID_SCHEMA,
         "model_id": backend.model_id,
         "revision": backend.revision,
         "canonical_phones": [],
@@ -201,6 +204,7 @@ def main() -> None:
         "ctc_peakiness_is_pronunciation_score": False,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
+        "hybrid_criterion_schema": HYBRID_SCHEMA,
         "correct_target": correct,
         "wrong_target": wrong,
         "gain_controls": gain_rows,
@@ -217,6 +221,7 @@ def main() -> None:
     print(f"wrote {output}")
     print(f"model: {args.model}@{args.revision}")
     print(f"normalized SD method: {NORM_METHOD}")
+    print(f"hybrid criterion schema: {HYBRID_SCHEMA}")
     print(f"correct-minus-wrong sequence log posterior: {payload['sequence_logposterior_gap_correct_minus_wrong']}")
     norm_summary = correct["segmentation_free_norm"].get("summary", {})
     posterior = correct["ctc_posterior_diagnostics"]
