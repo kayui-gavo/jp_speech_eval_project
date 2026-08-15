@@ -60,7 +60,7 @@ def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwar
     # surfaces to report different totals for the same utterance.
     payload.setdefault("dimension_policy", {})
     payload["dimension_policy"].update({
-        "version": "consumer_semantics_v4_shared_total",
+        "version": "consumer_semantics_v5_confidence_surface",
         "top_level_dimensions": ["delivery_fluency", "clarity", "mora_timing", "intonation"],
         "always_show_four_scores_after_japanese_acceptance": True,
         "evidence_degrades_before_score_disappears": True,
@@ -72,6 +72,8 @@ def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwar
             "intonation": 0.20,
         },
         "consumer_total_product_calibrated": False,
+        "low_confidence_dimension_marker": "reference_estimate",
+        "target_mismatch_copy_is_nonpunitive": True,
         "prosody_is_not_a_peer_label_to_intonation": True,
         "lexical_pitch_accent_is_not_top_level_intonation": True,
         "recording_quality_is_not_clarity": True,
@@ -85,6 +87,14 @@ def _render_consumer_user_facing(result: Any, *, mode: str | None = None, **kwar
 def _consumer_html_bytes() -> bytes:
     html = CONSUMER_HTML.read_text(encoding="utf-8")
     patch = r"""
+<style>
+/* Consumer semantic layer: keep uncertainty visible without turning the page
+   into a research dashboard. */
+.dim{grid-template-columns:145px 58px 52px minmax(80px,1fr)}
+.dim .dim-confidence{font-family:var(--sans);font-size:9.8px;line-height:1;letter-spacing:.04em;color:var(--muted-soft);white-space:nowrap}
+.dim .dim-confidence.low{color:var(--rose-deep)}
+@media(max-width:760px){.dim{grid-template-columns:minmax(92px,1fr) 48px 44px minmax(58px,.9fr);gap:10px}.dim .dim-confidence{font-size:9px}}
+</style>
 <script>
 /* Preview-only semantic patch: backend fields remain backward compatible. */
 dimensionLabel = function(k){
@@ -100,6 +110,63 @@ copy["zh-CN"].hero="只要确认是在说可评价的日语，就会从流畅度
 copy["zh-TW"].hero="只要確認是在說可評價的日語，就會從流暢度、清晰度、節奏和抑揚四個方向給出練習分。證據不足時會降低判斷可信度，而不是讓某一維消失。";
 copy.ja.hero="評価可能な日本語発話として確認できた場合は、流暢さ・明瞭さ・リズム・抑揚の4項目を必ず練習スコアとして表示します。根拠が弱い場合は信頼度を下げ、項目自体は消しません。";
 copy.en.hero="Once the utterance is accepted as scoreable Japanese, the demo always returns four practice scores: fluency, clarity, rhythm, and intonation. Weak evidence lowers confidence instead of making a dimension disappear.";
+
+const consumerConfidenceMarker={
+  "zh-CN":{low:"参考"},"zh-TW":{low:"參考"},ja:{low:"参考"},en:{low:"Est."}
+};
+const consumerResultCopy={
+  "zh-CN":{
+    mismatchTitle:"句子不同，但这段日语仍然可以评分",
+    mismatchCopy:"没有把你和固定例句硬比较。下面保留的是对这段日语本身可用的练习分；依赖目标句的局部纠错会暂时收起。",
+    normalCopy:"四项都是练习分。标记“参考”的项目表示当前证据较弱，适合看方向，不适合当作精密测量。"
+  },
+  "zh-TW":{
+    mismatchTitle:"句子不同，但這段日語仍然可以評分",
+    mismatchCopy:"沒有把你和固定例句硬比較。下面保留的是對這段日語本身可用的練習分；依賴目標句的局部糾錯會暫時收起。",
+    normalCopy:"四項都是練習分。標記「參考」的項目表示目前證據較弱，適合看方向，不適合當作精密測量。"
+  },
+  ja:{
+    mismatchTitle:"お題とは違いますが、日本語として評価できます",
+    mismatchCopy:"固定例文との一致度では減点していません。この発話そのものから出せる練習スコアを表示し、お題依存の細かな指摘だけを控えています。",
+    normalCopy:"4項目はいずれも練習用の目安です。「参考」は根拠が弱い項目で、傾向を見るための推定値です。"
+  },
+  en:{
+    mismatchTitle:"Different sentence, still scoreable as Japanese",
+    mismatchCopy:"You are not being penalized for missing the fixed prompt. The scores below use evidence available from this Japanese utterance itself; prompt-specific corrections are withheld.",
+    normalCopy:"All four values are practice scores. “Est.” marks a lower-confidence estimate that is useful for direction, not precise measurement."
+  }
+};
+function consumerIsTargetMismatch(payload){
+  const u=payload?.user_facing||{};
+  const key=u?.debug?.user_score_policy?.main_message_key||"";
+  return key==="content_mismatch_general_score"||payload?.mode==="reference_mismatch_general_japanese"||u?.dimension_policy?.target_mismatch===true;
+}
+function consumerDecorateResult(payload){
+  const u=payload?.user_facing||{};
+  const dims=Array.isArray(u.score_dimensions)?u.score_dimensions:[];
+  const rows=[...document.querySelectorAll("#dimensions .dim")];
+  rows.forEach((row,i)=>{
+    row.querySelector(".dim-confidence")?.remove();
+    const confidence=String(dims[i]?.confidence||"").toLowerCase();
+    const tag=document.createElement("small");
+    tag.className=`dim-confidence ${confidence}`;
+    tag.textContent=consumerConfidenceMarker[locale]?.[confidence]||"";
+    tag.setAttribute("aria-label",confidence?`confidence: ${confidence}`:"");
+    row.appendChild(tag);
+  });
+  const text=consumerResultCopy[locale]||consumerResultCopy["zh-CN"];
+  if(consumerIsTargetMismatch(payload)){
+    $("resultTitle").textContent=text.mismatchTitle;
+    $("resultCopy").textContent=text.mismatchCopy;
+  }else{
+    $("resultCopy").textContent=text.normalCopy;
+  }
+}
+const _consumerBaseRenderResult=renderResult;
+renderResult=function(payload){
+  _consumerBaseRenderResult(payload);
+  consumerDecorateResult(payload);
+};
 </script>
 """
     return html.replace("</body>", f"{patch}</body>").encode("utf-8")
