@@ -13,7 +13,8 @@ requires held acceptance plus human criterion evidence.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from statistics import mean, median
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -30,6 +31,12 @@ from .vad import trim_to_speech
 
 
 POLICY_ID = "legacy_reliability_caps_counterfactual_v1"
+_TRIGGER_KEYS = (
+    "alignment_equal_fallback",
+    "mora_evidence_below_threshold",
+    "f0_coverage_below_0_50",
+    "overall_reliability_below_0_75",
+)
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -112,6 +119,7 @@ def rescore_without_reliability_caps(
     *,
     wav_path: str | Path,
     scoring_config_path: Optional[str | Path] = None,
+    sample_rate: int = 16000,
 ) -> Dict[str, Any]:
     """Replay raw scorers and compare them with the legacy capped result."""
     config = load_scoring_config(scoring_config_path)
@@ -148,7 +156,7 @@ def rescore_without_reliability_caps(
         config=config,
     )
 
-    audio = load_audio(str(wav_path), sr=int(config.get("sample_rate", 16000) or 16000))
+    audio = load_audio(str(wav_path), sr=int(sample_rate))
     y_speech, _region = trim_to_speech(audio.y, audio.sr)
     tone_score, _tone_fb, _tone_details = score_tone_simple(
         f0_by_mora,
@@ -188,4 +196,46 @@ def rescore_without_reliability_caps(
             "offline exact scorer replay for A/B; a positive delta means the current post-hoc "
             "reliability cap lowered the stored legacy score"
         ),
+    }
+
+
+def summarize_counterfactual_reports(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Summarize A/B deltas without selecting a winning product policy."""
+    usable = [report for report in reports if bool(report.get("available"))]
+    total_deltas = [
+        int(_number(_mapping(report.get("counterfactual_minus_observed")).get("total"), 0.0))
+        for report in usable
+    ]
+    dimension_deltas: Dict[str, list[int]] = {key: [] for key in ("pronunciation", "prosody", "fluency", "tone", "total")}
+    trigger_counts = {key: 0 for key in _TRIGGER_KEYS}
+    for report in usable:
+        delta = _mapping(report.get("counterfactual_minus_observed"))
+        for key in dimension_deltas:
+            dimension_deltas[key].append(int(_number(delta.get(key), 0.0)))
+        triggers = _mapping(report.get("cap_triggers"))
+        for key in trigger_counts:
+            trigger_counts[key] += int(bool(triggers.get(key)))
+
+    def stats(values: Sequence[int]) -> Dict[str, Any]:
+        if not values:
+            return {"n": 0, "mean": None, "median": None, "min": None, "max": None, "positive_count": 0}
+        return {
+            "n": len(values),
+            "mean": round(float(mean(values)), 6),
+            "median": round(float(median(values)), 6),
+            "min": int(min(values)),
+            "max": int(max(values)),
+            "positive_count": sum(value > 0 for value in values),
+        }
+
+    return {
+        "policy_id": POLICY_ID,
+        "report_count": len(reports),
+        "usable_count": len(usable),
+        "any_total_delta_count": sum(value != 0 for value in total_deltas),
+        "positive_total_delta_count": sum(value > 0 for value in total_deltas),
+        "trigger_counts": trigger_counts,
+        "delta_stats": {key: stats(values) for key, values in dimension_deltas.items()},
+        "decision": "none",
+        "note": "descriptive A/B summary only; do not remove caps from these statistics alone",
     }
