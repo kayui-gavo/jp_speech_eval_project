@@ -11,6 +11,13 @@ This prevents an ordinary segment substitution control, a special-mora deletion
 and a long-vowel extension deletion from being silently pooled as the same
 construct merely because all are represented by phone tokens.
 
+A repeated-vowel long vowel such as /a a/ has an important sequence-level
+ambiguity: deleting either adjacent /a/ yields the same shorter phone string.
+The acoustic phone sequence alone therefore cannot identify which target event
+was removed. For controlled cases only, the reviewed/derived construct role is
+used to disambiguate the edit index. This is target provenance, not an acoustic
+claim about learner correctness.
+
 Purpose: catch implementation/search-space/construct-provenance bugs before
 spending human recording time.
 """
@@ -94,13 +101,19 @@ def _single_edit(target: list[str], spoken: list[str], edit_type: str) -> Dict[s
             "target_index": index,
             "target_phone": target[index],
             "error_phone": spoken[index],
+            "sequence_edit_ambiguous": False,
         }
     if edit_type == "deletion":
         if len(target) != len(spoken) + 1:
             return {"available": False, "reason": "deletion_phone_count_mismatch"}
         candidates = [i for i in range(len(target)) if target[:i] + target[i + 1 :] == spoken]
         if len(candidates) != 1:
-            return {"available": False, "reason": "expected_exactly_one_deletion", "candidate_indices": candidates}
+            return {
+                "available": False,
+                "reason": "expected_exactly_one_deletion",
+                "candidate_indices": candidates,
+                "sequence_edit_ambiguous": len(candidates) > 1,
+            }
         index = candidates[0]
         return {
             "available": True,
@@ -108,8 +121,67 @@ def _single_edit(target: list[str], spoken: list[str], edit_type: str) -> Dict[s
             "target_index": index,
             "target_phone": target[index],
             "error_phone": None,
+            "candidate_indices": candidates,
+            "sequence_edit_ambiguous": False,
         }
     return {"available": False, "reason": "unsupported_edit_type"}
+
+
+def _resolve_edit_for_construct(
+    edit: Dict[str, Any],
+    target_phones: list[str],
+    target_roles: Dict[str, Any],
+    expected_role: str,
+) -> Dict[str, Any]:
+    """Resolve only sequence-equivalent deletion ambiguity using target roles."""
+    roles = [str(role) for role in (target_roles.get("roles") or [])]
+    if not bool(target_roles.get("available")) or len(roles) != len(target_phones):
+        return {
+            **edit,
+            "available": False,
+            "reason": "target_construct_roles_unavailable_for_edit_resolution",
+        }
+
+    if bool(edit.get("available")):
+        index = int(edit.get("target_index", -1))
+        if index < 0 or index >= len(roles):
+            return {**edit, "available": False, "reason": "edit_index_outside_construct_roles"}
+        return {
+            **edit,
+            "target_construct_role": roles[index],
+            "resolved_by_construct_role": False,
+        }
+
+    candidates = [int(index) for index in (edit.get("candidate_indices") or [])]
+    if str(edit.get("reason")) != "expected_exactly_one_deletion" or len(candidates) <= 1:
+        return edit
+
+    matching = [index for index in candidates if 0 <= index < len(roles) and roles[index] == str(expected_role)]
+    if len(matching) != 1:
+        return {
+            **edit,
+            "available": False,
+            "reason": "ambiguous_deletion_not_resolved_by_construct_role",
+            "expected_construct_role": str(expected_role),
+            "candidate_construct_roles": {
+                str(index): roles[index] if 0 <= index < len(roles) else "out_of_range"
+                for index in candidates
+            },
+        }
+
+    index = matching[0]
+    return {
+        "available": True,
+        "edit_type": "deletion",
+        "target_index": index,
+        "target_phone": target_phones[index],
+        "error_phone": None,
+        "candidate_indices": candidates,
+        "sequence_edit_ambiguous": True,
+        "target_construct_role": roles[index],
+        "resolved_by_construct_role": True,
+        "resolution_basis": "target_construct_role_not_acoustic_phone_identity",
+    }
 
 
 def _synthesize(text: str) -> np.ndarray:
@@ -146,12 +218,19 @@ def main() -> None:
     for case in CASES:
         target_phones, target_roles = _target_contract(case["target"])
         error_phones = _phones(case["spoken_error"])
-        edit = _single_edit(target_phones, error_phones, case["edit_type"])
+        raw_edit = _single_edit(target_phones, error_phones, case["edit_type"])
+        edit = _resolve_edit_for_construct(
+            raw_edit,
+            target_phones,
+            target_roles,
+            str(case["expected_construct_role"]),
+        )
         record: Dict[str, Any] = {
             **case,
             "target_phones": target_phones,
             "target_construct_roles": target_roles,
             "spoken_error_phones": error_phones,
+            "raw_sequence_edit": raw_edit,
             "edit": edit,
             "synthetic_control_only": True,
             "learner_error_validity": False,
@@ -172,7 +251,6 @@ def main() -> None:
             rows.append(record)
             continue
         target_role = str(roles[index])
-        edit["target_construct_role"] = target_role
         expected_role = str(case["expected_construct_role"])
         record["construct_role_matches_control_design"] = target_role == expected_role
         if target_role != expected_role:
@@ -260,7 +338,7 @@ def main() -> None:
 
     evaluated = [row for row in rows if row.get("status") == "evaluated"]
     payload = {
-        "schema": "controlled_tts_phone_edit_preflight_v2",
+        "schema": "controlled_tts_phone_edit_preflight_v3",
         "model_id": model.model_id,
         "revision": model.revision,
         "tts_backend": "pyopenjtalk_plus_hts",
@@ -268,6 +346,7 @@ def main() -> None:
         "generated_audio_uploaded": False,
         "synthetic_control_is_learner_validity": False,
         "construct_roles_checked_before_acoustic_control": True,
+        "sequence_equivalent_deletion_can_be_resolved_by_target_construct_role": True,
         "long_vowel_extension_is_ordinary_segmental_clarity": False,
         "score_mapped": False,
         "product_calibrated": False,
@@ -280,6 +359,7 @@ def main() -> None:
             "ordinary_segmental_control_count": sum(row.get("target_construct_role") == ORDINARY_ROLE for row in evaluated),
             "special_mora_control_count": sum(row.get("target_construct_role") == SPECIAL_MORA_ROLE for row in evaluated),
             "long_vowel_control_count": sum(row.get("target_construct_role") == LONG_VOWEL_ROLE for row in evaluated),
+            "sequence_ambiguous_controls_resolved_by_construct_role": sum(bool(row.get("edit", {}).get("resolved_by_construct_role")) for row in evaluated),
             "localized_direction_pass_count": sum(bool(row.get("localized_direction_pass")) for row in evaluated),
             "strong_sign_flip_count": sum(bool(row.get("strong_sign_flip")) for row in evaluated),
             "all_candidates_present": all(bool(row.get("candidate_present")) for row in evaluated) if evaluated else False,
