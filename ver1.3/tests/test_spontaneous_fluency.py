@@ -37,7 +37,27 @@ def test_breakdown_reports_pause_distribution_without_inventing_clause_location(
     assert features["silent_pause_mean_sec"] == 0.5
     assert features["silent_pauses_per_100_mora"] == 10.0
     assert features["pause_location_available"] is False
-    assert features["pause_location_reason"] == "no_time_aligned_clause_or_phrase_boundaries"
+    assert features["pause_location_reason"] == "no_word_timestamps"
+
+
+def test_word_timing_produces_only_weak_punctuation_boundary_candidates() -> None:
+    pause_info = {"pause_segments": [(0.9, 1.3), (2.0, 2.4)]}
+    words = [
+        {"start_sec": 0.10, "end_sec": 0.88, "text": "今日は、", "probability": 0.95},
+        {"start_sec": 1.32, "end_sec": 1.95, "text": "映画を", "probability": 0.91},
+        {"start_sec": 2.42, "end_sec": 2.90, "text": "見ます", "probability": 0.90},
+    ]
+    features = breakdown_fluency_features(
+        pause_info,
+        speech_duration_sec=3.0,
+        mora_count=12,
+        word_timestamps=words,
+    )
+    assert features["pause_location_available"] is True
+    assert features["pause_location_confidence"] == "low"
+    assert features["pause_location_counts"]["after_asr_punctuation_candidate"] == 1
+    assert features["pause_location_counts"]["within_asr_phrase_candidate"] == 1
+    assert "not_syntactic_clause_labels" in features["pause_location_reason"]
 
 
 def test_transcript_repairs_keep_certain_fillers_separate_from_ambiguous_markers() -> None:
