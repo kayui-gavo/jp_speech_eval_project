@@ -9,10 +9,10 @@ from jp_speech_eval.phoneme_gop import PhoneGopEvidence, PhoneGopResult
 
 
 class HybridPhoneCriterionFeatureTest(unittest.TestCase):
-    def _frame(self) -> PhoneGopResult:
+    def _frame(self, phone: str = "b") -> PhoneGopResult:
         row = PhoneGopEvidence(
             phone_index=0,
-            canonical_phone="b",
+            canonical_phone=phone,
             token_id=1,
             start_frame=2,
             end_frame=3,
@@ -42,25 +42,26 @@ class HybridPhoneCriterionFeatureTest(unittest.TestCase):
             backend="synthetic",
             model_id="model@abc123456789",
             method="ctc_viterbi_phone_evidence_v1",
-            canonical_phones=["b"],
+            canonical_phones=[phone],
             evidence=[row],
             summary={},
             warnings=[],
         )
 
-    def _criterion(self) -> PhoneCriterionFeatureBundle:
+    def _criterion(self, phone: str = "b") -> PhoneCriterionFeatureBundle:
+        special = phone in {"N", "cl"}
         row = PhoneCriterionFeatureRow(
             phone_index=0,
-            canonical_phone="b",
+            canonical_phone=phone,
             canonical_log_posterior=-2.0,
             canonical_log_posterior_per_frame=-0.2,
             deletion_lpr=1.5,
-            substitution_lprs={"p": 2.2},
+            substitution_lprs=({phone: 0.0} if special else {"p": 2.2}),
             enumerated_gop_sf_sd=-0.4,
             normalized_graph_gop_sf_sd=-0.3,
             occ_i=1.1,
-            best_noncanonical_type="substitution",
-            best_noncanonical_phone="p",
+            best_noncanonical_type=("deletion" if special else "substitution"),
+            best_noncanonical_phone=(None if special else "p"),
             best_noncanonical_lpr=2.2,
         )
         return PhoneCriterionFeatureBundle(
@@ -68,7 +69,7 @@ class HybridPhoneCriterionFeatureTest(unittest.TestCase):
             schema="phone_criterion_feature_bundle_v1",
             model_id="model",
             revision="abc123456789",
-            canonical_phones=["b"],
+            canonical_phones=[phone],
             substitution_phone_inventory=["b", "p"],
             rows=[row],
             summary={},
@@ -80,11 +81,32 @@ class HybridPhoneCriterionFeatureTest(unittest.TestCase):
         self.assertTrue(bundle.available)
         self.assertFalse(bundle.score_mapped)
         self.assertFalse(bundle.product_calibrated)
+        self.assertEqual(bundle.rows[0].construct_role, "ordinary_segmental_clarity")
+        self.assertTrue(bundle.rows[0].frame_local_ordinary_clarity_feature_applicable)
+        self.assertTrue(bundle.rows[0].alignment_free_substitution_feature_applicable)
+        self.assertTrue(bundle.rows[0].alignment_free_deletion_feature_applicable)
         self.assertEqual(bundle.rows[0].frame_local_max_logit_margin, 3.0)
         self.assertEqual(bundle.rows[0].alignment_free_substitution_lprs["p"], 2.2)
         self.assertFalse(bundle.summary["frame_local_support_is_physical_phone_boundary"])
         self.assertFalse(bundle.summary["cross_model_raw_averaging_allowed"])
         self.assertTrue(bundle.summary["feature_family_selection_requires_japanese_l2_criterion"])
+
+    def test_special_mora_row_is_not_silently_treated_as_ordinary_clarity(self) -> None:
+        bundle = build_hybrid_phone_criterion_bundle(self._frame("N"), self._criterion("N"))
+        self.assertTrue(bundle.available)
+        row = bundle.rows[0]
+        self.assertEqual(row.construct_role, "special_mora_timing")
+        self.assertFalse(row.frame_local_ordinary_clarity_feature_applicable)
+        self.assertFalse(row.alignment_free_substitution_feature_applicable)
+        self.assertTrue(row.alignment_free_deletion_feature_applicable)
+        # Raw frame-local values are retained for audit/research but explicitly
+        # marked inapplicable to an ordinary clarity model.
+        self.assertEqual(row.frame_local_mean_logit_margin, 3.0)
+        self.assertEqual(row.alignment_free_substitution_lprs, {"N": 0.0})
+        self.assertEqual(bundle.summary["special_mora_row_count"], 1)
+        self.assertEqual(bundle.summary["ordinary_segmental_row_count"], 0)
+        self.assertFalse(bundle.summary["special_mora_frame_local_raw_values_are_ordinary_clarity_features"])
+        self.assertTrue(bundle.summary["special_mora_requires_construct_specific_feature_selection"])
 
     def test_model_provenance_mismatch_fails_closed(self) -> None:
         frame = replace(self._frame(), model_id="other@abc123456789")
