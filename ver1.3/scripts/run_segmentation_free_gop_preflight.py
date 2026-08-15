@@ -7,6 +7,9 @@ features and alignment-free LPP/LPR/SD/Occ(i) separate, then joins them only in
 a strict construct-aware criterion-ready research bundle. CTC posterior
 peakiness/uncertainty is recorded as a model diagnostic, not a pronunciation
 score.
+
+Peakiness diagnostics use the broader acoustic phone inventory including N/cl,
+not the stricter ordinary-clarity competitor inventory.
 """
 
 from __future__ import annotations
@@ -30,11 +33,14 @@ from jp_speech_eval.hybrid_phone_criterion_features import (  # noqa: E402
     SCHEMA as HYBRID_SCHEMA,
     build_hybrid_phone_criterion_bundle,
 )
+from jp_speech_eval.japanese_phone_inventory import (  # noqa: E402
+    acoustic_phone_token_ids,
+    inventory_semantics,
+)
 from jp_speech_eval.japanese_phoneme_gop import (  # noqa: E402
     JapanesePhoneCtcBackend,
     project_japanese_ctc_logits,
     sanitize_canonical_phones,
-    segmental_competitor_ids,
 )
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import (  # noqa: E402
@@ -119,9 +125,14 @@ def _norm_and_posterior_features(
     posterior = compute_ctc_posterior_diagnostics(
         logical_logits,
         blank_id=blank_id,
-        phone_token_ids=segmental_competitor_ids(logical_vocab, blank_id=blank_id),
+        phone_token_ids=acoustic_phone_token_ids(logical_vocab, blank_id=blank_id),
     )
-    return norm, posterior
+    posterior_payload = posterior.to_dict()
+    posterior_payload["phone_inventory_semantics"] = inventory_semantics(
+        logical_vocab,
+        blank_id=blank_id,
+    )
+    return norm, posterior, posterior_payload
 
 
 def _failed_bundle(reason: str, model_id: str, revision: str, *, hybrid: bool = False) -> dict:
@@ -177,10 +188,10 @@ def main() -> None:
     model_id = str(backend.model_id)
     revision = str(backend.revision)
     try:
-        correct_norm_obj, correct_posterior_obj = _norm_and_posterior_features(
+        correct_norm_obj, correct_posterior_obj, correct_posterior = _norm_and_posterior_features(
             backend, speech, correct_target.phones, sr=audio.sr
         )
-        wrong_norm_obj, wrong_posterior_obj = _norm_and_posterior_features(
+        wrong_norm_obj, wrong_posterior_obj, wrong_posterior = _norm_and_posterior_features(
             backend, speech, wrong_target.phones, sr=audio.sr
         )
         correct_bundle_obj = build_phone_criterion_feature_bundle(correct, correct_norm_obj)
@@ -189,8 +200,6 @@ def main() -> None:
         wrong_hybrid_obj = build_hybrid_phone_criterion_bundle(wrong_frame, wrong_bundle_obj)
         correct_norm = correct_norm_obj.to_dict()
         wrong_norm = wrong_norm_obj.to_dict()
-        correct_posterior = correct_posterior_obj.to_dict()
-        wrong_posterior = wrong_posterior_obj.to_dict()
         correct_bundle = correct_bundle_obj.to_dict()
         wrong_bundle = wrong_bundle_obj.to_dict()
         correct_hybrid = correct_hybrid_obj.to_dict()
@@ -222,13 +231,14 @@ def main() -> None:
         shared_suffix = {"available": False, "reason": reason}
 
     payload = {
-        "schema": "segmentation_free_gop_bundled_preflight_v7",
+        "schema": "segmentation_free_gop_bundled_preflight_v8",
         "product_score_changed": False,
         "score_mapped": False,
         "human_recording_allowed": False,
         "individual_lpr_sign_is_pronunciation_error_rule": False,
         "occ_i_is_physical_phone_duration": False,
         "ctc_peakiness_is_pronunciation_score": False,
+        "ctc_peakiness_phone_inventory_includes_special_morae": True,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
         "criterion_schema": CRITERION_SCHEMA,
@@ -262,8 +272,9 @@ def main() -> None:
             "note": (
                 "This artifact keeps Viterbi/logit and alignment-free feature families explicit, "
                 "joins them only for future supervised criterion experiments, tags special-mora "
-                "rows separately from ordinary clarity, and records CTC peakiness. No individual "
-                "feature is a direct mispronunciation label and nothing is mapped to /100."
+                "rows separately from ordinary clarity, and records CTC peakiness over the full "
+                "acoustic phone inventory. No individual feature is a direct mispronunciation "
+                "label and nothing is mapped to /100."
             ),
         },
     }
@@ -293,6 +304,7 @@ def main() -> None:
     print("hybrid criterion bundle available:", correct_hybrid.get("available"))
     print("CTC top1 posterior mean:", correct_posterior.get("top1_posterior_mean"))
     print("CTC blank-top1 fraction:", correct_posterior.get("blank_top1_fraction"))
+    print("CTC posterior acoustic phone count:", correct_posterior.get("phone_token_count"))
     print("HUMAN RECORDING GATE: BLOCKED (awaits labeled criterion / Stage-0 promotion)")
     if not correct_frame.available or not wrong_frame.available:
         raise SystemExit(2)
