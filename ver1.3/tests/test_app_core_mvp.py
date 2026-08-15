@@ -144,14 +144,29 @@ class AppCoreMvpTest(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             self.assertEqual(latest_record(rows, step=3)["audio_path"], "b.wav")
 
-    def test_reference_dependency_gap(self) -> None:
+    def test_reference_dependency_gap_blocks_legacy_cross_step_score_subtraction(self) -> None:
         records = [
-            {"item_id": "item", "step": 1, "scores": {"total": 88}},
-            {"item_id": "item", "step": 3, "scores": {"total": 70}},
+            {
+                "item_id": "item",
+                "step": 1,
+                "scores": {"total": 88},
+                "features": {"mora_rate": 5.0, "pause_ratio": 0.04},
+            },
+            {
+                "item_id": "item",
+                "step": 3,
+                "scores": {"total": 70},
+                "features": {"mora_rate": 3.8, "pause_ratio": 0.18},
+            },
         ]
         gap = compute_reference_dependency_gap(records, item_id="item")
-        self.assertEqual(gap.gap, 18.0)
-        self.assertTrue(any("跟读" in item for item in gap.feedback))
+        self.assertIsNone(gap.gap)
+        self.assertEqual(
+            gap.debug["score_comparability"]["reason"],
+            "legacy_record_without_score_contract",
+        )
+        self.assertTrue(any("不直接用总分差" in item for item in gap.feedback))
+        self.assertLess(gap.debug["feature_change"]["mora_rate_pct_step1_to_step3"], 0)
 
 
 if __name__ == "__main__":
