@@ -3,9 +3,9 @@
 
 This is a Stage-0 shadow comparison against the existing Beatrice preflight.
 It uses only repository-bundled audio and never changes a product score. The
-artifact includes transparent alignment-free phone features, normalized SD
-alternative-graph/Occ(i) diagnostics, a criterion-ready bundle, and explicit
-CTC posterior peakiness/uncertainty diagnostics.
+artifact includes frame-local logit/posterior evidence, alignment-free phone
+features, Japanese phone-masked SD/Occ(i), a strict hybrid criterion bundle,
+and explicit CTC posterior peakiness/uncertainty diagnostics.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from jp_speech_eval.dual_ctc_phone_candidate import (  # noqa: E402
     DISTILHUBERT_DUAL_CTC_MODEL,
     DualCtcPhoneCandidateBackend,
 )
+from jp_speech_eval.hybrid_phone_criterion_features import build_hybrid_phone_criterion_bundle  # noqa: E402
 from jp_speech_eval.japanese_phoneme_gop import segmental_competitor_ids  # noqa: E402
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import build_phone_criterion_feature_bundle  # noqa: E402
@@ -67,6 +68,21 @@ def _unavailable_bundle(reason: str, backend: DualCtcPhoneCandidateBackend) -> d
     }
 
 
+def _unavailable_hybrid(reason: str, backend: DualCtcPhoneCandidateBackend) -> dict:
+    return {
+        "available": False,
+        "schema": "hybrid_phone_criterion_feature_bundle_v1",
+        "model_id": backend.model_id,
+        "revision": backend.revision,
+        "canonical_phones": [],
+        "rows": [],
+        "summary": {"reason": reason, "product_score_changed": False},
+        "warnings": [reason],
+        "score_mapped": False,
+        "product_calibrated": False,
+    }
+
+
 def _unavailable_diagnostics(reason: str) -> dict:
     return {
         "available": False,
@@ -89,6 +105,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
 
     norm_payload: dict
     criterion_payload: dict
+    hybrid_payload: dict
     posterior_payload: dict
     try:
         logical_logits, logical_vocab, blank_id, _provenance = backend.infer_logical_phone_logits(
@@ -102,8 +119,11 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
             model_id=backend.model_id,
             revision=backend.revision,
         )
+        criterion = build_phone_criterion_feature_bundle(sf, norm)
+        hybrid = build_hybrid_phone_criterion_bundle(frame, criterion)
         norm_payload = norm.to_dict()
-        criterion_payload = build_phone_criterion_feature_bundle(sf, norm).to_dict()
+        criterion_payload = criterion.to_dict()
+        hybrid_payload = hybrid.to_dict()
         phone_ids = segmental_competitor_ids(logical_vocab, blank_id=blank_id)
         posterior_payload = compute_ctc_posterior_diagnostics(
             logical_logits,
@@ -125,6 +145,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
             "product_calibrated": False,
         }
         criterion_payload = _unavailable_bundle(reason, backend)
+        hybrid_payload = _unavailable_hybrid(reason, backend)
         posterior_payload = _unavailable_diagnostics(reason)
 
     return {
@@ -134,6 +155,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
         "segmentation_free": sf.to_dict(),
         "segmentation_free_norm": norm_payload,
         "criterion_feature_bundle": criterion_payload,
+        "hybrid_criterion_feature_bundle": hybrid_payload,
         "ctc_posterior_diagnostics": posterior_payload,
     }
 
@@ -162,7 +184,7 @@ def main() -> None:
     correct_lp = correct["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     wrong_lp = wrong["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     payload = {
-        "schema": "dual_ctc_candidate_preflight_v4",
+        "schema": "dual_ctc_candidate_preflight_v5",
         "model_id": args.model,
         "revision": args.revision,
         "audio": str(BUNDLED_AUDIO.relative_to(ROOT)),
@@ -195,6 +217,7 @@ def main() -> None:
     posterior = correct["ctc_posterior_diagnostics"]
     print("correct Occ(i) range:", norm_summary.get("occ_i_min"), norm_summary.get("occ_i_max"))
     print("criterion bundle available:", correct["criterion_feature_bundle"].get("available"))
+    print("hybrid criterion bundle available:", correct["hybrid_criterion_feature_bundle"].get("available"))
     print("CTC top1 posterior mean:", posterior.get("top1_posterior_mean"))
     print("CTC blank-top1 fraction:", posterior.get("blank_top1_fraction"))
     print("PRODUCT SCORE: UNCHANGED / SHADOW ONLY")
