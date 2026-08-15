@@ -11,6 +11,7 @@ from .audio_features import basic_energy_stats, detect_pauses, extract_f0, load_
 from .config import load_scoring_config
 from .recording_quality import assess_recording_quality
 from .scoring import clamp_score
+from .spontaneous_fluency import build_spontaneous_fluency_evidence
 from .structure_features import (
     f0_structure_features,
     light_pronunciation_risk_features,
@@ -49,6 +50,10 @@ def evaluate_transcript_assisted_light(
     This mode is intentionally conservative. The transcript can be provided by
     ASR or externally. It is used only to estimate kana/mora count and rough
     speaking-rate context.
+
+    ``spontaneous_fluency_v2`` is attached as shadow evidence only.  It separates
+    speed, breakdown and repair evidence but does not change the current product
+    score until human criterion validation supports a mapping.
     """
     t0 = time.perf_counter()
     timing: Dict[str, float] = {}
@@ -118,6 +123,17 @@ def evaluate_transcript_assisted_light(
         **risk_struct,
         "interpretation": "speaker_normalized_structural_proxy",
     }
+    transcript_source = str(asr_info.get("provider") or "unknown")
+    if asr_info.get("model"):
+        transcript_source = f"{transcript_source}:{asr_info.get('model')}"
+    spontaneous_fluency_v2 = build_spontaneous_fluency_evidence(
+        mora_count=mora_count,
+        speech_duration_sec=speech_duration,
+        pause_info=pause_info,
+        transcript=transcript or "",
+        transcript_source=transcript_source,
+        silent_pause_threshold_sec=0.30,
+    )
 
     feedback: List[str] = [
         "当前为 Transcript-assisted light 模式： transcript 只用于估计 mora 数，不生成 TTS reference、不做 DTW，因此不输出具体假名纠错。"
@@ -230,8 +246,10 @@ def evaluate_transcript_assisted_light(
                 "speech_duration_sec": speech_duration,
                 "speech_rate_mora_per_sec": mora_rate,
                 "avg_mora_duration_sec": None if mora_rate is None else speech_duration / max(mora_count, 1),
-                "note": "transcript_assisted_proxy_no_dtw",
+                "spontaneous_v2_shadow": spontaneous_fluency_v2,
+                "note": "transcript_assisted_proxy_no_dtw; spontaneous_v2_is_shadow_only",
             },
+            "spontaneous_fluency_v2": spontaneous_fluency_v2,
             "recording_quality": {
                 **quality,
                 "energy_mean": energy["mean"],
