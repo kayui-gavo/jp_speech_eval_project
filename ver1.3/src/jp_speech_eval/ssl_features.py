@@ -1,13 +1,13 @@
 """Lazy self-supervised speech features for audit-only pronunciation shadows.
 
 Nothing in this module is loaded by the product score path unless the explicit
-SSL shadow flag is enabled.  Distances are research measurements, not /100
+SSL shadow flag is enabled. Distances are research measurements, not /100
 pronunciation scores.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import numpy as np
 
@@ -23,19 +23,30 @@ def normalize_ssl_frames(features: np.ndarray) -> np.ndarray:
     return frames / np.maximum(norms, 1e-8)
 
 
-def cosine_dtw_distance(reference: np.ndarray, user: np.ndarray) -> Dict[str, float | int]:
-    """Return normalized cumulative cosine DTW distance and path length."""
+def cosine_dtw_alignment(reference: np.ndarray, user: np.ndarray) -> Dict[str, Any]:
+    """Return cosine-DTW distance plus the optimal reference/user frame path.
+
+    The path is research evidence. Callers should normally avoid serialising it
+    into product telemetry; it is exposed so rhythm shadows can derive warp-path
+    statistics without recomputing DTW.
+    """
+
     ref = normalize_ssl_frames(reference)
     hyp = normalize_ssl_frames(user)
     if not len(ref) or not len(hyp):
         raise ValueError("SSL DTW requires non-empty frame sequences")
-    # The former Python nested loop made a 20-sentence layer sweep effectively
-    # unusable. librosa's tested DTW backend preserves the same cosine cost and
-    # path-normalized definition while avoiding per-cell Python dispatch.
     import librosa
 
     costs = 1.0 - np.clip(ref @ hyp.T, -1.0, 1.0)
     accumulated, path = librosa.sequence.dtw(C=costs, backtrack=True)
+    path = np.asarray(path, dtype=np.int64)
+    if path.ndim != 2 or path.shape[1] != 2:
+        raise ValueError("librosa DTW returned an invalid warping path")
+    # librosa returns the backtracked path from the final cell toward the
+    # origin. Chronological ordering is easier and less error-prone for rhythm
+    # analysis, while cumulative cost is order-invariant.
+    if len(path) >= 2 and tuple(path[0]) > tuple(path[-1]):
+        path = path[::-1].copy()
     path_length = int(len(path))
     cumulative = float(accumulated[-1, -1])
     return {
@@ -44,6 +55,18 @@ def cosine_dtw_distance(reference: np.ndarray, user: np.ndarray) -> Dict[str, fl
         "path_length": path_length,
         "reference_frame_count": int(len(ref)),
         "user_frame_count": int(len(hyp)),
+        "path": path,
+    }
+
+
+def cosine_dtw_distance(reference: np.ndarray, user: np.ndarray) -> Dict[str, float | int]:
+    """Return normalized cumulative cosine DTW distance and path length."""
+
+    aligned = cosine_dtw_alignment(reference, user)
+    return {
+        key: value
+        for key, value in aligned.items()
+        if key != "path"
     }
 
 
@@ -72,7 +95,7 @@ def robust_distance_normalize(distance: float, native_distances: Iterable[float]
     """Normalise one SSL distance using native-reference median/MAD.
 
     The values remain distances; this only puts layer 12 and layer 24 on a
-    comparable native-relative scale before a fusion experiment.  It is not a
+    comparable native-relative scale before a fusion experiment. It is not a
     learner-score mapping and must be fit on a development/native panel only.
     """
     values = np.asarray([float(item) for item in native_distances if np.isfinite(item)], dtype=float)
@@ -130,7 +153,7 @@ class SSLFeatureExtractor:
         self.model_id = model_id
         self.device = device
         # Shadows must not make an ordinary product/test invocation download a
-        # multi-GB checkpoint.  A benchmark may explicitly provide a local
+        # multi-GB checkpoint. A benchmark may explicitly provide a local
         # snapshot; an unavailable snapshot is reported as a normal shadow
         # failure by its caller.
         self.local_files_only = bool(local_files_only)
@@ -150,9 +173,6 @@ class SSLFeatureExtractor:
         self._torch = torch
         self.device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
         try:
-            # WavLM checkpoints expose an audio feature extractor, not a
-            # tokenizer-backed processor.  AutoProcessor fails for the official
-            # microsoft/wavlm-large checkpoint on current transformers.
             self.processor = AutoFeatureExtractor.from_pretrained(
                 self.model_id, local_files_only=self.local_files_only,
             )
