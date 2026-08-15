@@ -1,6 +1,6 @@
 """Speaker-held-out criterion validation for phone-level research features.
 
-This module is intentionally independent of the consumer score.  Once an
+This module is intentionally independent of the consumer score. Once an
 expert-labeled Japanese learner corpus is available, it evaluates whether phone
 features actually discriminate expert-correct from expert-incorrect
 realizations without speaker leakage.
@@ -12,20 +12,22 @@ Design principles:
 * all preprocessing/model fitting happens inside each training fold;
 * out-of-fold probabilities are retained for phone-specific false-alarm and
   miss analysis;
+* feature-family comparisons reuse the same requested split policy/seed;
 * no threshold is promoted to the C-end score by this module;
-* model comparison should be based on held-out criterion performance, not raw
-  GOP magnitude.
+* model comparison is based on held-out criterion performance, not raw GOP
+  magnitude.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Sequence
 
 import numpy as np
 
 
 SCHEMA = "speaker_held_out_phone_criterion_validation_v1"
+FAMILY_SCHEMA = "speaker_held_out_phone_feature_family_comparison_v1"
 
 
 @dataclass(frozen=True)
@@ -88,7 +90,7 @@ def evaluate_phone_criterion_binary(
     """Run out-of-fold speaker-held-out logistic criterion validation.
 
     The positive class for model fitting is **expert incorrect** so reported ROC
-    AUC describes error detection.  `0.5` decisions below are diagnostic only;
+    AUC describes error detection. `0.5` decisions below are diagnostic only;
     no learner-facing threshold is created.
     """
     from sklearn.linear_model import LogisticRegression
@@ -103,6 +105,8 @@ def evaluate_phone_criterion_binary(
     names = [str(name) for name in feature_names]
     if not names:
         raise ValueError("feature_names must not be empty")
+    if len(set(names)) != len(names):
+        raise ValueError("feature_names must be unique")
     for example in rows:
         missing = [name for name in names if name not in example.features]
         if missing:
@@ -201,6 +205,7 @@ def evaluate_phone_criterion_binary(
         "speaker_count": int(np.unique(groups).size),
         "feature_names": names,
         "n_splits": splits,
+        "random_state": int(random_state),
         "positive_class": "expert_incorrect",
         "split_policy": "StratifiedGroupKFold_by_speaker",
         "model": "StandardScaler+class_balanced_logistic_regression",
@@ -217,9 +222,114 @@ def evaluate_phone_criterion_binary(
             "criterion_labels_generated_from_GOP": False,
             "diagnostic_0_5_is_product_threshold": False,
             "phone_specific_thresholds_calibrated": False,
+            "item_or_target_phone_held_out_stress_test_done": False,
             "score_mapped": False,
             "product_calibrated": False,
             "product_score_changed": False,
             "intended_use": "compare_phone_feature_families_on_expert_labeled_Japanese_L2_speech",
+        },
+    }
+
+
+def compare_phone_criterion_feature_families(
+    examples: Sequence[PhoneCriterionExample],
+    *,
+    feature_families: Mapping[str, Sequence[str]],
+    combined_family_name: str | None = None,
+    n_splits: int = 5,
+    random_state: int = 0,
+) -> Dict[str, Any]:
+    """Run a same-policy speaker-held-out ablation across feature families.
+
+    The comparison is deliberately descriptive. It does not perform feature
+    selection, significance testing, confidence intervals, threshold tuning, or
+    product promotion. A combined/hybrid family is considered useful only if it
+    is later confirmed to add held-out criterion value beyond simpler families.
+    """
+    families = {str(name): [str(feature) for feature in features] for name, features in feature_families.items()}
+    if len(families) < 2:
+        raise ValueError("feature-family comparison requires at least two families")
+    if any(not name for name in families):
+        raise ValueError("feature-family names must not be empty")
+    if any(not features for features in families.values()):
+        raise ValueError("every feature family must contain at least one feature")
+    if combined_family_name is not None and str(combined_family_name) not in families:
+        raise ValueError("combined_family_name must identify one supplied feature family")
+
+    results: Dict[str, Dict[str, Any]] = {}
+    for family_name, features in families.items():
+        results[family_name] = evaluate_phone_criterion_binary(
+            examples,
+            feature_names=features,
+            n_splits=n_splits,
+            random_state=random_state,
+        )
+
+    # All evaluations should resolve to the same fold count and exact speaker
+    # memberships because they use identical labels/groups/random state. Refuse
+    # to compare them if this invariant is somehow broken.
+    split_signatures = {
+        family_name: [
+            (tuple(fold["train_speakers"]), tuple(fold["test_speakers"]))
+            for fold in result["folds"]
+        ]
+        for family_name, result in results.items()
+    }
+    first_signature = next(iter(split_signatures.values()))
+    if any(signature != first_signature for signature in split_signatures.values()):
+        raise RuntimeError("feature-family comparison did not reuse identical speaker folds")
+
+    ranking = sorted(
+        (
+            {
+                "family": name,
+                "roc_auc_error_detection": float(result["metrics"]["roc_auc_error_detection"]),
+                "eer": float(result["metrics"]["eer"]),
+                "balanced_accuracy_at_diagnostic_0_5": float(
+                    result["metrics"]["balanced_accuracy_at_diagnostic_0_5"]
+                ),
+                "feature_count": len(result["feature_names"]),
+            }
+            for name, result in results.items()
+        ),
+        key=lambda row: (-row["roc_auc_error_detection"], row["eer"], row["feature_count"], row["family"]),
+    )
+
+    combined_comparison: Dict[str, Any] | None = None
+    if combined_family_name is not None:
+        combined_name = str(combined_family_name)
+        combined_auc = float(results[combined_name]["metrics"]["roc_auc_error_detection"])
+        alternatives = [row for row in ranking if row["family"] != combined_name]
+        best_other = max(alternatives, key=lambda row: row["roc_auc_error_detection"])
+        combined_comparison = {
+            "combined_family": combined_name,
+            "best_other_family": best_other["family"],
+            "combined_roc_auc": combined_auc,
+            "best_other_roc_auc": float(best_other["roc_auc_error_detection"]),
+            "roc_auc_delta_combined_minus_best_other": combined_auc - float(best_other["roc_auc_error_detection"]),
+            "positive_delta_proves_generalization": False,
+            "requires_external_or_nested_confirmation": True,
+        }
+
+    return {
+        "schema": FAMILY_SCHEMA,
+        "available": True,
+        "family_count": len(results),
+        "family_results": results,
+        "ranking_by_held_out_roc_auc": ranking,
+        "combined_family_comparison": combined_comparison,
+        "summary": {
+            "same_speaker_folds_used_for_all_families": True,
+            "speaker_leakage_allowed": False,
+            "feature_family_selected_for_product": False,
+            "statistical_significance_tested": False,
+            "confidence_intervals_estimated": False,
+            "multiple_comparison_correction_done": False,
+            "item_or_target_phone_held_out_stress_test_done": False,
+            "diagnostic_0_5_is_product_threshold": False,
+            "score_mapped": False,
+            "product_calibrated": False,
+            "product_score_changed": False,
+            "intended_use": "ablate_frame_logit_posterior_alignment_free_normalized_graph_and_hybrid_families_before_model_selection",
         },
     }
