@@ -7,6 +7,35 @@ import librosa
 import numpy as np
 
 
+class AnalysisSignal(np.ndarray):
+    """Normalized analysis ndarray carrying non-scoring recording provenance.
+
+    This ndarray subclass is a compatibility bridge for legacy callers that pass
+    ``audio.y`` directly into recording-quality code. Numerical operations see a
+    normal ndarray; recording-quality can recover the amplitude-preserved decode
+    before converting the input with ``np.asarray``. New code should prefer
+    :func:`load_audio_views` instead of depending on these attributes.
+    """
+
+    raw_recording_y: np.ndarray
+    raw_recording_sr: int
+    analysis_normalization_gain: float
+
+
+def _analysis_signal(
+    y: np.ndarray,
+    *,
+    raw_y: np.ndarray,
+    raw_sr: int,
+    normalization_gain: float,
+) -> AnalysisSignal:
+    signal = np.asarray(y, dtype=np.float64).view(AnalysisSignal)
+    signal.raw_recording_y = np.asarray(raw_y, dtype=np.float64)
+    signal.raw_recording_sr = int(raw_sr)
+    signal.analysis_normalization_gain = float(normalization_gain)
+    return signal
+
+
 @dataclass(frozen=True)
 class AudioData:
     y: np.ndarray
@@ -62,10 +91,16 @@ def load_audio_views(path: str, sr: int = 16000) -> AudioViews:
         normalization_gain = 1.0 / (analysis_peak + 1e-9)
         analysis_y = analysis_y * normalization_gain
 
+    tagged_y = _analysis_signal(
+        analysis_y,
+        raw_y=raw_y,
+        raw_sr=raw_sr,
+        normalization_gain=normalization_gain,
+    )
     analysis = AudioData(
-        y=np.asarray(analysis_y, dtype=np.float64),
+        y=tagged_y,
         sr=int(sr),
-        duration=len(analysis_y) / int(sr),
+        duration=len(tagged_y) / int(sr),
     )
     return AudioViews(
         raw_y=raw_y,
