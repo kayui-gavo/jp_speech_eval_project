@@ -110,17 +110,27 @@ def mode_family(mode: Any) -> str:
 
 
 def reference_identity(result: Mapping[str, Any]) -> Optional[str]:
-    """Best-effort stable reference identity for progress comparability."""
+    """Best-effort stable reference identity for progress comparability.
+
+    Prefer explicit human/reference IDs. Generated references already expose a
+    path-independent synthesis config hash, which is safer than a cache path.
+    A filesystem prefix remains a legacy fallback only.
+    """
 
     details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
+    explicit = str(details.get("reference_id") or "").strip()
+    if explicit:
+        return f"reference:{explicit}"
+    config_hash = str(details.get("reference_config_hash") or "").strip()
+    if config_hash:
+        return f"reference_config:{config_hash}"
     for value in (
-        details.get("reference_id"),
         details.get("reference_cache_prefix"),
         result.get("cache_prefix"),
     ):
         text = str(value or "").strip()
         if text:
-            return text
+            return f"legacy_cache:{text}"
     return None
 
 
