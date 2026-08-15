@@ -1,19 +1,22 @@
-"""Offline A/B reconstruction for legacy reliability-driven score caps.
+"""Audit legacy reliability caps without confusing scorer drift with cap effects.
 
-Production behavior is intentionally unchanged. The fixed-reference evaluator
-applies several score caps after raw pronunciation/prosody/fluency evidence has
-already been scored. This module replays the same scoring functions from a
-completed result and reports what the legacy evaluator would have produced
-without those post-hoc reliability caps.
+Production behavior is unchanged.  The fixed-reference evaluator scores an
+utterance, applies post-hoc reliability caps, aggregates the capped components,
+and finally caps the aggregate when overall reliability is low.
 
-The current C-end ProductScore is a separate semantic layer. Therefore names in
-this module deliberately say ``legacy_evaluator`` rather than ``product``.
+Two audit situations are intentionally separated:
 
-A source WAV is optional. Pronunciation, prosody and fluency can be replayed
-from the stored raw-result evidence. Tone needs waveform energy, but when its
-aggregate weight is zero the cap-free *total* remains exactly reconstructible
-without a WAV. Missing evidence stays missing; it is never imputed as a learner
-penalty.
+* ``same_run=True``: the result and scorer replay come from the same code/config
+  execution context.  The pre-cap replay is suitable for an exact A/B audit.
+* ``same_run=False``: historical stored results are replayed with today's code.
+  The replay is first passed through the *historical cap equations* and must
+  reproduce the stored post-cap scores.  A mismatch is scorer/config drift, not
+  a cap effect.  Even a compatible historical sample can be censored when the
+  stored score sits exactly on a cap ceiling, so the pre-cap magnitude may be
+  unidentifiable from post-cap telemetry alone.
+
+The current C-end ProductScore is a separate semantic layer.  This module audits
+legacy evaluator mechanics only and never changes a learner-facing score.
 """
 
 from __future__ import annotations
@@ -26,17 +29,16 @@ import numpy as np
 
 from .audio_features import load_audio
 from .config import load_scoring_config
-from .scoring import (
-    score_fluency,
-    score_pronunciation_rhythm,
-    score_prosody,
-    score_tone_simple,
-)
+from .scoring import score_fluency, score_pronunciation_rhythm, score_prosody, score_tone_simple
 from .text_frontend import is_question_sentence
 from .vad import trim_to_speech
 
 
-POLICY_ID = "legacy_reliability_caps_counterfactual_v2"
+POLICY_ID = "legacy_reliability_caps_counterfactual_v3"
+PRON_ALIGNMENT_CAP = 80
+PRON_EVIDENCE_CAP = 60
+PROSODY_F0_CAP = 55
+OVERALL_RELIABILITY_CAP = 82
 _TRIGGER_KEYS = (
     "alignment_equal_fallback",
     "mora_evidence_below_threshold",
@@ -93,7 +95,6 @@ def _mora_inputs(result: Mapping[str, Any]) -> tuple[list[str], list[tuple[float
 
 
 def _legacy_fixed_evaluator_applicable(result: Mapping[str, Any]) -> bool:
-    """Avoid treating broad/free-mode missing fields as cap-trigger evidence."""
     mode = str(result.get("alignment_mode") or "")
     rows = result.get("mora_table")
     moras = result.get("moras")
@@ -110,7 +111,7 @@ def _legacy_fixed_evaluator_applicable(result: Mapping[str, Any]) -> bool:
 
 
 def reliability_cap_triggers(result: Mapping[str, Any]) -> Dict[str, Any]:
-    """Mirror fixed-evaluator post-score cap predicates for auditing."""
+    """Mirror the current fixed-evaluator post-score cap predicates."""
     applicable = _legacy_fixed_evaluator_applicable(result)
     details = _mapping(result.get("details"))
     reliability = _mapping(details.get("reliability"))
@@ -143,11 +144,7 @@ def _aggregate_weights(raw: Mapping[str, Any]) -> Dict[str, float]:
     }
 
 
-def _aggregate_total(
-    scores: Mapping[str, int | float | None],
-    *,
-    aggregate_weights: Mapping[str, Any],
-) -> int | None:
+def _aggregate_total(scores: Mapping[str, int | float | None], *, aggregate_weights: Mapping[str, Any]) -> int | None:
     weights = _aggregate_weights(aggregate_weights)
     denominator = sum(max(0.0, value) for value in weights.values())
     if denominator <= 0:
@@ -161,8 +158,102 @@ def _aggregate_total(
         if score is None:
             return None
         numerator += weight * float(score)
-    value = numerator / denominator
-    return int(round(max(0.0, min(100.0, value))))
+    return int(round(max(0.0, min(100.0, numerator / denominator))))
+
+
+def _apply_component_caps(pre_cap: Mapping[str, int | None], triggers: Mapping[str, Any]) -> Dict[str, int | None]:
+    pronunciation = pre_cap.get("pronunciation")
+    if pronunciation is not None and triggers.get("alignment_equal_fallback"):
+        pronunciation = min(int(pronunciation), PRON_ALIGNMENT_CAP)
+    if pronunciation is not None and triggers.get("mora_evidence_below_threshold"):
+        pronunciation = min(int(pronunciation), PRON_EVIDENCE_CAP)
+    prosody = pre_cap.get("prosody")
+    if prosody is not None and triggers.get("f0_coverage_below_0_50"):
+        prosody = min(int(prosody), PROSODY_F0_CAP)
+    return {
+        "pronunciation": None if pronunciation is None else int(pronunciation),
+        "prosody": None if prosody is None else int(prosody),
+        "fluency": pre_cap.get("fluency"),
+        "tone": pre_cap.get("tone"),
+    }
+
+
+def _effective_component_cap(key: str, triggers: Mapping[str, Any]) -> int | None:
+    if key == "pronunciation":
+        caps: list[int] = []
+        if triggers.get("alignment_equal_fallback"):
+            caps.append(PRON_ALIGNMENT_CAP)
+        if triggers.get("mora_evidence_below_threshold"):
+            caps.append(PRON_EVIDENCE_CAP)
+        return min(caps) if caps else None
+    if key == "prosody" and triggers.get("f0_coverage_below_0_50"):
+        return PROSODY_F0_CAP
+    return None
+
+
+def _component_consistency(
+    *,
+    key: str,
+    observed: int | None,
+    replayed_pre_cap: int | None,
+    expected_post_cap: int | None,
+    triggers: Mapping[str, Any],
+    same_run: bool,
+) -> Dict[str, Any]:
+    if observed is None or replayed_pre_cap is None or expected_post_cap is None:
+        return {
+            "checked": False,
+            "consistent": None,
+            "reason": "component_replay_unavailable",
+            "identifiability": "unavailable",
+        }
+    consistent = int(observed) == int(expected_post_cap)
+    cap = _effective_component_cap(key, triggers)
+    if same_run:
+        identifiability = "same_run_exact" if consistent else "same_run_internal_mismatch"
+    elif not consistent:
+        identifiability = "historical_scorer_or_config_drift"
+    elif cap is None:
+        identifiability = "historical_uncapped_exact"
+    elif int(observed) < int(cap):
+        identifiability = "historical_cap_nonbinding_exact"
+    elif int(observed) == int(cap):
+        identifiability = "historical_censored_at_cap"
+    else:
+        identifiability = "historical_inconsistent_above_cap"
+    return {
+        "checked": True,
+        "consistent": bool(consistent),
+        "reason": "replayed_cap_equation_matches_stored_score" if consistent else "replayed_cap_equation_does_not_match_stored_score",
+        "effective_cap": cap,
+        "observed": int(observed),
+        "replayed_pre_cap": int(replayed_pre_cap),
+        "expected_post_cap": int(expected_post_cap),
+        "candidate_pre_cap_minus_observed": int(replayed_pre_cap - observed),
+        "identifiability": identifiability,
+    }
+
+
+def _all_weighted_components_compatible(consistency: Mapping[str, Any], weights: Mapping[str, float]) -> bool:
+    for key in ("pronunciation", "prosody", "fluency"):
+        if max(0.0, float(weights.get(key, 0.0))) <= 0:
+            continue
+        item = _mapping(consistency.get(key))
+        if item.get("consistent") is not True:
+            return False
+    # Tone is never reliability-capped.  When no WAV is present, its stored
+    # value is intentionally carried through unchanged rather than re-estimated.
+    return True
+
+
+def _historical_counterfactual_identifiable(consistency: Mapping[str, Any], weights: Mapping[str, float]) -> bool:
+    for key in ("pronunciation", "prosody", "fluency"):
+        if max(0.0, float(weights.get(key, 0.0))) <= 0:
+            continue
+        ident = str(_mapping(consistency.get(key)).get("identifiability") or "")
+        if ident not in {"historical_uncapped_exact", "historical_cap_nonbinding_exact", "same_run_exact"}:
+            return False
+    return True
 
 
 def rescore_without_reliability_caps(
@@ -171,12 +262,9 @@ def rescore_without_reliability_caps(
     wav_path: str | Path | None = None,
     scoring_config_path: Optional[str | Path] = None,
     sample_rate: int = 16000,
+    same_run: bool = False,
 ) -> Dict[str, Any]:
-    """Replay raw scorers and compare them with the capped legacy evaluator.
-
-    ``wav_path=None`` is valid. In that case tone is unavailable, while total
-    can still be exact if the stored aggregate gives tone zero weight.
-    """
+    """Replay pre-cap scorers and audit whether that replay is interpretable."""
     triggers = reliability_cap_triggers(result)
     if not triggers["applicable"]:
         return {
@@ -194,16 +282,11 @@ def rescore_without_reliability_caps(
     aggregate_details = _mapping(details.get("aggregate"))
     moras, boundaries, f0_by_mora = _mora_inputs(result)
 
-    pronunciation_score, _pron_fb, _pron_details = score_pronunciation_rhythm(
-        moras,
-        boundaries,
-        config=config,
-    )
+    pronunciation_score, _pron_fb, _pron_details = score_pronunciation_rhythm(moras, boundaries, config=config)
     target_pattern = [str(item) for item in (result.get("target_pitch") or [])]
     reference_f0 = details.get("reference_f0_by_mora") if isinstance(details.get("reference_f0_by_mora"), list) else None
     target_text = str(result.get("target_text") or "")
     kana = str(result.get("kana") or "")
-    is_question = is_question_sentence(target_text, kana or None)
     accent_phrases = details.get("accent_phrases") if isinstance(details.get("accent_phrases"), list) else None
     prosody_score, _prosody_fb, _prosody_replay = score_prosody(
         moras=moras,
@@ -211,7 +294,7 @@ def rescore_without_reliability_caps(
         f0_by_mora=f0_by_mora,
         reference_f0_by_mora=reference_f0,
         pitch_target_source=str(prosody_details.get("pitch_target_source") or "heuristic"),
-        is_question=is_question,
+        is_question=is_question_sentence(target_text, kana or None),
         accent_phrases=accent_phrases,
         config=config,
     )
@@ -222,8 +305,16 @@ def rescore_without_reliability_caps(
         config=config,
     )
 
-    tone_score: int | None = None
-    tone_exact = False
+    observed: Dict[str, int | None] = {
+        "pronunciation": _optional_int(result.get("pronunciation_score")),
+        "prosody": _optional_int(result.get("prosody_score")),
+        "fluency": _optional_int(result.get("fluency_score")),
+        "tone": _optional_int(result.get("tone_score")),
+        "total": _optional_int(result.get("total_score")),
+    }
+
+    tone_score: int | None = observed["tone"]
+    tone_replayed = False
     wav_exists = False
     if wav_path is not None:
         path = Path(wav_path)
@@ -238,81 +329,140 @@ def rescore_without_reliability_caps(
                 config=config,
             )
             tone_score = int(replayed_tone)
-            tone_exact = True
+            tone_replayed = True
 
-    weights_raw = (
-        aggregate_details.get("weights")
-        if isinstance(aggregate_details.get("weights"), Mapping)
-        else config.get("aggregate", {})
-    )
+    weights_raw = aggregate_details.get("weights") if isinstance(aggregate_details.get("weights"), Mapping) else config.get("aggregate", {})
     weights = _aggregate_weights(_mapping(weights_raw))
-    cap_free: Dict[str, int | None] = {
+    pre_cap: Dict[str, int | None] = {
         "pronunciation": int(pronunciation_score),
         "prosody": int(prosody_score),
         "fluency": int(fluency_score),
         "tone": tone_score,
     }
-    cap_free["total"] = _aggregate_total(cap_free, aggregate_weights=weights)
+    expected_post_cap = _apply_component_caps(pre_cap, triggers)
+    pre_overall_cap_total = _aggregate_total(expected_post_cap, aggregate_weights=weights)
+    expected_stored_total = pre_overall_cap_total
+    if expected_stored_total is not None and triggers.get("overall_reliability_below_0_75"):
+        expected_stored_total = min(expected_stored_total, OVERALL_RELIABILITY_CAP)
 
-    observed: Dict[str, int | None] = {
-        "pronunciation": _optional_int(result.get("pronunciation_score")),
-        "prosody": _optional_int(result.get("prosody_score")),
-        "fluency": _optional_int(result.get("fluency_score")),
-        "tone": _optional_int(result.get("tone_score")),
-        "total": _optional_int(result.get("total_score")),
-    }
+    consistency: Dict[str, Any] = {}
+    for key in ("pronunciation", "prosody", "fluency"):
+        consistency[key] = _component_consistency(
+            key=key,
+            observed=observed[key],
+            replayed_pre_cap=pre_cap[key],
+            expected_post_cap=expected_post_cap[key],
+            triggers=triggers,
+            same_run=same_run,
+        )
+    if tone_replayed:
+        consistency["tone"] = _component_consistency(
+            key="tone",
+            observed=observed["tone"],
+            replayed_pre_cap=pre_cap["tone"],
+            expected_post_cap=pre_cap["tone"],
+            triggers=triggers,
+            same_run=same_run,
+        )
+    else:
+        consistency["tone"] = {
+            "checked": False,
+            "consistent": None,
+            "reason": "stored_tone_carried_through_unchanged_no_reliability_cap",
+            "identifiability": "stored_unchanged_no_cap",
+        }
+
+    weighted_components_compatible = _all_weighted_components_compatible(consistency, weights)
+    total_formula_matches = bool(
+        expected_stored_total is not None
+        and observed["total"] is not None
+        and int(expected_stored_total) == int(observed["total"])
+    )
+    historical_replay_compatible = bool(weighted_components_compatible and total_formula_matches)
+
+    candidate_counterfactual = dict(pre_cap)
+    candidate_counterfactual["total"] = _aggregate_total(pre_cap, aggregate_weights=weights)
     delta: Dict[str, int | None] = {}
     for key in _SCORE_KEYS:
-        left = cap_free.get(key)
+        left = candidate_counterfactual.get(key)
         right = observed.get(key)
         delta[key] = None if left is None or right is None else int(left - right)
 
-    total_exact = cap_free["total"] is not None
-    exactness = {
-        "pronunciation": True,
-        "prosody": True,
-        "fluency": True,
-        "tone": tone_exact,
-        "total": total_exact,
-    }
+    if same_run and historical_replay_compatible:
+        trust_level = "same_run_exact"
+        counterfactual_trustworthy = True
+    elif not historical_replay_compatible:
+        trust_level = "historical_scorer_or_config_drift"
+        counterfactual_trustworthy = False
+    elif _historical_counterfactual_identifiable(consistency, weights):
+        trust_level = "historical_exact_for_uncensored_components"
+        counterfactual_trustworthy = True
+    else:
+        trust_level = "historical_cap_compatible_but_pre_cap_censored"
+        counterfactual_trustworthy = False
+
     return {
         "policy_id": POLICY_ID,
-        "available": bool(total_exact),
-        "availability_reason": "exact_total_reconstructed" if total_exact else "weighted_component_missing",
+        "available": candidate_counterfactual["total"] is not None,
+        "availability_reason": "formula_replay_available" if candidate_counterfactual["total"] is not None else "weighted_component_missing",
+        "same_run": bool(same_run),
         "observed_legacy_evaluator_scores": observed,
-        "counterfactual_without_reliability_caps": cap_free,
-        "counterfactual_minus_observed": delta,
-        "counterfactual_exactness": exactness,
+        "candidate_pre_cap_scores_from_current_scorer": candidate_counterfactual,
+        "candidate_pre_cap_minus_observed": delta,
+        "expected_post_cap_scores_from_replay": {
+            **expected_post_cap,
+            "pre_overall_cap_total": pre_overall_cap_total,
+            "total": expected_stored_total,
+        },
+        "replay_consistency": {
+            **consistency,
+            "weighted_components_compatible": weighted_components_compatible,
+            "total_formula_matches": total_formula_matches,
+            "historical_replay_compatible": historical_replay_compatible,
+        },
+        "counterfactual_trust_level": trust_level,
+        "counterfactual_trustworthy": counterfactual_trustworthy,
         "aggregate_weights": weights,
         "source_wav_available": wav_exists,
+        "tone_replayed": tone_replayed,
         "cap_triggers": triggers,
         "product_behavior_changed": False,
         "user_facing": False,
         "interpretation": (
-            "legacy fixed-evaluator scorer replay for A/B; positive deltas identify post-hoc "
-            "reliability-cap effects, not proven ProductScore improvements"
+            "candidate pre-cap replay is a product-neutral audit. Historical deltas are not cap effects "
+            "unless cap equations reproduce the stored scores; cap-saturated post-cap telemetry can still "
+            "leave the historical pre-cap magnitude censored."
         ),
     }
 
 
 def summarize_counterfactual_reports(reports: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
-    """Summarize A/B deltas without selecting a winning product policy."""
+    """Summarize compatibility first; cap-effect deltas only when trustworthy."""
     applicable = [report for report in reports if _mapping(report.get("cap_triggers")).get("applicable")]
-    usable = [report for report in applicable if bool(report.get("available"))]
-    dimension_deltas: Dict[str, list[int]] = {key: [] for key in _SCORE_KEYS}
+    formula_available = [report for report in applicable if bool(report.get("available"))]
+    compatible = [report for report in formula_available if bool(report.get("replay_consistency", {}).get("historical_replay_compatible"))]
+    trustworthy = [report for report in formula_available if bool(report.get("counterfactual_trustworthy"))]
+    drifted = [report for report in formula_available if str(report.get("counterfactual_trust_level")) == "historical_scorer_or_config_drift"]
+    censored = [report for report in formula_available if str(report.get("counterfactual_trust_level")) == "historical_cap_compatible_but_pre_cap_censored"]
+
     trigger_counts = {key: 0 for key in _TRIGGER_KEYS}
     for report in applicable:
         triggers = _mapping(report.get("cap_triggers"))
         for key in trigger_counts:
             trigger_counts[key] += int(bool(triggers.get(key)))
-    for report in usable:
-        delta = _mapping(report.get("counterfactual_minus_observed"))
-        for key in dimension_deltas:
-            value = delta.get(key)
-            if value is not None:
-                dimension_deltas[key].append(int(value))
 
-    total_deltas = dimension_deltas["total"]
+    raw_candidate_deltas: Dict[str, list[int]] = {key: [] for key in _SCORE_KEYS}
+    trusted_deltas: Dict[str, list[int]] = {key: [] for key in _SCORE_KEYS}
+    for report in formula_available:
+        delta = _mapping(report.get("candidate_pre_cap_minus_observed"))
+        for key in _SCORE_KEYS:
+            if delta.get(key) is not None:
+                raw_candidate_deltas[key].append(int(delta[key]))
+    for report in trustworthy:
+        delta = _mapping(report.get("candidate_pre_cap_minus_observed"))
+        for key in _SCORE_KEYS:
+            if delta.get(key) is not None:
+                trusted_deltas[key].append(int(delta[key]))
 
     def stats(values: Sequence[int]) -> Dict[str, Any]:
         if not values:
@@ -330,13 +480,18 @@ def summarize_counterfactual_reports(reports: Sequence[Mapping[str, Any]]) -> Di
         "policy_id": POLICY_ID,
         "report_count": len(reports),
         "applicable_count": len(applicable),
-        "usable_exact_total_count": len(usable),
-        "unavailable_exact_total_count": len(applicable) - len(usable),
+        "formula_replay_available_count": len(formula_available),
+        "historical_replay_compatible_count": len(compatible),
+        "historical_scorer_or_config_drift_count": len(drifted),
+        "historical_pre_cap_censored_count": len(censored),
+        "counterfactual_trustworthy_count": len(trustworthy),
         "non_applicable_count": len(reports) - len(applicable),
-        "any_total_delta_count": sum(value != 0 for value in total_deltas),
-        "positive_total_delta_count": sum(value > 0 for value in total_deltas),
         "trigger_counts": trigger_counts,
-        "delta_stats": {key: stats(values) for key, values in dimension_deltas.items()},
+        "raw_candidate_delta_stats": {key: stats(values) for key, values in raw_candidate_deltas.items()},
+        "trusted_counterfactual_delta_stats": {key: stats(values) for key, values in trusted_deltas.items()},
         "decision": "none",
-        "note": "descriptive A/B summary only; do not remove caps from these statistics alone",
+        "note": (
+            "historical scorer/config drift and cap censoring are excluded from trusted cap-effect statistics; "
+            "fresh same-run A/B is required before removing runtime caps"
+        ),
     }
