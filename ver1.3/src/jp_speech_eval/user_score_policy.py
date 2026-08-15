@@ -156,6 +156,14 @@ def apply_user_score_policy(
 
     content_status = str(content.get("status") or "unknown")
     alignment_mode = str(raw_result.get("alignment_mode") or alignment.get("mode") or "")
+    broad_target_mismatch = (
+        content_status in {"fail", "failed", "content_mismatch"}
+        or str(mode) == "reference_mismatch_general_japanese"
+        or (
+            content_status == "general_japanese"
+            and str(details.get("fallback_reason") or "") == "target_mismatch_but_plausible_japanese"
+        )
+    )
     weak_reference = bool(details.get("weak_reference")) or mode in {
         "asr_confirmed_weak_reference",
         "asr_pseudo_reference",
@@ -249,7 +257,7 @@ def apply_user_score_policy(
     if component_cap is not None:
         confidence_label = _confidence_at_most(confidence_label, component_cap)
 
-    if content_status in {"fail", "failed", "content_mismatch"}:
+    if broad_target_mismatch:
         warnings.append("target_content_mismatch_general_score")
         gate_state["target_match_ok"] = False
         gate_state["user_message_type"] = "content_mismatch_general_score"
@@ -304,7 +312,7 @@ def apply_user_score_policy(
     )
 
     main_message_key = ""
-    if content_status in {"fail", "failed", "content_mismatch"}:
+    if broad_target_mismatch:
         main_message_key = "content_mismatch_general_score"
     elif weak_reference:
         main_message_key = "weak_reference_practice_feedback"
@@ -356,6 +364,7 @@ def apply_user_score_policy(
             "weak_reference": weak_reference,
             "demo_only": demo_only,
             "content_status": content_status,
+            "broad_target_mismatch": broad_target_mismatch,
             "alignment_mode": alignment_mode,
             "mora_count": mora_count,
             "recording_score": recording_score,
