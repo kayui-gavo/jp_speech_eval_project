@@ -141,24 +141,24 @@ New audit code:
 
 The existing `c_end_v2_acceptance/new_results.jsonl` contains enough stored mora/F0/pause/reliability evidence to replay several scorers, even though the original WAV paths are local and unavailable in CI.
 
-However, a historical replay is not automatically a cap counterfactual. The current scorer is first passed through the historical cap equations and must reproduce the stored post-cap result.
+However, a historical replay is not automatically a cap counterfactual. The current scorer is first passed through the historical component-cap equations and the final aggregate cap, and that full path must reproduce the stored post-cap result.
 
 Frozen historical audit result:
 
 `reports/data/reliability_cap_historical_acceptance_v3.json`
 
-Summary:
+Strict replay summary:
 
 - 40 acceptance rows total;
 - 37 applicable fixed-evaluator rows;
 - 37 current-scorer formula replays available;
-- only 8 reproduce the historical post-cap scoring path;
-- 29 show scorer/config drift under current replay;
-- 6 of the compatible rows are censored at a cap ceiling;
+- only 6 reproduce the complete historical post-cap scoring path;
+- 31 show scorer/config drift under current replay;
+- 4 of the compatible rows are censored at a cap ceiling;
 - only 2 rows are historically compatible and uncensored enough for a trustworthy historical counterfactual;
 - both of those two show zero cap effect.
 
-The raw current-scorer candidate deltas must therefore **not** be interpreted as the effect of removing caps. In particular, prosody replay ranges from a large negative difference to a positive difference, directly demonstrating why historical scorer drift must be separated from cap mechanics.
+The raw current-scorer candidate deltas must therefore **not** be interpreted as the effect of removing caps. In particular, prosody replay ranges from -78 to +52 relative to the stored historical score, directly demonstrating why historical scorer drift must be separated from cap mechanics.
 
 Decision from this historical acceptance: **none**. It does not justify removing the caps.
 
@@ -201,11 +201,12 @@ This telemetry is audit-only:
 
 The existing numeric scoring path is preserved.
 
-New parser:
+New parser and audit utility:
 
-`src/jp_speech_eval/native_cap_telemetry.py`
+- `src/jp_speech_eval/native_cap_telemetry.py`
+- `scripts/audit_native_reliability_caps.py`
 
-It can recover an exact same-run cap counterfactual without rerunning ASR, alignment, F0 extraction, the acoustic model, or the scorer.
+They can recover and summarize an exact same-run cap counterfactual without rerunning ASR, alignment, F0 extraction, the acoustic model, or the scorer.
 
 This is the preferred evidence for the next fresh acceptance study.
 
