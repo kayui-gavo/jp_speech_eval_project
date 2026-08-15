@@ -1,24 +1,19 @@
 """Japanese-specific hardening for phone-CTC GOP shadow experiments.
 
-This module sits on top of the generic ``phoneme_gop`` feature extractor and
-handles Japanese/backend details that must be resolved before human recording:
+This module keeps Japanese phone evidence explicitly research-only while
+resolving backend details that otherwise create false pronunciation signals:
 
-* collapse legitimate high-vowel devoicing labels (i/I, u/U) into logical
-  allophone classes for clarity scoring;
-* keep pau/sil and special mora tokens out of **ordinary segmental** competitor
-  sets used for clarity evidence;
-* pin the default Beatrice v4 model revision for reproducibility;
-* validate model/tokenizer/sample-rate compatibility;
-* expose sequence-level CTC evidence, including leave-one-phone-out deletion
-  preference and greedy edit operations, so a forced canonical Viterbi path is
-  not the only signal available for deletion/insertion stress tests.
+* collapse high-vowel devoicing labels (i/I, u/U) into logical allophone
+  classes;
+* retain ``N`` and ``cl`` as canonical targets but exclude them from ordinary
+  segmental competitor sets;
+* exclude pause/control labels from segmental competition;
+* pin the Beatrice phone-CTC revision and validate its runtime contract;
+* expose both frame-local CTC support features and alignment-free sequence /
+  deletion / greedy-edit diagnostics.
 
-``N`` and ``cl`` remain valid canonical target tokens and remain visible to
-sequence-level diagnostics. They are excluded only from ordinary segmental
-competition because Japanese mora nasal / geminate evaluation requires
-additional duration/context evidence and is handled primarily by special-mora /
-rhythm diagnostics.
-
+CTC support frames are not physical phone boundaries. ``N``/``cl`` require
+special-mora/timing evidence in addition to any sequence-level CTC evidence.
 Nothing in this module maps raw evidence to a learner-facing /100 score.
 """
 
@@ -30,6 +25,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from .ctc_sequence import ctc_forward_logprob_vectorized
 from .phoneme_gop import (
     DEFAULT_PHONE_CTC_MODEL,
     HuggingFacePhoneCtcBackend,
@@ -44,10 +40,6 @@ NON_SEGMENTAL_TOKENS = frozenset({
     "pau", "sil",
 })
 SPECIAL_MORA_TOKENS = frozenset({"N", "cl"})
-
-# For the C-end clarity construct, normal Japanese high-vowel devoicing is a
-# legitimate allophonic realization, not a segmental error. The backend may
-# emit uppercase I/U while a target frontend emits lowercase i/u or vice versa.
 LOGICAL_ALLOPHONE_MAP = {
     "I": "i",
     "i": "i",
@@ -64,9 +56,8 @@ def logical_phone(phone: str) -> str:
 def sanitize_canonical_phones(phones: Sequence[str]) -> tuple[List[str], List[str]]:
     """Return logical target phones plus dropped pause/silence tokens.
 
-    ``N`` and ``cl`` are intentionally retained as canonical targets. Their
-    presence is linguistically meaningful even though they are excluded from
-    the ordinary clarity competitor inventory.
+    Special morae are retained because they are legitimate target events. They
+    are separated only at the competitor-policy layer.
     """
     kept: List[str] = []
     dropped: List[str] = []
@@ -94,13 +85,7 @@ def project_japanese_ctc_logits(
     logits: np.ndarray,
     vocab: Mapping[str, int],
 ) -> tuple[np.ndarray, Dict[str, int], Dict[str, List[str]]]:
-    """Collapse backend labels into a logical Japanese phone vocabulary.
-
-    The projection is performed in unnormalized-logit space with log-sum-exp,
-    which preserves summed softmax mass after a new log-softmax is applied over
-    the logical vocabulary. This prevents i/I and u/U from competing against
-    each other in the clarity scorer.
-    """
+    """Collapse backend labels into one logical Japanese phone vocabulary."""
     raw = np.asarray(logits, dtype=np.float64)
     if raw.ndim != 2:
         raise ValueError("logits must have shape (frames, vocabulary)")
@@ -112,8 +97,7 @@ def project_japanese_ctc_logits(
         index = int(raw_id)
         if index < 0 or index >= raw.shape[1]:
             raise ValueError(f"vocabulary id out of model-logit range: {token}={index}")
-        logical = logical_phone(str(token))
-        groups.setdefault(logical, []).append((str(token), index))
+        groups.setdefault(logical_phone(str(token)), []).append((str(token), index))
 
     ordered = sorted(groups.items(), key=lambda item: min(index for _token, index in item[1]))
     logical_vocab: Dict[str, int] = {}
@@ -123,23 +107,14 @@ def project_japanese_ctc_logits(
         logical_vocab[logical] = new_id
         provenance[logical] = [token for token, _index in members]
         raw_ids = [index for _token, index in members]
-        if len(raw_ids) == 1:
-            columns.append(raw[:, raw_ids[0]])
-        else:
-            columns.append(_logsumexp(raw[:, raw_ids], axis=1))
-
-    projected = np.stack(columns, axis=1)
-    return projected, logical_vocab, provenance
+        columns.append(
+            raw[:, raw_ids[0]] if len(raw_ids) == 1 else _logsumexp(raw[:, raw_ids], axis=1)
+        )
+    return np.stack(columns, axis=1), logical_vocab, provenance
 
 
 def segmental_competitor_ids(vocab: Mapping[str, int], *, blank_id: int) -> List[int]:
-    """Return ordinary segmental competitors for the clarity construct.
-
-    Special mora tokens remain valid target labels but are not ordinary phone
-    alternatives. Treating /N/ or /cl/ as a generic substitution competitor
-    for vowels/consonants would mix the clarity and timing/special-mora
-    constructs that the C-end scoring design intentionally keeps separate.
-    """
+    """Return ordinary segmental competitors for the C-end clarity construct."""
     return [
         int(index)
         for token, index in vocab.items()
@@ -150,54 +125,30 @@ def segmental_competitor_ids(vocab: Mapping[str, int], *, blank_id: int) -> List
 
 
 def _log_softmax(logits: np.ndarray) -> np.ndarray:
-    maxima = np.max(logits, axis=1, keepdims=True)
-    shifted = logits - maxima
+    values = np.asarray(logits, dtype=np.float64)
+    if values.ndim != 2 or values.shape[0] <= 0 or values.shape[1] <= 1:
+        raise ValueError("logits must have shape (frames, vocabulary)")
+    maxima = np.max(values, axis=1, keepdims=True)
+    shifted = values - maxima
     return shifted - np.log(np.sum(np.exp(shifted), axis=1, keepdims=True))
 
 
-def _logsumexp_list(values: Iterable[float]) -> float:
-    vals = [float(value) for value in values]
-    if not vals:
-        return -np.inf
-    maximum = max(vals)
-    if not math.isfinite(maximum):
-        return maximum
-    return maximum + math.log(sum(math.exp(value - maximum) for value in vals))
+def ctc_forward_logprob(
+    log_probs: np.ndarray,
+    target_ids: Sequence[int],
+    *,
+    blank_id: int,
+) -> float:
+    """Exact fixed-sequence CTC log probability.
 
-
-def ctc_forward_logprob(log_probs: np.ndarray, target_ids: Sequence[int], *, blank_id: int) -> float:
-    """Exact CTC sequence log probability for one fixed target sequence."""
-    lp = np.asarray(log_probs, dtype=np.float64)
-    if lp.ndim != 2 or lp.shape[0] <= 0:
-        raise ValueError("log_probs must have shape (frames, classes)")
-    target = [int(value) for value in target_ids]
-    if any(value == int(blank_id) for value in target):
-        raise ValueError("target sequence must not contain CTC blank")
-    if not target:
-        return float(np.sum(lp[:, int(blank_id)]))
-    extended: List[int] = [int(blank_id)]
-    for token in target:
-        extended.extend([token, int(blank_id)])
-    states = len(extended)
-    previous = np.full(states, -np.inf, dtype=np.float64)
-    previous[0] = lp[0, int(blank_id)]
-    if states > 1:
-        previous[1] = lp[0, extended[1]]
-    for frame in range(1, lp.shape[0]):
-        current = np.full(states, -np.inf, dtype=np.float64)
-        for state, token in enumerate(extended):
-            predecessors = [previous[state]]
-            if state > 0:
-                predecessors.append(previous[state - 1])
-            if (
-                state > 1
-                and token != int(blank_id)
-                and token != extended[state - 2]
-            ):
-                predecessors.append(previous[state - 2])
-            current[state] = _logsumexp_list(predecessors) + lp[frame, token]
-        previous = current
-    return _logsumexp_list(previous[-2:])
+    Kept as the historical public helper while delegating to the regression-
+    tested rolling/vectorized implementation used by the restricted GOP path.
+    """
+    return ctc_forward_logprob_vectorized(
+        np.asarray(log_probs, dtype=np.float64),
+        target_ids,
+        blank_id=int(blank_id),
+    )
 
 
 def ctc_viterbi_phone_spans(
@@ -206,12 +157,7 @@ def ctc_viterbi_phone_spans(
     *,
     blank_id: int,
 ) -> Optional[List[Tuple[int, int]]]:
-    """Best-path CTC support spans for target phones.
-
-    These spans are alignment support regions, not gold acoustic boundaries.
-    They are useful for research diagnostics but must not be interpreted as
-    physical phone durations without a separate alignment validation.
-    """
+    """Best CTC support spans, explicitly not physical phone boundaries."""
     lp = np.asarray(log_probs, dtype=np.float64)
     target = [int(value) for value in target_ids]
     if not target:
@@ -236,11 +182,7 @@ def ctc_viterbi_phone_spans(
             candidates = [(dp[frame - 1, state], state)]
             if state > 0:
                 candidates.append((dp[frame - 1, state - 1], state - 1))
-            if (
-                state > 1
-                and token != blank_id
-                and token != extended[state - 2]
-            ):
+            if state > 1 and token != blank_id and token != extended[state - 2]:
                 candidates.append((dp[frame - 1, state - 2], state - 2))
             best_score, best_state = max(candidates, key=lambda item: item[0])
             dp[frame, state] = best_score + lp[frame, token]
@@ -260,65 +202,56 @@ def ctc_viterbi_phone_spans(
     path_states.reverse()
     spans: List[Tuple[int, int]] = []
     for phone_index in range(len(target)):
-        matching_states = [
-            state for state, idx in phone_state_to_index.items() if idx == phone_index
-        ]
-        positions = [
-            frame for frame, state in enumerate(path_states) if state in matching_states
-        ]
+        states_for_phone = [s for s, idx in phone_state_to_index.items() if idx == phone_index]
+        positions = [frame for frame, s in enumerate(path_states) if s in states_for_phone]
         if not positions:
             return None
         spans.append((min(positions), max(positions) + 1))
     return spans
 
 
-def _greedy_sequence(logits: np.ndarray, vocab: Mapping[str, int], *, blank_id: int) -> List[str]:
-    inverse = {int(index): logical_phone(str(token)) for token, index in vocab.items()}
-    ids = np.argmax(np.asarray(logits), axis=1).tolist()
-    result: List[str] = []
+def _collapse_ctc_ids(ids: Sequence[int], *, blank_id: int) -> List[int]:
+    out: List[int] = []
     previous: Optional[int] = None
-    for raw_id in ids:
-        idx = int(raw_id)
-        if previous == idx:
+    for raw in ids:
+        token_id = int(raw)
+        if token_id == int(blank_id):
+            previous = token_id
             continue
-        previous = idx
-        if idx == int(blank_id):
+        if previous == token_id:
             continue
-        token = inverse.get(idx)
-        if token and token not in NON_SEGMENTAL_TOKENS:
-            result.append(token)
-    return result
+        out.append(token_id)
+        previous = token_id
+    return out
 
 
-def _levenshtein_ops(target: Sequence[str], observed: Sequence[str]) -> List[Dict[str, Any]]:
-    """Phone-sequence edits from target to unconstrained greedy observation."""
+def _edit_operations(target: Sequence[str], observed: Sequence[str]) -> tuple[int, List[Dict[str, Any]]]:
+    """Levenshtein alignment with explicit insert/delete/substitute operations."""
     a = list(target)
     b = list(observed)
-    rows = len(a) + 1
-    cols = len(b) + 1
-    dp = np.zeros((rows, cols), dtype=np.int32)
-    back: List[List[Optional[str]]] = [[None for _ in range(cols)] for _ in range(rows)]
-    for i in range(1, rows):
-        dp[i, 0] = i
+    dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    back: List[List[Optional[str]]] = [[None] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        dp[i][0] = i
         back[i][0] = "delete"
-    for j in range(1, cols):
-        dp[0, j] = j
+    for j in range(1, len(b) + 1):
+        dp[0][j] = j
         back[0][j] = "insert"
-    for i in range(1, rows):
-        for j in range(1, cols):
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
             if a[i - 1] == b[j - 1]:
-                dp[i, j] = dp[i - 1, j - 1]
+                dp[i][j] = dp[i - 1][j - 1]
                 back[i][j] = "match"
-                continue
-            candidates = [
-                (dp[i - 1, j - 1] + 1, "substitute"),
-                (dp[i - 1, j] + 1, "delete"),
-                (dp[i, j - 1] + 1, "insert"),
-            ]
-            cost, op = min(candidates, key=lambda item: item[0])
-            dp[i, j] = cost
-            back[i][j] = op
-    ops: List[Dict[str, Any]] = []
+            else:
+                cost, op = min(
+                    (dp[i - 1][j - 1] + 1, "substitute"),
+                    (dp[i - 1][j] + 1, "delete"),
+                    (dp[i][j - 1] + 1, "insert"),
+                    key=lambda item: item[0],
+                )
+                dp[i][j] = cost
+                back[i][j] = op
+    operations: List[Dict[str, Any]] = []
     i, j = len(a), len(b)
     while i > 0 or j > 0:
         op = back[i][j]
@@ -326,19 +259,19 @@ def _levenshtein_ops(target: Sequence[str], observed: Sequence[str]) -> List[Dic
             i -= 1
             j -= 1
         elif op == "substitute":
-            ops.append({"type": "substitution", "target_index": i - 1, "target": a[i - 1], "observed": b[j - 1]})
+            operations.append({"op": "substitute", "target_index": i - 1, "target": a[i - 1], "observed": b[j - 1]})
             i -= 1
             j -= 1
         elif op == "delete":
-            ops.append({"type": "deletion", "target_index": i - 1, "target": a[i - 1], "observed": None})
+            operations.append({"op": "delete", "target_index": i - 1, "target": a[i - 1], "observed": None})
             i -= 1
         elif op == "insert":
-            ops.append({"type": "insertion", "target_index": i, "target": None, "observed": b[j - 1]})
+            operations.append({"op": "insert", "target_index": i, "target": None, "observed": b[j - 1]})
             j -= 1
         else:
-            break
-    ops.reverse()
-    return ops
+            raise RuntimeError("edit backtrace failed")
+    operations.reverse()
+    return int(dp[len(a)][len(b)]), operations
 
 
 def sequence_level_evidence(
@@ -348,43 +281,92 @@ def sequence_level_evidence(
     vocab: Mapping[str, int],
     blank_id: int,
 ) -> Dict[str, Any]:
-    """Alignment-free sequence/deletion evidence; no learner score mapping."""
+    """Alignment-free sequence/deletion evidence with no score mapping."""
     phones, dropped = sanitize_canonical_phones(canonical_phones)
     missing = [phone for phone in phones if phone not in vocab]
     if missing:
         return {"available": False, "reason": "canonical_phone_not_in_vocabulary", "missing_phones": missing}
     log_probs = _log_softmax(np.asarray(logits, dtype=np.float64))
-    ids = [int(vocab[phone]) for phone in phones]
-    canonical_lp = ctc_forward_logprob(log_probs, ids, blank_id=blank_id)
+    token_ids = [int(vocab[phone]) for phone in phones]
+    canonical_lp = ctc_forward_logprob(log_probs, token_ids, blank_id=blank_id)
+    frame_count = max(int(log_probs.shape[0]), 1)
     deletion_rows: List[Dict[str, Any]] = []
     for index, phone in enumerate(phones):
-        deleted = ids[:index] + ids[index + 1 :]
+        deleted = token_ids[:index] + token_ids[index + 1 :]
         deleted_lp = ctc_forward_logprob(log_probs, deleted, blank_id=blank_id)
-        deletion_rows.append(
-            {
-                "phone_index": index,
-                "canonical_phone": phone,
-                "canonical_logprob": canonical_lp,
-                "deleted_target_logprob": deleted_lp,
-                "canonical_minus_deleted": canonical_lp - deleted_lp,
-                "deletion_preferred_over_canonical": bool(deleted_lp > canonical_lp),
-            }
-        )
-    greedy = _greedy_sequence(logits, vocab, blank_id=blank_id)
+        deletion_rows.append({
+            "phone_index": index,
+            "phone": phone,
+            "canonical_logprob": float(canonical_lp),
+            "deleted_target_logprob": float(deleted_lp),
+            "canonical_minus_deleted": float(canonical_lp - deleted_lp),
+            "canonical_minus_deleted_logprob_per_frame": float((canonical_lp - deleted_lp) / frame_count),
+            "deletion_preferred_over_canonical": bool(deleted_lp > canonical_lp),
+            "interpretation": "positive_favors_canonical_phone; exploratory_not_calibrated",
+        })
+
+    id_to_token = {int(index): str(token) for token, index in vocab.items()}
+    greedy_ids = _collapse_ctc_ids(np.argmax(logits, axis=1).tolist(), blank_id=blank_id)
+    greedy_phones = [
+        logical_phone(id_to_token[token_id])
+        for token_id in greedy_ids
+        if token_id in id_to_token and id_to_token[token_id] not in NON_SEGMENTAL_TOKENS
+    ]
+    edit_distance, operations = _edit_operations(phones, greedy_phones)
     return {
         "available": True,
-        "canonical_logprob": canonical_lp,
+        "canonical_logprob": float(canonical_lp),
+        "canonical_logprob_per_frame": float(canonical_lp / frame_count),
         "deletion_evidence": deletion_rows,
-        "greedy_phone_sequence": greedy,
-        "greedy_edit_operations": _levenshtein_ops(phones, greedy),
+        "greedy_phone_sequence": greedy_phones,
+        "greedy_phone_edit_distance": edit_distance,
+        "greedy_edit_operations": operations,
         "dropped_nonsegmental_target_tokens": dropped,
         "score_mapped": False,
         "interpretation": "alignment_free_sequence_support_not_pronunciation_score",
     }
 
 
+def add_sequence_level_evidence(
+    result: PhoneGopResult,
+    logits: np.ndarray,
+    canonical_phones: Sequence[str],
+    *,
+    vocab: Mapping[str, int],
+    blank_id: int,
+) -> PhoneGopResult:
+    """Attach sequence diagnostics while preserving the historical report API."""
+    if not result.available:
+        return result
+    seq = sequence_level_evidence(
+        logits,
+        canonical_phones,
+        vocab=vocab,
+        blank_id=blank_id,
+    )
+    if not seq.get("available"):
+        summary = dict(result.summary)
+        summary["sequence_evidence"] = seq
+        return replace(result, summary=summary)
+
+    summary = dict(result.summary)
+    summary.update({
+        "ctc_forward_logprob": seq["canonical_logprob"],
+        "ctc_forward_logprob_per_frame": seq["canonical_logprob_per_frame"],
+        "leave_one_phone_out_deletion_evidence": seq["deletion_evidence"],
+        "greedy_logical_phone_sequence": seq["greedy_phone_sequence"],
+        "greedy_phone_edit_distance": seq["greedy_phone_edit_distance"],
+        "greedy_phone_edit_operations": seq["greedy_edit_operations"],
+        "sequence_evidence": seq,
+        "sequence_evidence_note": (
+            "leave_one_out_and_greedy_edits_are_shadow_diagnostics; not a validated deletion/insertion score"
+        ),
+    })
+    return replace(result, summary=summary)
+
+
 class JapanesePhoneCtcBackend(HuggingFacePhoneCtcBackend):
-    """Pinned Japanese phone CTC backend with logical allophone projection."""
+    """Pinned, Japanese-aware phone-CTC backend for preflight/shadow use."""
 
     def __init__(
         self,
@@ -393,103 +375,162 @@ class JapanesePhoneCtcBackend(HuggingFacePhoneCtcBackend):
         revision: str = DEFAULT_PHONE_CTC_REVISION,
         device: Optional[str] = None,
         local_files_only: bool = True,
-    ):
+    ) -> None:
         super().__init__(model_id=model_id, device=device, local_files_only=local_files_only)
         self.revision = str(revision)
 
-    def _load(self):
+    def _load(self) -> None:
         if self.model is not None:
             return
         try:
             import torch
-            from transformers import AutoModelForCTC, AutoProcessor, AutoTokenizer
+            from transformers import AutoModelForCTC, AutoProcessor
         except ImportError as exc:
-            raise RuntimeError("torch and transformers are required for phone GOP") from exc
-        kwargs: Dict[str, Any] = {
-            "local_files_only": self.local_files_only,
-            "revision": self.revision,
-        }
-        self.processor = AutoProcessor.from_pretrained(self.model_id, **kwargs)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, **kwargs)
-        self.model = AutoModelForCTC.from_pretrained(self.model_id, **kwargs)
+            raise RuntimeError("Japanese phone-CTC GOP shadow requires torch and transformers") from exc
         self._torch = torch
         self.device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+        try:
+            self.processor = AutoProcessor.from_pretrained(
+                self.model_id,
+                revision=self.revision,
+                local_files_only=self.local_files_only,
+            )
+            self.model = AutoModelForCTC.from_pretrained(
+                self.model_id,
+                revision=self.revision,
+                local_files_only=self.local_files_only,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"failed to load pinned phone-CTC model {self.model_id}@{self.revision}: {exc}"
+            ) from exc
         self.model.to(self.device)
         self.model.eval()
+        self._validate_backend_contract()
 
-    def evaluate(self, audio: np.ndarray, phones: Sequence[str], *, sr: int = 16000) -> PhoneGopResult:
+    def _expected_sample_rate(self) -> int:
+        feature_extractor = getattr(self.processor, "feature_extractor", None)
+        return int(getattr(feature_extractor, "sampling_rate", None) or 16000)
+
+    def _validate_backend_contract(self) -> None:
+        vocab = self.vocabulary()
+        config_vocab = int(getattr(self.model.config, "vocab_size", 0) or 0)
+        if config_vocab <= 0:
+            raise RuntimeError("phone-CTC model does not expose a positive vocab_size")
+        if max(vocab.values(), default=-1) >= config_vocab:
+            raise RuntimeError("tokenizer vocabulary exceeds model output vocabulary")
+        blank_id = int(getattr(self.model.config, "pad_token_id", 0) or 0)
+        if blank_id < 0 or blank_id >= config_vocab:
+            raise RuntimeError("CTC blank/pad id is outside model vocabulary")
+        for required in ("a", "i", "u", "N", "cl", "pau", "sil"):
+            if required not in vocab:
+                raise RuntimeError(f"expected Japanese phone token missing from backend vocabulary: {required}")
+        if self._expected_sample_rate() != 16000:
+            raise RuntimeError("default Japanese GOP backend is expected to use 16 kHz audio")
+
+    def _frame_stride_sec(self, audio_length: int, sr: int, frame_count: int) -> float:
+        strides = getattr(self.model.config, "conv_stride", None)
+        if strides:
+            product = 1
+            for value in strides:
+                product *= int(value)
+            if product > 0:
+                return float(product) / float(sr)
+        return super()._frame_stride_sec(audio_length, sr, frame_count)
+
+    def evaluate(
+        self,
+        audio: np.ndarray,
+        canonical_phones: Sequence[str],
+        *,
+        sr: int = 16000,
+    ) -> PhoneGopResult:
         self._load()
-        if int(sr) != 16000:
-            return PhoneGopResult(
-                available=False,
-                backend="huggingface_phone_ctc",
-                model_id=f"{self.model_id}@{self.revision}",
-                method="ctc_viterbi_phone_evidence_v1",
-                canonical_phones=list(phones),
-                evidence=[],
-                summary={"reason": "sample_rate_must_be_16000"},
-                warnings=["sample_rate_mismatch"],
-            )
         waveform = np.asarray(audio, dtype=np.float32).reshape(-1)
-        if waveform.size < 160:
+        clean_phones, dropped = sanitize_canonical_phones(canonical_phones)
+
+        def unavailable(reason: str, warning: str) -> PhoneGopResult:
             return PhoneGopResult(
                 available=False,
-                backend="huggingface_phone_ctc",
+                backend="japanese_huggingface_phone_ctc",
                 model_id=f"{self.model_id}@{self.revision}",
-                method="ctc_viterbi_phone_evidence_v1",
-                canonical_phones=list(phones),
+                method="japanese_logical_phone_ctc_evidence_v3",
+                canonical_phones=clean_phones,
                 evidence=[],
-                summary={"reason": "audio_too_short"},
-                warnings=["audio_too_short"],
+                summary={"reason": reason, "dropped_nonsegmental_target_tokens": dropped},
+                warnings=[warning],
             )
+
+        if waveform.size == 0:
+            return unavailable("empty_audio", "empty_audio")
+        if not np.isfinite(waveform).all():
+            return unavailable("nonfinite_audio", "nonfinite_audio")
+        if int(sr) != self._expected_sample_rate():
+            return unavailable("sampling_rate_mismatch", "sampling_rate_mismatch")
+        if waveform.size < int(0.12 * sr):
+            return unavailable("audio_too_short", "audio_too_short")
+        if float(np.max(np.abs(waveform))) < 1e-5:
+            return unavailable("near_silent_audio", "near_silent_audio")
+        if not clean_phones:
+            return unavailable("empty_phone_sequence", "empty_phone_sequence")
+
         inputs = self.processor(waveform, sampling_rate=sr, return_tensors="pt")
         model_inputs = {key: value.to(self.device) for key, value in inputs.items()}
         with self._torch.no_grad():
             output = self.model(**model_inputs)
         raw_logits = output.logits.squeeze(0).detach().cpu().numpy()
         raw_vocab = self.vocabulary()
-        logical_logits, logical_vocab, provenance = project_japanese_ctc_logits(raw_logits, raw_vocab)
+        logical_logits, logical_vocab, projection = project_japanese_ctc_logits(raw_logits, raw_vocab)
         if "PAD" not in logical_vocab:
-            return PhoneGopResult(
-                available=False,
-                backend="huggingface_phone_ctc",
+            return unavailable("logical_blank_token_missing", "logical_blank_token_missing")
+        blank_id = int(logical_vocab["PAD"])
+        missing = [phone for phone in clean_phones if phone not in logical_vocab]
+        if missing:
+            result = unavailable("canonical_phone_not_in_logical_vocabulary", "phone_inventory_mismatch")
+            return replace(result, summary={**result.summary, "missing_phones": sorted(set(missing))})
+
+        frame_stride_sec = self._frame_stride_sec(len(waveform), sr, logical_logits.shape[0])
+        competitor_ids = segmental_competitor_ids(logical_vocab, blank_id=blank_id)
+        try:
+            result = compute_phone_gop_evidence(
+                logical_logits,
+                clean_phones,
+                vocab=logical_vocab,
+                blank_id=blank_id,
+                frame_stride_sec=frame_stride_sec,
+                backend="japanese_huggingface_phone_ctc",
                 model_id=f"{self.model_id}@{self.revision}",
-                method="ctc_viterbi_phone_evidence_v1",
-                canonical_phones=list(phones),
-                evidence=[],
-                summary={"reason": "logical_blank_token_missing"},
-                warnings=["logical_blank_token_missing"],
+                competitor_token_ids=competitor_ids,
             )
-        clean_phones, dropped = sanitize_canonical_phones(phones)
-        result = compute_phone_gop_evidence(
+        except Exception as exc:
+            return unavailable(f"gop_extraction_failed:{type(exc).__name__}", "gop_extraction_failed")
+
+        result = add_sequence_level_evidence(
+            result,
             logical_logits,
             clean_phones,
             vocab=logical_vocab,
-            blank_id=int(logical_vocab["PAD"]),
-            frame_stride_sec=None,
-            audio_duration_sec=float(waveform.size) / sr,
-            excluded_competitor_tokens=NON_SEGMENTAL_TOKENS | SPECIAL_MORA_TOKENS,
-            backend="huggingface_phone_ctc",
-            model_id=f"{self.model_id}@{self.revision}",
-        )
-        seq = sequence_level_evidence(
-            logical_logits,
-            clean_phones,
-            vocab=logical_vocab,
-            blank_id=int(logical_vocab["PAD"]),
+            blank_id=blank_id,
         )
         summary = dict(result.summary)
-        summary.update(
-            {
-                "revision": self.revision,
-                "logical_allophone_groups": {
-                    phone: members for phone, members in provenance.items() if len(members) > 1
-                },
-                "dropped_nonsegmental_target_tokens": dropped,
-                "sequence_evidence": seq,
-                "special_mora_excluded_from_ordinary_competitors": True,
-                "ordinary_competitor_tokens_exclude": sorted(NON_SEGMENTAL_TOKENS | SPECIAL_MORA_TOKENS),
-            }
-        )
+        summary.update({
+            "model_revision": self.revision,
+            "expected_sample_rate": self._expected_sample_rate(),
+            "logical_phone_projection": projection,
+            "dropped_nonsegmental_target_tokens": dropped,
+            "nonsegmental_competitors_excluded": True,
+            "special_mora_excluded_from_ordinary_competitors": True,
+            "ordinary_competitor_tokens_exclude": sorted(NON_SEGMENTAL_TOKENS | SPECIAL_MORA_TOKENS),
+            "high_vowel_allophones_collapsed": True,
+            "ctc_support_frames_are_not_physical_phone_boundaries": True,
+            "target_frontend_compatibility": "must_be_preflighted_against_pyopenjtalk_plus_training_labels",
+        })
         warnings = list(result.warnings)
-        return replace(result, summary=summary, warnings=warnings)
+        if dropped:
+            warnings.append("nonsegmental_target_tokens_removed_for_clarity")
+        return replace(
+            result,
+            method="japanese_logical_phone_ctc_evidence_v3",
+            summary=summary,
+            warnings=sorted(set(warnings)),
+        )
