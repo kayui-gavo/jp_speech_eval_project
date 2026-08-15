@@ -7,13 +7,13 @@ Japanese learner validation, this module joins them with explicit provenance.
 
 The frame-local branch still depends on a CTC Viterbi support path. Its support
 frames are **not** physical phone boundaries/durations. Japanese special morae
-``N`` and ``cl`` are a separate construct: their raw frame-local numbers may be
-retained for research, but they are not ordinary segmental-clarity features and
-must not be silently mixed into a clarity model.
+``N`` / ``cl`` and long-vowel extension morae are timing constructs: raw
+frame-local numbers may be retained for research, but they are not ordinary
+segmental-clarity features and must not be silently mixed into a clarity model.
 
 The alignment-free criterion bundle already carries construct metadata. This
-hybrid join checks that metadata against the canonical phone instead of
-re-deriving it silently; contradictory construct provenance fails closed.
+hybrid join validates that metadata instead of re-deriving long-vowel status
+from the phone token; contradictory construct provenance fails closed.
 
 The resulting bundle is a supervised-research design matrix, not a
 pronunciation score.
@@ -24,12 +24,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List
 
+from .japanese_phone_roles import LONG_VOWEL_ROLE, ORDINARY_ROLE, SPECIAL_MORA_ROLE
 from .japanese_phoneme_gop import SPECIAL_MORA_TOKENS
 from .phone_criterion_features import PhoneCriterionFeatureBundle
 from .phoneme_gop import PhoneGopResult
 
 
 SCHEMA = "hybrid_phone_criterion_feature_bundle_v2"
+ALLOWED_CONSTRUCT_ROLES = frozenset({ORDINARY_ROLE, SPECIAL_MORA_ROLE, LONG_VOWEL_ROLE})
 
 
 @dataclass(frozen=True)
@@ -130,13 +132,19 @@ def build_hybrid_phone_criterion_bundle(
             return _unavailable("canonical_phone_row_mismatch", model_id=model_id, revision=revision)
 
         phone = str(frame_row.canonical_phone)
-        expected_special = phone in SPECIAL_MORA_TOKENS
-        expected_role = "special_mora_timing" if expected_special else "ordinary_segmental_clarity"
-        if str(af_row.construct_role) != expected_role:
+        role = str(af_row.construct_role)
+        if role not in ALLOWED_CONSTRUCT_ROLES:
             return _unavailable("alignment_free_construct_role_mismatch", model_id=model_id, revision=revision)
-        if bool(af_row.ordinary_segmental_clarity_feature_applicable) != (not expected_special):
+        is_special_phone = phone in SPECIAL_MORA_TOKENS
+        if is_special_phone and role != SPECIAL_MORA_ROLE:
+            return _unavailable("alignment_free_construct_role_mismatch", model_id=model_id, revision=revision)
+        if not is_special_phone and role == SPECIAL_MORA_ROLE:
+            return _unavailable("alignment_free_construct_role_mismatch", model_id=model_id, revision=revision)
+
+        expected_clarity = role == ORDINARY_ROLE
+        if bool(af_row.ordinary_segmental_clarity_feature_applicable) != expected_clarity:
             return _unavailable("alignment_free_clarity_applicability_mismatch", model_id=model_id, revision=revision)
-        if bool(af_row.substitution_feature_applicable) != (not expected_special):
+        if bool(af_row.substitution_feature_applicable) != expected_clarity:
             return _unavailable("alignment_free_substitution_applicability_mismatch", model_id=model_id, revision=revision)
         if not bool(af_row.deletion_feature_applicable):
             return _unavailable("alignment_free_deletion_applicability_mismatch", model_id=model_id, revision=revision)
@@ -147,10 +155,8 @@ def build_hybrid_phone_criterion_bundle(
             HybridPhoneCriterionRow(
                 phone_index=int(frame_row.phone_index),
                 canonical_phone=phone,
-                construct_role=str(af_row.construct_role),
-                frame_local_ordinary_clarity_feature_applicable=bool(
-                    af_row.ordinary_segmental_clarity_feature_applicable
-                ),
+                construct_role=role,
+                frame_local_ordinary_clarity_feature_applicable=expected_clarity,
                 alignment_free_substitution_feature_applicable=bool(
                     af_row.substitution_feature_applicable
                 ),
@@ -174,7 +180,9 @@ def build_hybrid_phone_criterion_bundle(
             )
         )
 
-    special_count = sum(row.construct_role == "special_mora_timing" for row in rows)
+    ordinary_count = sum(row.construct_role == ORDINARY_ROLE for row in rows)
+    special_count = sum(row.construct_role == SPECIAL_MORA_ROLE for row in rows)
+    long_vowel_count = sum(row.construct_role == LONG_VOWEL_ROLE for row in rows)
     return HybridPhoneCriterionBundle(
         available=True,
         schema=SCHEMA,
@@ -184,9 +192,12 @@ def build_hybrid_phone_criterion_bundle(
         rows=rows,
         summary={
             "phone_count": len(rows),
-            "ordinary_segmental_row_count": len(rows) - special_count,
+            "ordinary_segmental_row_count": ordinary_count,
             "special_mora_row_count": special_count,
+            "long_vowel_timing_row_count": long_vowel_count,
+            "timing_construct_row_count": special_count + long_vowel_count,
             "alignment_free_construct_metadata_verified": True,
+            "construct_role_rederived_from_phone_token": False,
             "contains_frame_local_logit_features": True,
             "contains_frame_local_posterior_features": True,
             "contains_frame_local_uncertainty": True,
@@ -198,6 +209,9 @@ def build_hybrid_phone_criterion_bundle(
             "special_mora_frame_local_raw_values_are_ordinary_clarity_features": False,
             "special_mora_requires_construct_specific_feature_selection": True,
             "special_mora_primary_local_alignment_free_feature": "deletion_lpr_with_timing_context_required",
+            "long_vowel_frame_local_raw_values_are_ordinary_clarity_features": False,
+            "long_vowel_requires_construct_specific_feature_selection": True,
+            "long_vowel_primary_local_alignment_free_feature": "deletion_lpr_with_mora_timing_context_required",
             "feature_family_selection_requires_japanese_l2_criterion": True,
             "phone_specific_weighting_not_learned_yet": True,
             "cross_model_raw_averaging_allowed": False,
