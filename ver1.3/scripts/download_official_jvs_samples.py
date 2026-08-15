@@ -7,23 +7,15 @@ CI research run; audio is never committed or uploaded as a workflow artifact.
 
 A previous Stage-0 revision incorrectly made the raw WAV byte hash a hard gate.
 Google Drive can serve the same waveform in a different WAV container/sample-
-rate representation (the first successful jvs001 artifact was ~778 kB, while a
-later official response was ~414 kB and still represented the same ~8.621 s
-utterance). Reproducibility therefore cannot be defined by transport bytes.
+rate representation. Reproducibility therefore cannot be defined by transport
+bytes alone.
 
-The hard gate is now semantic and source-aware:
-
-* official Google Drive file ID must be the reviewed one;
-* payload must be a readable mono PCM WAV;
-* duration must match the previously observed official utterance within a tight
-  tolerance;
-* sample rate / sample width are recorded, not silently normalized here;
-* raw byte SHA-256 is retained as provenance and transport drift is reported,
-  but a new container hash alone does not invalidate the acoustic anchor.
-
-The downstream benchmark resamples through the project's audio loader and
-re-checks target-conditioned model behavior. This is safer than pretending a
-mutable HTTP representation is an immutable corpus checksum.
+A second Stage-0 audit found a target-side error that is even more important for
+phone scoring: the runtime G2P can analyze ``明王`` as a personal-name reading
+(``あきらおう``) instead of the intended lexical reading ``みょうおう``. The
+JVS anchor therefore stores an explicit full-sentence kana reading. Research
+preflights must use that reading override instead of silently trusting automatic
+kanji G2P for this sentence.
 """
 
 from __future__ import annotations
@@ -62,14 +54,20 @@ SAMPLES = {
     },
 }
 TARGET_TEXT = "また、東寺のように、五大明王と呼ばれる、主要な明王の中央に配されることも多い。"
+TARGET_READING = "また、とうじのように、ごだいみょうおうとよばれる、しゅようなみょうおうのちゅうおうにはいされることもおおい。"
+READING_PROVENANCE = {
+    "東寺": "とうじ",
+    "五大明王": "ごだいみょうおう",
+    "主要": "しゅよう",
+    "明王": "みょうおう",
+    "中央": "ちゅうおう",
+    "配される": "はいされる",
+}
 DURATION_TOLERANCE_SEC = 0.015
 
 
 def _download_url(file_id: str) -> str:
-    return (
-        "https://drive.usercontent.google.com/download?"
-        f"id={file_id}&export=download&confirm=t"
-    )
+    return "https://drive.usercontent.google.com/download?" f"id={file_id}&export=download&confirm=t"
 
 
 def _sha256(data: bytes) -> str:
@@ -77,7 +75,6 @@ def _sha256(data: bytes) -> str:
 
 
 def inspect_wav_semantics(data: bytes) -> dict[str, object]:
-    """Return transport-independent basic acoustic semantics for a WAV payload."""
     try:
         with wave.open(io.BytesIO(data), "rb") as handle:
             channels = int(handle.getnchannels())
@@ -161,6 +158,11 @@ def main() -> None:
                 "google_drive_file_id": file_id,
                 "path": str(path),
                 "target_text": TARGET_TEXT,
+                "target_reading": TARGET_READING,
+                "target_reading_source": "reviewed_manual_reading_override",
+                "target_reading_provenance": READING_PROVENANCE,
+                "automatic_surface_g2p_is_safe_for_anchor": False,
+                "known_surface_g2p_failure": "明王 can be analyzed as あきらおう instead of みょうおう",
                 "source": "official_JVS_project_page_sample_link",
                 **semantic,
             }
@@ -171,11 +173,12 @@ def main() -> None:
         )
 
     payload = {
-        "schema": "jvs_official_samples_manifest_v3",
+        "schema": "jvs_official_samples_manifest_v4",
         "project_page": OFFICIAL_PROJECT_PAGE,
         "source_identity": "reviewed_official_file_id_plus_verified_audio_semantics",
         "raw_http_bytes_are_immutable_source_identity": False,
         "source_drift_policy": "fail_on_audio_semantic_drift_not_container_hash_only",
+        "target_reading_override_required": True,
         "audio_committed_to_repository": False,
         "audio_should_be_uploaded_as_artifact": False,
         "research_use_only": True,
