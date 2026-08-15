@@ -6,7 +6,11 @@ from typing import Any, Dict, Mapping
 
 import numpy as np
 
-from .japanese_phoneme_gop import NON_SEGMENTAL_TOKENS, JapanesePhoneCtcBackend
+from .japanese_phoneme_gop import (
+    NON_SEGMENTAL_TOKENS,
+    SPECIAL_MORA_TOKENS,
+    JapanesePhoneCtcBackend,
+)
 from .japanese_target_evidence import JapaneseTargetEvidence
 from .phoneme_gop import PhoneGopResult
 
@@ -44,7 +48,7 @@ class PhoneGopPreflightReport:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "schema": "japanese_phone_gop_preflight_v2",
+            "schema": "japanese_phone_gop_preflight_v3",
             "backend_preflight_passed": self.backend_preflight_passed,
             "human_gate_promoted": bool(self.human_gate_promoted),
             "human_recording_allowed": self.human_recording_allowed,
@@ -196,16 +200,20 @@ def _check_result_contract(label: str, result: PhoneGopResult) -> list[Preflight
     ))
 
     competitors = _best_competitors(result)
-    illegal = sorted(competitors & set(NON_SEGMENTAL_TOKENS))
+    forbidden = set(NON_SEGMENTAL_TOKENS) | set(SPECIAL_MORA_TOKENS)
+    illegal = sorted(competitors & forbidden)
     checks.append(PreflightCheck(
         name=f"{label}_segmental_competitors_only",
         status="pass" if not illegal else "block",
         detail=(
-            "No pause/silence/special token is used as a segmental competitor."
+            "No pause/control/special-mora token is used as an ordinary segmental competitor."
             if not illegal else
-            "Non-segmental tokens leaked into phone competition."
+            "A pause/control/special-mora token leaked into ordinary phone competition."
         ),
-        metrics={"illegal_competitors": illegal},
+        metrics={
+            "illegal_competitors": illegal,
+            "forbidden_competitor_tokens": sorted(forbidden),
+        },
     ))
     return checks
 
@@ -227,9 +235,7 @@ def _check_wrong_target_separation(correct: PhoneGopResult, wrong: PhoneGopResul
     edit_direction_ok = (
         isinstance(correct_ed, int) and isinstance(wrong_ed, int) and correct_ed <= wrong_ed
     )
-    # This is an engineering sanity gate, not a pronunciation threshold. A
-    # non-positive/near-zero gap means the backend cannot even rank the known
-    # bundled target over a deliberate mismatch and should not consume human time.
+    # Engineering sanity gate only. This is not a pronunciation threshold.
     passed = gap > 0.01 and edit_direction_ok
     return PreflightCheck(
         name="correct_vs_wrong_target_separation",
@@ -327,6 +333,19 @@ def build_phone_gop_preflight_report(
         status="pass" if bool(flags.get("high_vowel_allophones_collapsed")) else "block",
         detail="i/I and u/U are collapsed for clarity scoring." if bool(flags.get("high_vowel_allophones_collapsed")) else "Japanese high-vowel allophone policy is not active.",
         metrics={},
+    ))
+    checks.append(PreflightCheck(
+        name="special_mora_construct_separated",
+        status="pass" if bool(flags.get("special_mora_excluded_from_ordinary_competitors")) else "block",
+        detail=(
+            "N/cl remain target evidence but are excluded from ordinary segmental competitors."
+            if bool(flags.get("special_mora_excluded_from_ordinary_competitors")) else
+            "Special morae are not explicitly separated from the ordinary segmental clarity construct."
+        ),
+        metrics={
+            "special_mora_tokens": sorted(SPECIAL_MORA_TOKENS),
+            "policy_flag": bool(flags.get("special_mora_excluded_from_ordinary_competitors")),
+        },
     ))
     checks.append(PreflightCheck(
         name="ctc_support_not_phone_duration",
