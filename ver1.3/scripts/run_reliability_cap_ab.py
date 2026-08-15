@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""Run the frozen reliability-cap counterfactual over existing results.
+"""Audit legacy reliability caps over current or historical evaluator results.
 
-Two input shapes are supported:
+Supported input shapes:
 
 1. CSV manifest: ``sample_id,wav_path,result_json[,sample_rate]``
-2. Existing C-end acceptance JSONL, where each line contains
-   ``sample`` and ``response.raw_result``.
+2. Existing C-end acceptance JSONL: each row contains ``sample`` and
+   ``response.raw_result``.
 
-For acceptance JSONL, the original absolute WAV may no longer exist on the
-machine running this script. That is not fatal: pronunciation/prosody/fluency
-are replayed from stored evidence, tone remains unavailable, and total remains
-available when tone has zero aggregate weight.
-
-The script never rewrites product results and never chooses a winning policy.
+Historical replay is deliberately conservative. The script exports whether
+current scorer replay reproduces the stored post-cap score and whether the
+historical pre-cap score is identifiable. A raw current-scorer delta is never
+silently labelled as a historical cap effect.
 """
 
 from __future__ import annotations
@@ -50,24 +48,36 @@ def _resolve(base: Path, value: str) -> Path:
 
 def _flatten(sample_id: str, report: Mapping[str, Any], *, category: str = "", mode: str = "") -> Dict[str, Any]:
     triggers = _mapping(report.get("cap_triggers"))
+    consistency = _mapping(report.get("replay_consistency"))
     row: Dict[str, Any] = {
         "sample_id": sample_id,
         "category": category,
         "mode": mode,
         "applicable": bool(triggers.get("applicable")),
-        "available_exact_total": bool(report.get("available")),
+        "formula_replay_available": bool(report.get("available")),
         "availability_reason": report.get("availability_reason"),
+        "counterfactual_trust_level": report.get("counterfactual_trust_level"),
+        "counterfactual_trustworthy": report.get("counterfactual_trustworthy"),
+        "historical_replay_compatible": consistency.get("historical_replay_compatible"),
+        "weighted_components_compatible": consistency.get("weighted_components_compatible"),
+        "total_formula_matches": consistency.get("total_formula_matches"),
         "source_wav_available": report.get("source_wav_available"),
+        "tone_replayed": report.get("tone_replayed"),
     }
     observed = _mapping(report.get("observed_legacy_evaluator_scores"))
-    candidate = _mapping(report.get("counterfactual_without_reliability_caps"))
-    delta = _mapping(report.get("counterfactual_minus_observed"))
-    exactness = _mapping(report.get("counterfactual_exactness"))
+    candidate = _mapping(report.get("candidate_pre_cap_scores_from_current_scorer"))
+    delta = _mapping(report.get("candidate_pre_cap_minus_observed"))
+    expected = _mapping(report.get("expected_post_cap_scores_from_replay"))
     for key in SCORE_KEYS:
         row[f"observed_{key}"] = observed.get(key)
-        row[f"cap_free_{key}"] = candidate.get(key)
-        row[f"delta_{key}"] = delta.get(key)
-        row[f"exact_{key}"] = exactness.get(key)
+        row[f"candidate_pre_cap_{key}"] = candidate.get(key)
+        row[f"candidate_delta_{key}"] = delta.get(key)
+        row[f"expected_post_cap_{key}"] = expected.get(key)
+        item = _mapping(consistency.get(key))
+        row[f"replay_checked_{key}"] = item.get("checked")
+        row[f"replay_consistent_{key}"] = item.get("consistent")
+        row[f"replay_identifiability_{key}"] = item.get("identifiability")
+    row["expected_pre_overall_cap_total"] = expected.get("pre_overall_cap_total")
     for key in TRIGGER_KEYS:
         row[f"trigger_{key}"] = bool(triggers.get(key))
     row["judgement_count"] = triggers.get("judgement_count")
@@ -81,6 +91,7 @@ def run_manifest(
     manifest_path: Path,
     *,
     scoring_config_path: Path | None = None,
+    same_run: bool = False,
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
     base = manifest_path.parent
     reports: List[Dict[str, Any]] = []
@@ -109,6 +120,7 @@ def run_manifest(
                 wav_path=wav_path,
                 scoring_config_path=scoring_config_path,
                 sample_rate=sample_rate,
+                same_run=same_run,
             )
             reports.append(report)
             flat_rows.append(_flatten(sample_id, report, category=str(row.get("category") or ""), mode=str(row.get("mode") or "")))
@@ -163,10 +175,9 @@ def run_acceptance_jsonl(
                     wav_path=wav_path,
                     scoring_config_path=scoring_config_path,
                     sample_rate=16000,
+                    same_run=False,
                 )
             except ValueError as exc:
-                # Broad/non-fixed rows should be non-applicable rather than
-                # breaking an audit of a mixed acceptance matrix.
                 report = {
                     "available": False,
                     "availability_reason": f"replay_unavailable:{type(exc).__name__}:{exc}",
@@ -179,7 +190,7 @@ def run_acceptance_jsonl(
 
     summary = summarize_counterfactual_reports(reports)
     summary["input"] = str(results_path)
-    summary["input_format"] = "c_end_acceptance_jsonl"
+    summary["input_format"] = "c_end_acceptance_jsonl_historical"
     summary["source_wav_available_count"] = sum(bool(row.get("source_wav_available")) for row in flat_rows)
     categories: Dict[str, int] = {}
     for row in flat_rows:
@@ -209,8 +220,9 @@ def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", help="CSV manifest or C-end acceptance JSONL")
+    parser.add_argument("input", help="CSV manifest or historical C-end acceptance JSONL")
     parser.add_argument("--input-format", choices=["auto", "manifest", "acceptance-jsonl"], default="auto")
+    parser.add_argument("--same-run", action="store_true", help="Manifest results were produced by the same scorer/config revision as this audit")
     parser.add_argument("--out-csv", required=True)
     parser.add_argument("--out-json", required=True)
     parser.add_argument("--scoring-config", default=None)
@@ -222,9 +234,11 @@ def main() -> int:
         fmt = "acceptance-jsonl" if source.suffix.lower() == ".jsonl" else "manifest"
     config_path = None if args.scoring_config is None else Path(args.scoring_config).resolve()
     if fmt == "acceptance-jsonl":
+        if args.same_run:
+            raise ValueError("--same-run is not allowed for historical acceptance JSONL")
         rows, summary = run_acceptance_jsonl(source, scoring_config_path=config_path)
     else:
-        rows, summary = run_manifest(source, scoring_config_path=config_path)
+        rows, summary = run_manifest(source, scoring_config_path=config_path, same_run=args.same_run)
 
     _write_csv(Path(args.out_csv), rows)
     output = Path(args.out_json)
