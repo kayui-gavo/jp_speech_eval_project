@@ -2,9 +2,13 @@
 """Download public UME-JRF test-listening samples for research preflight.
 
 NII-SRC publishes exactly these five WAV links on the UME-JRF corpus page as
-speech samples by native speakers of Chinese.  The corpus is research-use only.
+speech samples by native speakers of Chinese. The corpus is research-use only.
 This script therefore downloads the public samples ephemerally for CI research,
 records their provenance, and never commits or uploads the audio itself.
+
+The A1 sentence is displayed by NII as ``人 (ひと)いきれ``. The evaluation text
+uses the explicit hiragana ``ひといきれ`` so the G2P frontend cannot silently
+choose a different reading for the annotated word.
 """
 
 from __future__ import annotations
@@ -24,24 +28,29 @@ SAMPLES = (
         "sample_id": "A1_001",
         "category": "phonetically_balanced_sentence",
         "filename": "A1_001.wav",
-        "target_text": "六百人のお客さんの人いきれにむし暑くて扇子を使わずにいられない。",
+        "source_display_text": "六百人の お客さんの 人 (ひと)いきれに むし暑くて 扇子を 使わずにいられない。",
+        "target_text": "六百人のお客さんのひといきれにむし暑くて扇子を使わずにいられない。",
+        "reading_disambiguation": "人(ひと) -> ひと",
     },
     {
         "sample_id": "C1_001",
         "category": "difficult_sentence",
         "filename": "C1_001.wav",
+        "source_display_text": "次郎はおどる？",
         "target_text": "次郎はおどる？",
     },
     {
         "sample_id": "B1_001",
         "category": "prosody_sentence",
         "filename": "B1_001.wav",
+        "source_display_text": "天気が悪いので、電気をつけた。",
         "target_text": "天気が悪いので、電気をつけた。",
     },
     {
         "sample_id": "D1_001",
         "category": "minimal_pair_word",
         "filename": "D1_001.wav",
+        "source_display_text": "じぶつ (事物)",
         "target_text": "じぶつ",
         "minimal_pair_partner": "じんぶつ",
     },
@@ -49,6 +58,7 @@ SAMPLES = (
         "sample_id": "D1_002",
         "category": "minimal_pair_word",
         "filename": "D1_002.wav",
+        "source_display_text": "じんぶつ (人物)",
         "target_text": "じんぶつ",
         "minimal_pair_partner": "じぶつ",
     },
