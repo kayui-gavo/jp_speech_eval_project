@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import librosa
 import numpy as np
 
+from .alignment_evidence.mfa_adapter import evidence_from_lab, evidence_from_textgrid
 from .audio_features import extract_f0, load_audio, trim_silence
 from .reference_store import build_reference_config, build_reference_hash
 from .text_frontend import TextInfo, build_text_info
@@ -32,6 +33,9 @@ class SentenceMeta:
     reference_text: str
     reference_source: str
     ref_boundary_method: str
+    ref_boundary_confidence: float = 0.0
+    ref_boundary_tier: str = "equal_fallback"
+    ref_boundary_source: Optional[str] = None
     reference_id: Optional[str] = None
     reference_provider: Optional[str] = None
     reference_model: Optional[str] = None
@@ -109,6 +113,79 @@ def _equal_boundaries(duration_sec: float, mora_count: int) -> List[Tuple[float,
         return []
     step = duration_sec / mora_count
     return [(i * step, (i + 1) * step) for i in range(mora_count)]
+
+
+def _default_boundary_provenance(method: str) -> tuple[float, str, Optional[str]]:
+    """Conservative provenance defaults for old and newly generated caches."""
+    name = str(method or "").strip().lower()
+    if name in {"existing_label", "external_lab", "external_textgrid", "mfa_japanese"} or "verified" in name:
+        return 0.90, "verified_phone_alignment", name or None
+    if "audio_query" in name or "engine_duration" in name:
+        return 0.65, "engine_duration_prior", name or None
+    if "equal" in name:
+        return 0.15, "equal_fallback", name or None
+    return 0.35, "unknown_alignment", name or None
+
+
+def reference_boundaries_from_alignment(
+    *,
+    text: str,
+    moras: List[str],
+    alignment_path: str | Path,
+    method: str = "auto",
+) -> tuple[List[Tuple[float, float]], str, float, str, str]:
+    """Import phone-aligned mora boundaries for the exact reference waveform.
+
+    The alignment file must use the same time base as the supplied reference
+    wav. Supported inputs are Praat/MFA TextGrid and simple ``start end phone``
+    lab files. This function does not run a model and therefore stays suitable
+    for reproducible offline cache preparation.
+    """
+    path = Path(alignment_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Missing reference alignment: {path}")
+
+    requested = str(method or "auto").strip().lower()
+    suffix = path.suffix.lower()
+    if requested == "auto":
+        requested = "textgrid" if suffix == ".textgrid" else "lab" if suffix == ".lab" else ""
+    if requested in {"textgrid", "mfa", "mfa_japanese"}:
+        method_name = "mfa_japanese" if requested in {"mfa", "mfa_japanese"} else "external_textgrid"
+        evidence = evidence_from_textgrid(
+            utterance_id=path.stem,
+            target_text=text,
+            moras=moras,
+            textgrid_path=path,
+            method=method_name,
+        )
+    elif requested in {"lab", "existing_label"}:
+        method_name = "existing_label" if requested == "existing_label" else "external_lab"
+        evidence = evidence_from_lab(
+            utterance_id=path.stem,
+            target_text=text,
+            moras=moras,
+            lab_path=path,
+            method=method_name,
+        )
+    else:
+        raise ValueError(
+            "reference alignment must be .TextGrid/.lab or use "
+            "--reference-alignment-method textgrid|mfa|lab|existing_label"
+        )
+
+    boundaries = [(float(seg.start), float(seg.end)) for seg in evidence.mora_segments]
+    mapping_success = bool(evidence.mapping_debug.get("mapping_success"))
+    if len(boundaries) != len(moras) or not mapping_success:
+        raise ValueError(
+            "Reference alignment could not be mapped one-to-one to target moras: "
+            f"mapped={len(boundaries)} expected={len(moras)} "
+            f"warnings={evidence.warning_flags}"
+        )
+    if any(end <= start for start, end in boundaries):
+        raise ValueError("Reference alignment contains non-positive mora duration.")
+
+    tier = "verified_phone_alignment" if evidence.alignment_confidence >= 0.80 else "aligned_phone_evidence"
+    return boundaries, evidence.method, float(evidence.alignment_confidence), tier, str(path)
 
 
 def _split_long_segment(segment: str, max_chars: int = 22, min_left: int = 8) -> List[str]:
@@ -240,6 +317,8 @@ def build_sentence_cache(
     reference_wav_path: str | Path | None = None,
     reference_source: str | None = None,
     reference_id: str | None = None,
+    reference_alignment_path: str | Path | None = None,
+    reference_alignment_method: str = "auto",
     tts_backend: str = "pyopenjtalk",
     tts_backend_url: str | None = None,
     tts_speaker: int | None = None,
@@ -258,6 +337,9 @@ def build_sentence_cache(
     - pseudo-reference waveform
     - reference MFCC
     - reference F0
+
+    A trusted phone alignment can be supplied for an external reference wav.
+    Equal-mora timing remains a fallback and is explicitly recorded as such.
     """
     import soundfile as sf
     from .text_frontend import run_frontend
@@ -275,12 +357,49 @@ def build_sentence_cache(
     reference_prompt = None
     reference_language = None
     reference_config_hash = None
+    boundary_confidence = 0.15
+    boundary_tier = "equal_fallback"
+    boundary_source = None
+
+    if reference_alignment_path is not None and reference_wav_path is None:
+        raise ValueError("reference_alignment_path requires reference_wav_path for an exact shared time base")
+
     if reference_wav_path is not None:
         external_audio = load_audio(str(reference_wav_path), sr=sr)
-        ref_y, _ = trim_silence(external_audio.y, top_db=30.0)
-        ref_boundaries = _equal_boundaries(len(ref_y) / sr, len(text_info.moras))
-        reference_text = text
-        boundary_method = "external_equal_mora"
+        if reference_alignment_path is not None:
+            original_duration = len(external_audio.y) / sr
+            (
+                original_boundaries,
+                boundary_method,
+                boundary_confidence,
+                boundary_tier,
+                boundary_source,
+            ) = reference_boundaries_from_alignment(
+                text=text_info.text,
+                moras=text_info.moras,
+                alignment_path=reference_alignment_path,
+                method=reference_alignment_method,
+            )
+            first = max(0.0, float(original_boundaries[0][0]))
+            last = min(original_duration, float(original_boundaries[-1][1]))
+            if last <= first:
+                raise ValueError("Reference alignment lies outside the supplied reference wav.")
+            if float(original_boundaries[-1][1]) > original_duration + 0.03:
+                raise ValueError(
+                    "Reference alignment time base exceeds supplied reference wav duration: "
+                    f"alignment_end={original_boundaries[-1][1]:.4f}s wav={original_duration:.4f}s"
+                )
+            start_sample = int(round(first * sr))
+            end_sample = int(round(last * sr))
+            ref_y = np.asarray(external_audio.y[start_sample:end_sample], dtype=np.float64)
+            ref_boundaries = [(max(0.0, s - first), min(last - first, e - first)) for s, e in original_boundaries]
+            reference_text = text
+        else:
+            ref_y, _ = trim_silence(external_audio.y, top_db=30.0)
+            ref_boundaries = _equal_boundaries(len(ref_y) / sr, len(text_info.moras))
+            reference_text = text
+            boundary_method = "external_equal_mora"
+            boundary_confidence, boundary_tier, boundary_source = _default_boundary_provenance(boundary_method)
         reference_source_name = reference_source or "external_reference_wav"
     else:
         reference_provider = canonical_provider_name(tts_backend)
@@ -316,10 +435,13 @@ def build_sentence_cache(
             language=tts_language,
         )
         reference_source_name = reference_source or generated_source
+        boundary_confidence, boundary_tier, boundary_source = _default_boundary_provenance(boundary_method)
+
     ref_duration = len(ref_y) / sr
     if len(ref_boundaries) != len(text_info.moras):
         ref_boundaries = _equal_boundaries(ref_duration, len(text_info.moras))
         boundary_method = "equal_mora_fallback"
+        boundary_confidence, boundary_tier, boundary_source = _default_boundary_provenance(boundary_method)
     ref_mfcc = _mfcc(ref_y, sr=sr)
     f0_times, f0, _method = extract_f0(ref_y, sr)
 
@@ -338,6 +460,9 @@ def build_sentence_cache(
         reference_text=reference_text,
         reference_source=reference_source_name,
         ref_boundary_method=boundary_method,
+        ref_boundary_confidence=round(float(boundary_confidence), 4),
+        ref_boundary_tier=boundary_tier,
+        ref_boundary_source=boundary_source,
         reference_id=reference_id,
         reference_provider=reference_provider,
         reference_model=reference_model,
@@ -389,6 +514,7 @@ def load_sentence_cache(prefix: str | Path) -> SentenceCache:
                 accent_phrases = upgraded.accent_phrases
         except Exception:
             pass
+    default_conf, default_tier, default_source = _default_boundary_provenance(str(raw.get("ref_boundary_method", "equal_mora")))
     meta = SentenceMeta(
         text=raw["text"],
         kana=raw["kana"],
@@ -404,6 +530,9 @@ def load_sentence_cache(prefix: str | Path) -> SentenceCache:
         reference_text=str(raw.get("reference_text", raw["text"])),
         reference_source=str(raw.get("reference_source", "pyopenjtalk_tts_pseudo_reference")),
         ref_boundary_method=str(raw.get("ref_boundary_method", "equal_mora")),
+        ref_boundary_confidence=float(raw.get("ref_boundary_confidence", default_conf)),
+        ref_boundary_tier=str(raw.get("ref_boundary_tier", default_tier)),
+        ref_boundary_source=raw.get("ref_boundary_source", default_source),
         reference_id=raw.get("reference_id"),
         reference_provider=raw.get("reference_provider"),
         reference_model=raw.get("reference_model"),
@@ -441,6 +570,9 @@ def cache_summary(cache: SentenceCache) -> str:
         f"Provider      : {cache.meta.reference_provider or '-'}",
         f"Config hash   : {cache.meta.reference_config_hash or '-'}",
         f"Boundary mode : {cache.meta.ref_boundary_method}",
+        f"Boundary tier : {cache.meta.ref_boundary_tier}",
+        f"Boundary conf : {cache.meta.ref_boundary_confidence:.2f}",
+        f"Boundary src  : {cache.meta.ref_boundary_source or '-'}",
         f"Ref duration  : {cache.meta.ref_duration_sec:.3f} sec",
         f"Cache prefix  : {cache.prefix}",
     ])

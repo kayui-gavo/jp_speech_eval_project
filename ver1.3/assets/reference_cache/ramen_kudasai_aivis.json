@@ -159,5 +159,8 @@
   ],
   "reference_text": "ラーメンをください",
   "reference_source": "aivis_http_pseudo_reference",
-  "ref_boundary_method": "equal_mora"
+  "ref_boundary_method": "equal_mora",
+  "ref_boundary_confidence": 0.15,
+  "ref_boundary_tier": "equal_fallback",
+  "ref_boundary_source": "legacy_equal_mora_reference_duration"
 }

@@ -7,6 +7,35 @@ import librosa
 import numpy as np
 
 
+class AnalysisSignal(np.ndarray):
+    """Normalized analysis ndarray carrying non-scoring recording provenance.
+
+    This ndarray subclass is a compatibility bridge for legacy callers that pass
+    ``audio.y`` directly into recording-quality code. Numerical operations see a
+    normal ndarray; recording-quality can recover the amplitude-preserved decode
+    before converting the input with ``np.asarray``. New code should prefer
+    :func:`load_audio_views` instead of depending on these attributes.
+    """
+
+    raw_recording_y: np.ndarray
+    raw_recording_sr: int
+    analysis_normalization_gain: float
+
+
+def _analysis_signal(
+    y: np.ndarray,
+    *,
+    raw_y: np.ndarray,
+    raw_sr: int,
+    normalization_gain: float,
+) -> AnalysisSignal:
+    signal = np.asarray(y, dtype=np.float64).view(AnalysisSignal)
+    signal.raw_recording_y = np.asarray(raw_y, dtype=np.float64)
+    signal.raw_recording_sr = int(raw_sr)
+    signal.analysis_normalization_gain = float(normalization_gain)
+    return signal
+
+
 @dataclass(frozen=True)
 class AudioData:
     y: np.ndarray
@@ -14,15 +43,81 @@ class AudioData:
     duration: float
 
 
-def load_audio(path: str, sr: int = 16000) -> AudioData:
-    y, sr = librosa.load(path, sr=sr, mono=True)
-    if y.size == 0:
+@dataclass(frozen=True)
+class AudioViews:
+    """Keep recording diagnostics separate from normalized analysis audio.
+
+    ``raw_y`` is the amplitude-preserved mono decode at the file's native sample
+    rate. It is intended for channel/recording-quality diagnostics such as
+    clipping and input level. ``analysis`` is resampled and peak-normalized for
+    VAD, ASR, alignment, F0 and representation extraction.
+
+    Keeping both views prevents analysis normalization from erasing information
+    that is meaningful only in the original recording domain.
+    """
+
+    raw_y: np.ndarray
+    raw_sr: int
+    analysis: AudioData
+    analysis_normalization_gain: float
+
+
+def load_audio_views(path: str, sr: int = 16000) -> AudioViews:
+    if int(sr) <= 0:
+        raise ValueError(f"Invalid target sample rate: {sr}")
+
+    raw_y, raw_sr = librosa.load(path, sr=None, mono=True, dtype=np.float64)
+    raw_y = np.asarray(raw_y, dtype=np.float64).reshape(-1)
+    raw_sr = int(raw_sr)
+    if raw_y.size == 0:
         raise ValueError(f"Empty audio: {path}")
-    peak = float(np.max(np.abs(y)))
-    if peak > 0:
-        y = y / (peak + 1e-9)
-    y = y.astype(np.float64)
-    return AudioData(y=y, sr=sr, duration=len(y) / sr)
+    if raw_sr <= 0:
+        raise ValueError(f"Invalid decoded sample rate for {path}: {raw_sr}")
+
+    if raw_sr == int(sr):
+        analysis_y = raw_y.copy()
+    else:
+        analysis_y = librosa.resample(
+            raw_y,
+            orig_sr=raw_sr,
+            target_sr=int(sr),
+            res_type="soxr_hq",
+        )
+        analysis_y = np.asarray(analysis_y, dtype=np.float64)
+
+    analysis_peak = float(np.max(np.abs(analysis_y))) if analysis_y.size else 0.0
+    normalization_gain = 1.0
+    if analysis_peak > 0:
+        normalization_gain = 1.0 / (analysis_peak + 1e-9)
+        analysis_y = analysis_y * normalization_gain
+
+    tagged_y = _analysis_signal(
+        analysis_y,
+        raw_y=raw_y,
+        raw_sr=raw_sr,
+        normalization_gain=normalization_gain,
+    )
+    analysis = AudioData(
+        y=tagged_y,
+        sr=int(sr),
+        duration=len(tagged_y) / int(sr),
+    )
+    return AudioViews(
+        raw_y=raw_y,
+        raw_sr=raw_sr,
+        analysis=analysis,
+        analysis_normalization_gain=float(normalization_gain),
+    )
+
+
+def load_audio(path: str, sr: int = 16000) -> AudioData:
+    """Compatibility loader returning the normalized analysis-domain signal.
+
+    New sentence-final evaluation code should prefer :func:`load_audio_views`
+    when recording quality is also needed.
+    """
+
+    return load_audio_views(path, sr=sr).analysis
 
 
 def trim_silence(y: np.ndarray, top_db: float = 30.0) -> Tuple[np.ndarray, Tuple[int, int]]:

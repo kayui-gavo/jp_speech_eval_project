@@ -1,8 +1,13 @@
-"""Model-level CTC posterior diagnostics for pronunciation research.
+"""Model-level CTC posterior/logit diagnostics for pronunciation research.
 
 Standard CTC can be very peaky: most acoustic evidence collapses onto sparse
 frames, which can make posterior-derived GOP unstable. These diagnostics make
 that model property explicit before any Japanese learner criterion mapping.
+
+The v2 schema also records shift-invariant logit margins. Recent pronunciation
+assessment work suggests that logit-domain competition can complement posterior
+GOP, but these values remain descriptive shadow evidence until they are tested
+against Japanese-L2 human criterion labels.
 
 They are **not** pronunciation scores and deliberately define no universal or
 engineering alert threshold. The intended use is descriptive comparison of
@@ -18,7 +23,7 @@ from typing import Any, Dict, Sequence
 import numpy as np
 
 
-SCHEMA = "ctc_posterior_diagnostics_v1"
+SCHEMA = "ctc_posterior_diagnostics_v2"
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,11 @@ class CtcPosteriorDiagnostics:
     full_normalized_entropy_p05: float
     phone_conditional_normalized_entropy_mean: float
     phone_conditional_normalized_entropy_p05: float
+    full_top1_logit_margin_mean: float
+    full_top1_logit_margin_p05: float
+    phone_top1_logit_margin_mean: float
+    phone_top1_logit_margin_p05: float
+    blank_minus_phone_top_logit_margin_mean: float
     summary: Dict[str, Any]
     warnings: list[str]
     product_calibrated: bool = False
@@ -72,6 +82,16 @@ def _normalized_entropy(probabilities: np.ndarray, *, axis_size: int) -> np.ndar
     return entropy / math.log(float(axis_size))
 
 
+def _top1_margin(values: np.ndarray) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[1] <= 0:
+        raise ValueError("margin input must have shape (frames, classes)")
+    if arr.shape[1] == 1:
+        return np.zeros(arr.shape[0], dtype=np.float64)
+    top2 = np.partition(arr, -2, axis=1)[:, -2:]
+    return np.max(top2, axis=1) - np.min(top2, axis=1)
+
+
 def compute_ctc_posterior_diagnostics(
     logits: np.ndarray,
     *,
@@ -79,7 +99,8 @@ def compute_ctc_posterior_diagnostics(
     phone_token_ids: Sequence[int],
 ) -> CtcPosteriorDiagnostics:
     """Summarize CTC peakiness/uncertainty without interpreting pronunciation."""
-    probs = _softmax(logits)
+    values = np.asarray(logits, dtype=np.float64)
+    probs = _softmax(values)
     frames, vocab_size = probs.shape
     blank = int(blank_id)
     if blank < 0 or blank >= vocab_size:
@@ -96,15 +117,16 @@ def compute_ctc_posterior_diagnostics(
     phone_probs = probs[:, phone_ids]
     phone_mass = np.sum(phone_probs, axis=1)
     phone_top1 = np.max(phone_probs, axis=1)
-    if phone_probs.shape[1] >= 2:
-        top2 = np.partition(phone_probs, -2, axis=1)[:, -2:]
-        phone_margin = np.max(top2, axis=1) - np.min(top2, axis=1)
-    else:
-        phone_margin = phone_top1.copy()
+    phone_margin = _top1_margin(phone_probs)
 
     full_entropy = _normalized_entropy(probs, axis_size=vocab_size)
     conditional = phone_probs / np.maximum(phone_mass[:, None], np.finfo(np.float64).tiny)
     phone_entropy = _normalized_entropy(conditional, axis_size=len(phone_ids))
+
+    full_logit_margin = _top1_margin(values)
+    phone_logits = values[:, phone_ids]
+    phone_logit_margin = _top1_margin(phone_logits)
+    blank_minus_phone = values[:, blank] - np.max(phone_logits, axis=1)
 
     return CtcPosteriorDiagnostics(
         available=True,
@@ -128,9 +150,16 @@ def compute_ctc_posterior_diagnostics(
         full_normalized_entropy_p05=float(np.quantile(full_entropy, 0.05)),
         phone_conditional_normalized_entropy_mean=float(np.mean(phone_entropy)),
         phone_conditional_normalized_entropy_p05=float(np.quantile(phone_entropy, 0.05)),
+        full_top1_logit_margin_mean=float(np.mean(full_logit_margin)),
+        full_top1_logit_margin_p05=float(np.quantile(full_logit_margin, 0.05)),
+        phone_top1_logit_margin_mean=float(np.mean(phone_logit_margin)),
+        phone_top1_logit_margin_p05=float(np.quantile(phone_logit_margin, 0.05)),
+        blank_minus_phone_top_logit_margin_mean=float(np.mean(blank_minus_phone)),
         summary={
-            "interpretation": "model_posterior_peakiness_and_uncertainty_not_pronunciation_quality",
+            "interpretation": "model_posterior_and_logit_competition_diagnostics_not_pronunciation_quality",
             "standard_ctc_peakiness_is_known_pronunciation_assessment_risk": True,
+            "logit_margin_diagnostics_available": True,
+            "logit_margin_is_pronunciation_error": False,
             "universal_threshold_defined": False,
             "heuristic_alert_thresholds_defined": False,
             "cross_model_diagnostic_comparison_allowed": True,
