@@ -8,6 +8,12 @@ learner-facing score mapping.
 
 A bundle is model-specific evidence. Raw values from different phone-CTC
 backbones must not be averaged or assumed to share a calibrated scale.
+
+Important semantic detail: ``canonical_log_posterior`` in the enumerated
+extractor is the log posterior of the *whole canonical phone sequence*. It is
+therefore identical across rows for one utterance. The legacy field is retained
+for schema compatibility, but the summary explicitly marks it as an
+utterance-level context feature rather than a phone-local correctness signal.
 """
 
 from __future__ import annotations
@@ -29,6 +35,8 @@ SCHEMA = "phone_criterion_feature_bundle_v1"
 class PhoneCriterionFeatureRow:
     phone_index: int
     canonical_phone: str
+    # Backward-compatible names. Both values describe the whole canonical
+    # sequence, not the local phone in isolation.
     canonical_log_posterior: float
     canonical_log_posterior_per_frame: float
     deletion_lpr: float
@@ -109,6 +117,12 @@ def build_phone_criterion_feature_bundle(
     if frame_count <= 0:
         return _unavailable("normalized_frame_count_missing", model_id=model_id, revision=revision)
 
+    # This invariant is intentional: the enumerated canonical numerator is the
+    # same whole-sequence posterior for every phone-specific alternative set.
+    sequence_numerators = [float(row.canonical_log_posterior) for row in enumerated.evidence]
+    if sequence_numerators and not np.allclose(sequence_numerators, sequence_numerators[0], rtol=0.0, atol=1e-9):
+        return _unavailable("canonical_sequence_logposterior_inconsistent_across_rows", model_id=model_id, revision=revision)
+
     rows: List[PhoneCriterionFeatureRow] = []
     for enum_row, norm_row in zip(enumerated.evidence, normalized.evidence):
         if int(enum_row.phone_index) != int(norm_row.phone_index):
@@ -151,6 +165,7 @@ def build_phone_criterion_feature_bundle(
             )
         )
 
+    utterance_sequence_lp = sequence_numerators[0] if sequence_numerators else None
     return PhoneCriterionFeatureBundle(
         available=True,
         schema=SCHEMA,
@@ -162,6 +177,13 @@ def build_phone_criterion_feature_bundle(
         summary={
             "phone_count": len(rows),
             "frame_count": frame_count,
+            "utterance_canonical_sequence_log_posterior": utterance_sequence_lp,
+            "utterance_canonical_sequence_log_posterior_per_frame": (
+                None if utterance_sequence_lp is None else float(utterance_sequence_lp) / frame_count
+            ),
+            "row_field_canonical_log_posterior_is_utterance_sequence_level": True,
+            "row_field_canonical_log_posterior_is_phone_local": False,
+            "row_field_canonical_log_posterior_repeated_across_phone_rows": True,
             "feature_family": "joint_LPP_LPR_enumerated_SD_graph_GOP_Occ",
             "model_specific_raw_scale": True,
             "cross_model_raw_averaging_allowed": False,
