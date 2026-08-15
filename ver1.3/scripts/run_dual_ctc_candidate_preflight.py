@@ -3,9 +3,9 @@
 
 This is a Stage-0 shadow comparison against the existing Beatrice preflight.
 It uses only repository-bundled audio and never changes a product score. The
-artifact includes the transparent enumerated LPP/LPR feature family, the
-paper-aligned SD alternative-graph normalized forward/Occ(i) diagnostics, and
-a strict criterion-ready joined feature bundle for later labeled validation.
+artifact includes transparent alignment-free phone features, normalized SD
+alternative-graph/Occ(i) diagnostics, a criterion-ready bundle, and explicit
+CTC posterior peakiness/uncertainty diagnostics.
 """
 
 from __future__ import annotations
@@ -24,10 +24,12 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from jp_speech_eval.audio_features import load_audio  # noqa: E402
+from jp_speech_eval.ctc_posterior_diagnostics import compute_ctc_posterior_diagnostics  # noqa: E402
 from jp_speech_eval.dual_ctc_phone_candidate import (  # noqa: E402
     DISTILHUBERT_DUAL_CTC_MODEL,
     DualCtcPhoneCandidateBackend,
 )
+from jp_speech_eval.japanese_phoneme_gop import segmental_competitor_ids  # noqa: E402
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import build_phone_criterion_feature_bundle  # noqa: E402
 from jp_speech_eval.segmentation_free_gop_norm import compute_segmentation_free_norm_features  # noqa: E402
@@ -65,6 +67,21 @@ def _unavailable_bundle(reason: str, backend: DualCtcPhoneCandidateBackend) -> d
     }
 
 
+def _unavailable_diagnostics(reason: str) -> dict:
+    return {
+        "available": False,
+        "schema": "ctc_posterior_diagnostics_v1",
+        "summary": {
+            "reason": reason,
+            "interpretation": "model_posterior_peakiness_and_uncertainty_not_pronunciation_quality",
+            "product_score_changed": False,
+        },
+        "warnings": [reason],
+        "score_mapped": False,
+        "product_calibrated": False,
+    }
+
+
 def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: str) -> dict:
     target = build_japanese_target_evidence(text)
     frame = backend.evaluate_frame_local(speech, target.phones, sr=16000)
@@ -72,6 +89,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
 
     norm_payload: dict
     criterion_payload: dict
+    posterior_payload: dict
     try:
         logical_logits, logical_vocab, blank_id, _provenance = backend.infer_logical_phone_logits(
             speech, sr=16000
@@ -86,21 +104,28 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
         )
         norm_payload = norm.to_dict()
         criterion_payload = build_phone_criterion_feature_bundle(sf, norm).to_dict()
+        phone_ids = segmental_competitor_ids(logical_vocab, blank_id=blank_id)
+        posterior_payload = compute_ctc_posterior_diagnostics(
+            logical_logits,
+            blank_id=blank_id,
+            phone_token_ids=phone_ids,
+        ).to_dict()
     except Exception as exc:
-        reason = f"norm_feature_extraction_failed:{type(exc).__name__}"
+        reason = f"norm_or_diagnostic_extraction_failed:{type(exc).__name__}"
         norm_payload = {
             "available": False,
             "model_id": backend.model_id,
             "revision": backend.revision,
-            "method": "paper_sd_norm_forward_v1",
+            "method": "paper_sd_norm_forward_japanese_phone_mask_v2",
             "canonical_phones": list(target.phones),
             "evidence": [],
             "summary": {"reason": reason, "detail": str(exc)},
-            "warnings": ["norm_feature_extraction_failed"],
+            "warnings": ["norm_or_diagnostic_extraction_failed"],
             "score_mapped": False,
             "product_calibrated": False,
         }
         criterion_payload = _unavailable_bundle(reason, backend)
+        posterior_payload = _unavailable_diagnostics(reason)
 
     return {
         "text": text,
@@ -109,6 +134,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
         "segmentation_free": sf.to_dict(),
         "segmentation_free_norm": norm_payload,
         "criterion_feature_bundle": criterion_payload,
+        "ctc_posterior_diagnostics": posterior_payload,
     }
 
 
@@ -136,7 +162,7 @@ def main() -> None:
     correct_lp = correct["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     wrong_lp = wrong["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     payload = {
-        "schema": "dual_ctc_candidate_preflight_v3",
+        "schema": "dual_ctc_candidate_preflight_v4",
         "model_id": args.model,
         "revision": args.revision,
         "audio": str(BUNDLED_AUDIO.relative_to(ROOT)),
@@ -147,6 +173,7 @@ def main() -> None:
         "human_recordings_used": False,
         "individual_lpr_sign_is_pronunciation_error_rule": False,
         "occ_i_is_physical_phone_duration": False,
+        "ctc_peakiness_is_pronunciation_score": False,
         "cross_model_raw_feature_averaging_allowed": False,
         "correct_target": correct,
         "wrong_target": wrong,
@@ -165,8 +192,11 @@ def main() -> None:
     print(f"model: {args.model}@{args.revision}")
     print(f"correct-minus-wrong sequence log posterior: {payload['sequence_logposterior_gap_correct_minus_wrong']}")
     norm_summary = correct["segmentation_free_norm"].get("summary", {})
+    posterior = correct["ctc_posterior_diagnostics"]
     print("correct Occ(i) range:", norm_summary.get("occ_i_min"), norm_summary.get("occ_i_max"))
     print("criterion bundle available:", correct["criterion_feature_bundle"].get("available"))
+    print("CTC top1 posterior mean:", posterior.get("top1_posterior_mean"))
+    print("CTC blank-top1 fraction:", posterior.get("blank_top1_fraction"))
     print("PRODUCT SCORE: UNCHANGED / SHADOW ONLY")
 
 
