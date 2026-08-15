@@ -32,7 +32,7 @@ def _target(text: str, phones: list[str], *, distribution: str = "pyopenjtalk-pl
 
 class _FakeBackend:
     def vocabulary(self):
-        return {"PAD": 0, "a": 1, "b": 2, "pau": 3, "sil": 4}
+        return {"PAD": 0, "a": 1, "b": 2, "pau": 3, "sil": 4, "N": 5, "cl": 6}
 
 
 def _logits() -> np.ndarray:
@@ -67,6 +67,7 @@ def _with_contract_flags(result):
             "summary": {
                 **result.summary,
                 "high_vowel_allophones_collapsed": True,
+                "special_mora_excluded_from_ordinary_competitors": True,
                 "ctc_support_frames_are_not_physical_phone_boundaries": True,
             },
         }
@@ -91,13 +92,14 @@ def test_backend_preflight_can_pass_without_spending_human_time() -> None:
 
     assert report.backend_preflight_passed is True
     # Passing one bundled-audio backend check is intentionally insufficient to
-    # authorize the 38-clip human battery.
+    # authorize the human battery.
     assert report.human_gate_promoted is False
     assert report.human_recording_allowed is False
     statuses = {check.name: check.status for check in report.checks}
     assert statuses["target_frontend_distribution"] == "pass"
     assert statuses["correct_vs_wrong_target_separation"] == "pass"
     assert statuses["gain_stability"] == "pass"
+    assert statuses["special_mora_construct_separated"] == "pass"
     assert statuses["no_product_score_mapping"] == "pass"
 
 
@@ -141,3 +143,26 @@ def test_preflight_blocks_base_pyopenjtalk_even_when_acoustics_look_good() -> No
     assert report.human_recording_allowed is False
     frontend = next(check for check in report.checks if check.name == "target_frontend_distribution")
     assert frontend.status == "block"
+
+
+def test_preflight_blocks_missing_special_mora_policy_flag() -> None:
+    correct_target = _target("correct", ["a", "b"])
+    wrong_target = _target("wrong", ["b", "a"])
+    correct = _with_contract_flags(_result(["a", "b"]))
+    wrong = _with_contract_flags(_result(["b", "a"]))
+    broken_summary = dict(correct.summary)
+    broken_summary.pop("special_mora_excluded_from_ordinary_competitors", None)
+    broken = type(correct)(**{**correct.__dict__, "summary": broken_summary})
+
+    report = build_phone_gop_preflight_report(
+        backend=_FakeBackend(),
+        correct_target=correct_target,
+        wrong_target=wrong_target,
+        extra_targets={},
+        correct_result=broken,
+        wrong_result=wrong,
+        gain_results={"gain_0p80": broken, "gain_1p20": broken},
+    )
+    statuses = {check.name: check.status for check in report.checks}
+    assert statuses["special_mora_construct_separated"] == "block"
+    assert report.backend_preflight_passed is False
