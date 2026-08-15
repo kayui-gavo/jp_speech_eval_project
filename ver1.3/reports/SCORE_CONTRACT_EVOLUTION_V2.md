@@ -33,6 +33,8 @@ Current contract:
 
 The numeric formula is intentionally unchanged from the immediately preceding executable product policy. The change is that code, API telemetry, history, and documentation now share one versioned definition.
 
+Fixed-reference comparison prefers a stable explicit `reference_id`, then a path-independent generated-reference config hash. Cache paths are retained only as a legacy fallback identity.
+
 ## 2. Fake progress protection
 
 New progress records store the four consumer scores plus score context. Legacy evaluator scores remain under `legacy_scores` for audit.
@@ -76,7 +78,7 @@ The SSL DTW implementation now exposes an internal optimal warping path while pr
 3. estimate local warp slopes/angles;
 4. measure mean absolute deviation from the utterance's average warp angle.
 
-The implementation uses only valid moving-average centers so edge padding does not create artificial irregularity in a perfectly linear warp path.
+The implementation uses only valid moving-average centers so edge padding does not create artificial irregularity in a perfectly linear warp path. This boundary artifact was caught by CI and fixed in the algorithm rather than hidden by loosening the test.
 
 A global frame-duration ratio is reported separately. A uniformly slower/faster utterance can therefore have low local tempo irregularity instead of being misclassified as locally unstable rhythm.
 
@@ -87,7 +89,30 @@ Everything remains:
 - `product_calibrated=false`;
 - not user-facing.
 
-## 5. Interval distortion boundary
+## 5. Multi-native SSL reference panels
+
+New module:
+
+`src/jp_speech_eval/ssl_reference_panel.py`
+
+An explicit research panel can now provide several references for the same target with:
+
+- stable `reference_id`;
+- target text;
+- audio path;
+- speaker ID;
+- reference kind;
+- provenance.
+
+When a panel is supplied, WavLM pronunciation distance and DTW-rhythm evidence are computed independently against each matching human reference and then aggregated using the preselected strategy, currently median by default.
+
+TTS fallback entries are not mixed into a human panel when human references are available. If an explicitly supplied panel does not contain the requested target, the shadow fails closed instead of silently reverting to another reference generation.
+
+Template:
+
+`data/research_eval/ssl_reference_panel_template.json`
+
+## 6. Interval distortion boundary
 
 `interval_distortion_from_dtw_path()` is implemented only as a pure metric over externally supplied frame labels:
 
@@ -99,7 +124,35 @@ No Japanese interval classifier is claimed. Promotion is blocked until such a cl
 
 This avoids importing the paper's TIMIT-trained auxiliary classifiers as if they were automatically valid for Japanese L2 speech.
 
-## 6. Human criterion split
+## 7. Conversation product routing
+
+New module:
+
+`src/jp_speech_eval/conversation_mode_policy.py`
+
+The product now has an explicit routing contract instead of exposing internal evaluator names as interchangeable product modes:
+
+### `instant_conversation`
+
+- routes to broad `transcript_assisted_light` evaluation;
+- evaluates immediately;
+- does not generate a hidden TTS scoring reference;
+- does not claim target-relative kana/phone errors;
+- does not enable strict lexical pitch-accent correction.
+
+### `deep_review`
+
+- without confirmed text: requests transcript confirmation and does not create a scoring reference;
+- after confirmation: may use the existing `asr_confirmed_weak_reference` route;
+- the resulting TTS reference remains weak practice evidence, not pronunciation ground truth.
+
+### `fixed_practice`
+
+- requires a fixed target;
+- routes to the fixed-reference evaluator;
+- target-local detail still depends on verified reference/alignment/construct-specific reliability gates.
+
+## 8. Human criterion split
 
 New protocol:
 
@@ -115,7 +168,21 @@ The existing frozen pronunciation-accuracy protocol is preserved. The new protoc
 
 Pronunciation accuracy is not renamed clarity.
 
-## 7. External research benchmark boundary
+New data contract/tooling:
+
+- `data/human_eval/consumer_rating_schema_v2.json`
+- `data/human_eval/consumer_rating_template_v2.csv`
+- `scripts/validate_consumer_ratings.py`
+
+The validator enforces:
+
+- unanalyzable audio is not converted into low construct ratings;
+- assigned constructs require a 1–7 rating when analyzable;
+- unassigned constructs remain null;
+- intonation ratings without pragmatic context are retained but flagged for separate analysis;
+- listener/presentation duplicates are rejected.
+
+## 9. External research benchmark boundary
 
 New plan:
 
@@ -128,7 +195,20 @@ New normalized research manifest support:
 
 The repository does not bundle UME-JRF. Local licensed data is mapped into a normalized manifest, then frozen benchmark code consumes that manifest. This minimizes corpus-specific code and keeps licensing/access separate from product runtime.
 
-## 8. What is intentionally unchanged
+## 10. Frozen research split mechanics
+
+New script:
+
+`scripts/build_research_splits.py`
+
+It creates deterministic whole-group folds before benchmark outcomes are seen:
+
+- a speaker-disjoint evaluation view;
+- a target-disjoint evaluation view.
+
+These are explicitly two separate views, not falsely described as one simultaneously speaker-and-target-disjoint split. Leakage guards verify that one speaker/target is never split across folds within its corresponding view.
+
+## 11. What is intentionally unchanged
 
 This branch does **not**:
 
@@ -141,17 +221,41 @@ This branch does **not**:
 - tune F0 thresholds;
 - delete legacy evaluator reliability caps yet;
 - create a Japanese vowel/consonant interval classifier;
-- treat UME-JRF as commercially redistributable product data.
+- treat UME-JRF as commercially redistributable product data;
+- collect or fabricate human ratings.
 
-## 9. Next gates
+## 12. Work split: repository vs local/Codex/human execution
+
+### Repository work that does not require Codex
+
+- score/product semantics and versioning;
+- history/personalization safety;
+- DTW-rhythm implementation;
+- multi-reference aggregation/provenance;
+- conversation product routing;
+- research manifests and split/leakage guards;
+- rating schemas and validators;
+- benchmark/statistics code and CI.
+
+### External/local work that cannot be completed from repository access alone
+
+- accepting external dataset access/license terms and obtaining UME-JRF;
+- recording/obtaining several consented native references per production target;
+- producing trusted/manual or locally forced-aligned reference boundaries when the exact audio is not present in the repo;
+- recruiting listeners and collecting real criterion ratings;
+- running large WavLM/CTC/MFA batches when licensed audio/model checkpoints exist only on a local machine.
+
+If Codex is used for those tasks, it should execute a frozen repository protocol rather than redesign the scoring model.
+
+## 13. Next gates
 
 ### Gate A — light CI
 
-All score-contract, history, rhythm, reference, content, and manifest tests must pass.
+All score-contract, history, conversation-mode, rhythm, multi-reference, reference, content, manifest, split, and human-rating validation tests must pass.
 
 ### Gate B — reference bank
 
-Finish true boundary provenance migration for production/demo fixed targets.
+Finish true boundary provenance migration for production/demo fixed targets and assign stable reference IDs.
 
 ### Gate C — external research execution
 
