@@ -18,6 +18,29 @@ def _level(score: float) -> str:
     return "low"
 
 
+def _speech_sample_range(y: np.ndarray, sr: int, speech_region: Optional[object]) -> tuple[int, int]:
+    """Map endpointing metadata onto this signal's sample-rate domain.
+
+    The VAD may run on a resampled/normalized analysis copy while recording
+    quality runs on the amplitude-preserved native-rate decode. Time-domain
+    fields are therefore preferred over sample indices whenever available.
+    """
+
+    if speech_region is None or not getattr(speech_region, "detected", False):
+        return 0, int(y.size)
+
+    speech_start = getattr(speech_region, "speech_start", None)
+    speech_end = getattr(speech_region, "speech_end", None)
+    if speech_start is not None and speech_end is not None:
+        start = int(round(max(0.0, float(speech_start)) * sr))
+        end = int(round(max(0.0, float(speech_end)) * sr))
+        return max(0, min(start, int(y.size))), max(0, min(end, int(y.size)))
+
+    start = int(getattr(speech_region, "start_sample", 0))
+    end = int(getattr(speech_region, "end_sample", int(y.size)))
+    return max(0, min(start, int(y.size))), max(0, min(end, int(y.size)))
+
+
 def assess_recording_quality(
     y: np.ndarray,
     sr: int,
@@ -25,11 +48,12 @@ def assess_recording_quality(
     frame_length: int = 1024,
     hop_length: int = 256,
 ) -> Dict[str, object]:
-    """Estimate recording/channel reliability from one wav.
+    """Estimate recording/channel reliability from one amplitude-preserved wav.
 
-    The output is a quality gate. It should reduce confidence when the input
-    is noisy or clipped, but it should not be interpreted as pronunciation
-    correctness.
+    This function must receive the decoded signal before analysis-domain peak
+    normalization. Absolute input level and clipping cease to be meaningful
+    after peak normalization. The output remains a quality/reliability gate and
+    must never be interpreted as pronunciation correctness.
     """
     y = np.asarray(y, dtype=float).reshape(-1)
     if y.size == 0:
@@ -39,6 +63,7 @@ def assess_recording_quality(
             "reliability_factor": 0.25,
             "warnings": ["Empty audio."],
             "interpretation": "recording_quality_not_pronunciation",
+            "input_domain": "amplitude_preserved_decode",
         }
 
     rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
@@ -54,8 +79,7 @@ def assess_recording_quality(
 
     noise_samples: List[np.ndarray] = []
     if speech_region is not None and getattr(speech_region, "detected", False):
-        start = int(getattr(speech_region, "start_sample", 0))
-        end = int(getattr(speech_region, "end_sample", 0))
+        start, end = _speech_sample_range(y, sr, speech_region)
         if start > int(0.05 * sr):
             noise_samples.append(y[:start])
         if end < y.size - int(0.05 * sr):
@@ -101,4 +125,5 @@ def assess_recording_quality(
         "clipping_ratio": clipping_ratio,
         "warnings": warnings,
         "interpretation": "recording_quality_not_pronunciation",
+        "input_domain": "amplitude_preserved_decode",
     }
