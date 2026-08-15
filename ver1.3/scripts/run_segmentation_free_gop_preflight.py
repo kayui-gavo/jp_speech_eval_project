@@ -38,7 +38,10 @@ from jp_speech_eval.phone_criterion_features import (  # noqa: E402
     compare_shared_suffix_locality,
 )
 from jp_speech_eval.segmentation_free_gop import evaluate_backend_fgop_sf_sd_shadow  # noqa: E402
-from jp_speech_eval.segmentation_free_gop_norm import compute_segmentation_free_norm_features  # noqa: E402
+from jp_speech_eval.segmentation_free_gop_norm import (  # noqa: E402
+    METHOD as NORM_METHOD,
+    compute_segmentation_free_norm_features,
+)
 from jp_speech_eval.vad import trim_to_speech  # noqa: E402
 
 
@@ -199,7 +202,7 @@ def main() -> None:
             "available": False,
             "model_id": model_id,
             "revision": revision,
-            "method": "paper_sd_norm_forward_japanese_phone_mask_v2",
+            "method": NORM_METHOD,
             "evidence": [],
             "summary": {"reason": reason, "detail": str(exc)},
             "warnings": [reason],
@@ -217,7 +220,7 @@ def main() -> None:
         shared_suffix = {"available": False, "reason": reason}
 
     payload = {
-        "schema": "segmentation_free_gop_bundled_preflight_v5",
+        "schema": "segmentation_free_gop_bundled_preflight_v6",
         "product_score_changed": False,
         "score_mapped": False,
         "human_recording_allowed": False,
@@ -225,6 +228,7 @@ def main() -> None:
         "occ_i_is_physical_phone_duration": False,
         "ctc_peakiness_is_pronunciation_score": False,
         "cross_model_raw_feature_averaging_allowed": False,
+        "normalized_sd_method": NORM_METHOD,
         "speech_region": region.to_dict(),
         "correct_target": correct_target.to_dict(),
         "wrong_target": wrong_target.to_dict(),
@@ -262,6 +266,7 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
+    print("normalized SD method:", NORM_METHOD)
     print("correct frame-local available:", correct_frame.available)
     print("correct alignment-free available:", correct.available)
     if correct.available:
