@@ -50,12 +50,26 @@ def assess_recording_quality(
 ) -> Dict[str, object]:
     """Estimate recording/channel reliability from one amplitude-preserved wav.
 
-    This function must receive the decoded signal before analysis-domain peak
-    normalization. Absolute input level and clipping cease to be meaningful
-    after peak normalization. The output remains a quality/reliability gate and
-    must never be interpreted as pronunciation correctness.
+    ``load_audio`` historically returns a normalized ndarray. The current loader
+    attaches the original decoded waveform as provenance, so this function can
+    recover it before converting to a plain ndarray. Callers that pass an
+    ordinary ndarray are still supported, but those values are then assumed to
+    already be in the recording domain.
+
+    The output remains a quality/reliability gate and must never be interpreted
+    as pronunciation correctness.
     """
-    y = np.asarray(y, dtype=float).reshape(-1)
+    raw_y = getattr(y, "raw_recording_y", None)
+    raw_sr = getattr(y, "raw_recording_sr", None)
+    normalization_gain = getattr(y, "analysis_normalization_gain", None)
+    if raw_y is not None and raw_sr is not None:
+        y = np.asarray(raw_y, dtype=float).reshape(-1)
+        sr = int(raw_sr)
+        input_domain = "amplitude_preserved_decode_from_analysis_provenance"
+    else:
+        y = np.asarray(y, dtype=float).reshape(-1)
+        input_domain = "caller_supplied_recording_domain"
+
     if y.size == 0:
         return {
             "score": 0.0,
@@ -63,7 +77,7 @@ def assess_recording_quality(
             "reliability_factor": 0.25,
             "warnings": ["Empty audio."],
             "interpretation": "recording_quality_not_pronunciation",
-            "input_domain": "amplitude_preserved_decode",
+            "input_domain": input_domain,
         }
 
     rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
@@ -125,5 +139,7 @@ def assess_recording_quality(
         "clipping_ratio": clipping_ratio,
         "warnings": warnings,
         "interpretation": "recording_quality_not_pronunciation",
-        "input_domain": "amplitude_preserved_decode",
+        "input_domain": input_domain,
+        "analysis_normalization_gain": None if normalization_gain is None else round(float(normalization_gain), 6),
+        "recording_sample_rate": int(sr),
     }
