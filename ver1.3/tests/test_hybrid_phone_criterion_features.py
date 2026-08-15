@@ -4,7 +4,11 @@ from dataclasses import replace
 import unittest
 
 from jp_speech_eval.hybrid_phone_criterion_features import build_hybrid_phone_criterion_bundle
-from jp_speech_eval.phone_criterion_features import PhoneCriterionFeatureBundle, PhoneCriterionFeatureRow
+from jp_speech_eval.phone_criterion_features import (
+    SCHEMA as CRITERION_SCHEMA,
+    PhoneCriterionFeatureBundle,
+    PhoneCriterionFeatureRow,
+)
 from jp_speech_eval.phoneme_gop import PhoneGopEvidence, PhoneGopResult
 
 
@@ -53,6 +57,11 @@ class HybridPhoneCriterionFeatureTest(unittest.TestCase):
         row = PhoneCriterionFeatureRow(
             phone_index=0,
             canonical_phone=phone,
+            construct_role=("special_mora_timing" if special else "ordinary_segmental_clarity"),
+            ordinary_segmental_clarity_feature_applicable=not special,
+            substitution_feature_applicable=not special,
+            deletion_feature_applicable=True,
+            normalized_occ_is_physical_duration=False,
             canonical_log_posterior=-2.0,
             canonical_log_posterior_per_frame=-0.2,
             deletion_lpr=1.5,
@@ -66,7 +75,7 @@ class HybridPhoneCriterionFeatureTest(unittest.TestCase):
         )
         return PhoneCriterionFeatureBundle(
             available=True,
-            schema="phone_criterion_feature_bundle_v1",
+            schema=CRITERION_SCHEMA,
             model_id="model",
             revision="abc123456789",
             canonical_phones=[phone],
@@ -81,6 +90,7 @@ class HybridPhoneCriterionFeatureTest(unittest.TestCase):
         self.assertTrue(bundle.available)
         self.assertFalse(bundle.score_mapped)
         self.assertFalse(bundle.product_calibrated)
+        self.assertTrue(bundle.summary["alignment_free_construct_metadata_verified"])
         self.assertEqual(bundle.rows[0].construct_role, "ordinary_segmental_clarity")
         self.assertTrue(bundle.rows[0].frame_local_ordinary_clarity_feature_applicable)
         self.assertTrue(bundle.rows[0].alignment_free_substitution_feature_applicable)
@@ -99,14 +109,42 @@ class HybridPhoneCriterionFeatureTest(unittest.TestCase):
         self.assertFalse(row.frame_local_ordinary_clarity_feature_applicable)
         self.assertFalse(row.alignment_free_substitution_feature_applicable)
         self.assertTrue(row.alignment_free_deletion_feature_applicable)
-        # Raw frame-local values are retained for audit/research but explicitly
-        # marked inapplicable to an ordinary clarity model.
         self.assertEqual(row.frame_local_mean_logit_margin, 3.0)
         self.assertEqual(row.alignment_free_substitution_lprs, {"N": 0.0})
         self.assertEqual(bundle.summary["special_mora_row_count"], 1)
         self.assertEqual(bundle.summary["ordinary_segmental_row_count"], 0)
         self.assertFalse(bundle.summary["special_mora_frame_local_raw_values_are_ordinary_clarity_features"])
         self.assertTrue(bundle.summary["special_mora_requires_construct_specific_feature_selection"])
+
+    def test_construct_role_mismatch_fails_closed(self) -> None:
+        criterion = self._criterion("N")
+        broken = replace(
+            criterion,
+            rows=[replace(criterion.rows[0], construct_role="ordinary_segmental_clarity")],
+        )
+        bundle = build_hybrid_phone_criterion_bundle(self._frame("N"), broken)
+        self.assertFalse(bundle.available)
+        self.assertEqual(bundle.summary["reason"], "alignment_free_construct_role_mismatch")
+
+    def test_substitution_applicability_mismatch_fails_closed(self) -> None:
+        criterion = self._criterion("N")
+        broken = replace(
+            criterion,
+            rows=[replace(criterion.rows[0], substitution_feature_applicable=True)],
+        )
+        bundle = build_hybrid_phone_criterion_bundle(self._frame("N"), broken)
+        self.assertFalse(bundle.available)
+        self.assertEqual(bundle.summary["reason"], "alignment_free_substitution_applicability_mismatch")
+
+    def test_occ_duration_semantics_mismatch_fails_closed(self) -> None:
+        criterion = self._criterion("b")
+        broken = replace(
+            criterion,
+            rows=[replace(criterion.rows[0], normalized_occ_is_physical_duration=True)],
+        )
+        bundle = build_hybrid_phone_criterion_bundle(self._frame("b"), broken)
+        self.assertFalse(bundle.available)
+        self.assertEqual(bundle.summary["reason"], "alignment_free_occ_duration_semantics_mismatch")
 
     def test_model_provenance_mismatch_fails_closed(self) -> None:
         frame = replace(self._frame(), model_id="other@abc123456789")
