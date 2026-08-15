@@ -98,8 +98,12 @@ class RestrictedSegmentationFreeGopTest(unittest.TestCase):
         self.assertEqual(set(result.rows[0].candidate_phones), {"s", "z", "sh", "ts"})
         self.assertEqual(set(result.rows[1].candidate_phones), {"k", "g", "ky"})
         self.assertEqual(result.summary["fallback_position_count"], 0)
+        self.assertTrue(result.summary["phone_dependent_denominator"])
+        self.assertTrue(result.summary["candidate_count_affects_raw_denominator"])
+        self.assertFalse(result.summary["cross_phone_raw_gop_comparison_allowed"])
+        self.assertFalse(result.summary["rps_vs_ups_raw_gop_direct_comparison_allowed"])
 
-    def test_restricted_vs_unrestricted_is_comparison_not_fusion(self) -> None:
+    def test_restricted_vs_unrestricted_is_search_space_comparison_not_score_delta(self) -> None:
         logits, vocab = self._logits()
         restricted = compute_restricted_fgop_sf_sd_features(
             logits,
@@ -116,8 +120,14 @@ class RestrictedSegmentationFreeGopTest(unittest.TestCase):
         comparison = compare_restricted_vs_unrestricted(restricted, unrestricted)
         self.assertTrue(comparison["available"])
         self.assertTrue(comparison["raw_values_must_not_be_averaged"])
+        self.assertFalse(comparison["rps_vs_ups_raw_gop_direct_comparison_allowed"])
         self.assertFalse(comparison["product_score_changed"])
         self.assertEqual(len(comparison["rows"]), 2)
+        for row in comparison["rows"]:
+            self.assertTrue(row["raw_gop_values_intentionally_omitted"])
+            self.assertNotIn("rps_gop_sf_sd", row)
+            self.assertNotIn("ups_gop_sf_sd", row)
+            self.assertNotIn("rps_minus_ups", row)
 
 
 if __name__ == "__main__":
