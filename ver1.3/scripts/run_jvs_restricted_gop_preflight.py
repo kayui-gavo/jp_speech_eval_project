@@ -8,6 +8,10 @@ The JVS target uses the manifest's explicit reviewed logical-phone sequence.
 Neither surface-kanji G2P nor re-G2P of the kana reading is accepted as the
 phone target: Stage-0 found both paths could alter ``明王 / みょうおう`` and
 create repeated pseudo-errors across native speakers.
+
+Every reported negative phone position is also mapped back to the reviewed
+surface/reading segment, making target-provenance failures visible rather than
+leaving only opaque integer indices.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import json
 from pathlib import Path
 import statistics
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 import numpy as np
 
@@ -51,10 +55,43 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _reviewed_index_metadata(
+    rows: Sequence[Dict[str, Any]],
+    reviewed_phones: Sequence[str],
+) -> list[Dict[str, Any]]:
+    serialized = [
+        json.dumps(row.get("target_phone_index_metadata") or [], ensure_ascii=False, sort_keys=True)
+        for row in rows
+    ]
+    if not serialized or any(value != serialized[0] for value in serialized[1:]):
+        raise ValueError("JVS manifest target_phone_index_metadata differs across speakers")
+    metadata = list(rows[0].get("target_phone_index_metadata") or [])
+    if len(metadata) != len(reviewed_phones):
+        raise ValueError("JVS phone-index metadata length does not match reviewed phone sequence")
+    normalized: list[Dict[str, Any]] = []
+    for index, (meta, phone) in enumerate(zip(metadata, reviewed_phones)):
+        if int(meta.get("phone_index", -1)) != index:
+            raise ValueError("JVS phone-index metadata is not contiguous")
+        if str(meta.get("phone") or "") != str(phone):
+            raise ValueError("JVS phone-index metadata phone does not match reviewed target")
+        normalized.append(
+            {
+                "phone_index": index,
+                "phone": str(phone),
+                "segment_index": int(meta.get("segment_index", -1)),
+                "segment_phone_index": int(meta.get("segment_phone_index", -1)),
+                "segment_surface": str(meta.get("segment_surface") or ""),
+                "segment_reading": str(meta.get("segment_reading") or ""),
+            }
+        )
+    return normalized
+
+
 def main() -> None:
     args = parse_args()
     sample_rows = _load_manifest(Path(args.manifest))
     target_reading, reviewed_phones = _reviewed_target(sample_rows)
+    index_metadata = _reviewed_index_metadata(sample_rows, reviewed_phones)
     target = build_japanese_target_evidence(
         TARGET_TEXT,
         reading_override=target_reading,
@@ -94,6 +131,25 @@ def main() -> None:
         negative = [row for row in restricted.rows if row.best_noncanonical_lpr < 0.0]
         segmental_rows = [row for row in restricted.rows if row.canonical_phone not in {"N", "cl"}]
         special_rows = [row for row in restricted.rows if row.canonical_phone in {"N", "cl"}]
+        negative_positions = []
+        for row in negative:
+            meta = index_metadata[int(row.phone_index)]
+            negative_positions.append(
+                {
+                    "phone_index": row.phone_index,
+                    "canonical_phone": row.canonical_phone,
+                    "target_segment_index": meta["segment_index"],
+                    "target_segment_phone_index": meta["segment_phone_index"],
+                    "target_segment_surface": meta["segment_surface"],
+                    "target_segment_reading": meta["segment_reading"],
+                    "best_noncanonical_type": row.best_noncanonical_type,
+                    "best_noncanonical_phone": row.best_noncanonical_phone,
+                    "best_noncanonical_lpr": row.best_noncanonical_lpr,
+                    "candidate_count": row.candidate_count,
+                    "search_policy": row.search_policy,
+                }
+            )
+
         rows.append(
             {
                 "speaker": sample["speaker"],
@@ -114,18 +170,7 @@ def main() -> None:
                 "special_mora_negative_count": sum(row.best_noncanonical_lpr < 0 for row in special_rows),
                 "special_mora_count": len(special_rows),
                 "fallback_position_count": restricted.summary["fallback_position_count"],
-                "negative_positions": [
-                    {
-                        "phone_index": row.phone_index,
-                        "canonical_phone": row.canonical_phone,
-                        "best_noncanonical_type": row.best_noncanonical_type,
-                        "best_noncanonical_phone": row.best_noncanonical_phone,
-                        "best_noncanonical_lpr": row.best_noncanonical_lpr,
-                        "candidate_count": row.candidate_count,
-                        "search_policy": row.search_policy,
-                    }
-                    for row in negative
-                ],
+                "negative_positions": negative_positions,
                 "restricted_summary": restricted.summary,
             }
         )
@@ -138,7 +183,7 @@ def main() -> None:
         if row.get("restricted_candidate_ratio_vs_unrestricted") is not None
     ]
     payload = {
-        "schema": "jvs_restricted_gop_native_preflight_v3",
+        "schema": "jvs_restricted_gop_native_preflight_v4",
         "target_text": TARGET_TEXT,
         "target_reading": target_reading,
         "target_reading_source": "reviewed_manifest_override",
@@ -146,6 +191,7 @@ def main() -> None:
         "automatic_surface_g2p_used_for_phone_target": False,
         "automatic_kana_g2p_used_for_phone_target": False,
         "target_phones": phones,
+        "target_phone_index_metadata": index_metadata,
         "dropped_nonsegmental_target_tokens": dropped,
         "model_id": model.model_id,
         "revision": model.revision,
@@ -163,6 +209,7 @@ def main() -> None:
             "restricted_candidate_ratio_vs_unrestricted_mean": statistics.mean(candidate_ratios) if candidate_ratios else None,
             "target_reading_reviewed_before_phone_scoring": True,
             "target_phone_sequence_explicitly_reviewed": True,
+            "negative_positions_are_segment_annotated": True,
             "text_frontend_g2p_is_authoritative_phone_source": False,
             "interpretation": "native_false_alarm_pressure_test_not_pronunciation_validity",
             "required_next_step": "compare_on_labeled_or_controlled_learner_errors_before_any_clarity_mapping",
