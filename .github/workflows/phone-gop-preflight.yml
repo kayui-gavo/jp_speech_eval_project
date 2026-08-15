@@ -107,9 +107,14 @@ jobs:
           --manifest outputs/jvs_official_samples_manifest.json
           --allow-download
           --output outputs/jvs_restricted_gop_preflight.json
-      - name: Remove downloaded JVS audio before artifact collection
+      - name: Run ephemeral OpenJTalk controlled local phone-edit preflight
+        run: >-
+          python scripts/run_controlled_tts_phone_edit_preflight.py
+          --allow-download
+          --output outputs/controlled_tts_phone_edit_preflight.json
+      - name: Remove downloaded or synthesized audio before artifact collection
         if: always()
-        run: rm -rf outputs/jvs_official_samples
+        run: rm -rf outputs/jvs_official_samples outputs/controlled_tts_audio
       - name: Upload model preflight reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -124,4 +129,5 @@ jobs:
             ver1.3/outputs/jvs_official_samples_manifest.json
             ver1.3/outputs/jvs_native_phone_ctc_anchor_preflight.json
             ver1.3/outputs/jvs_restricted_gop_preflight.json
+            ver1.3/outputs/controlled_tts_phone_edit_preflight.json
           if-no-files-found: warn
