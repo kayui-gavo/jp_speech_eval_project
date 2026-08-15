@@ -4,8 +4,9 @@
 The artifact deliberately does not interpret the sign of an individual LPR as
 a pronunciation-correctness decision. It keeps frame-local logit/posterior
 features and alignment-free LPP/LPR/SD/Occ(i) separate, then joins them only in
-a strict criterion-ready research bundle. CTC posterior peakiness/uncertainty
-is recorded as a model diagnostic, not a pronunciation score.
+a strict construct-aware criterion-ready research bundle. CTC posterior
+peakiness/uncertainty is recorded as a model diagnostic, not a pronunciation
+score.
 """
 
 from __future__ import annotations
@@ -25,7 +26,10 @@ if str(SRC) not in sys.path:
 
 from jp_speech_eval.audio_features import load_audio  # noqa: E402
 from jp_speech_eval.ctc_posterior_diagnostics import compute_ctc_posterior_diagnostics  # noqa: E402
-from jp_speech_eval.hybrid_phone_criterion_features import build_hybrid_phone_criterion_bundle  # noqa: E402
+from jp_speech_eval.hybrid_phone_criterion_features import (  # noqa: E402
+    SCHEMA as HYBRID_SCHEMA,
+    build_hybrid_phone_criterion_bundle,
+)
 from jp_speech_eval.japanese_phoneme_gop import (  # noqa: E402
     JapanesePhoneCtcBackend,
     project_japanese_ctc_logits,
@@ -122,10 +126,7 @@ def _norm_and_posterior_features(
 def _failed_bundle(reason: str, model_id: str, revision: str, *, hybrid: bool = False) -> dict:
     return {
         "available": False,
-        "schema": (
-            "hybrid_phone_criterion_feature_bundle_v1"
-            if hybrid else "phone_criterion_feature_bundle_v1"
-        ),
+        "schema": HYBRID_SCHEMA if hybrid else "phone_criterion_feature_bundle_v1",
         "model_id": model_id,
         "revision": revision,
         "canonical_phones": [],
@@ -229,6 +230,7 @@ def main() -> None:
         "ctc_peakiness_is_pronunciation_score": False,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
+        "hybrid_criterion_schema": HYBRID_SCHEMA,
         "speech_region": region.to_dict(),
         "correct_target": correct_target.to_dict(),
         "wrong_target": wrong_target.to_dict(),
@@ -254,11 +256,12 @@ def main() -> None:
             "noncanonical_win_count_is_stage0_failure_gate": False,
             "downstream_labeled_interpretation_required": True,
             "ctc_peakiness_requires_model_level_monitoring": True,
+            "special_mora_construct_specific_feature_selection_required": True,
             "note": (
                 "This artifact keeps Viterbi/logit and alignment-free feature families explicit, "
-                "joins them only for future supervised criterion experiments, and records CTC "
-                "peakiness. No individual feature is a direct mispronunciation label and nothing "
-                "is mapped to /100."
+                "joins them only for future supervised criterion experiments, tags special-mora "
+                "rows separately from ordinary clarity, and records CTC peakiness. No individual "
+                "feature is a direct mispronunciation label and nothing is mapped to /100."
             ),
         },
     }
@@ -267,6 +270,7 @@ def main() -> None:
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
     print("normalized SD method:", NORM_METHOD)
+    print("hybrid criterion schema:", HYBRID_SCHEMA)
     print("correct frame-local available:", correct_frame.available)
     print("correct alignment-free available:", correct.available)
     if correct.available:
