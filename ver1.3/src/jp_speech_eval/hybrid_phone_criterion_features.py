@@ -6,12 +6,16 @@ logit-based features and uncertainty. Rather than choosing one family before
 Japanese learner validation, this module joins them with explicit provenance.
 
 The frame-local branch still depends on a CTC Viterbi support path. Its support
-frames are **not** physical phone boundaries/durations. In addition, Japanese
-special morae ``N`` and ``cl`` are tagged as a separate construct: their raw
-frame-local numbers may be retained for research, but they are not ordinary
-segmental-clarity features and must not be silently mixed into a clarity model.
+frames are **not** physical phone boundaries/durations. Japanese special morae
+``N`` and ``cl`` are a separate construct: their raw frame-local numbers may be
+retained for research, but they are not ordinary segmental-clarity features and
+must not be silently mixed into a clarity model.
 
-The resulting bundle is therefore a supervised-research design matrix, not a
+The alignment-free criterion bundle already carries construct metadata. This
+hybrid join checks that metadata against the canonical phone instead of
+re-deriving it silently; contradictory construct provenance fails closed.
+
+The resulting bundle is a supervised-research design matrix, not a
 pronunciation score.
 """
 
@@ -104,13 +108,7 @@ def build_hybrid_phone_criterion_bundle(
     frame_local: PhoneGopResult,
     criterion: PhoneCriterionFeatureBundle,
 ) -> HybridPhoneCriterionBundle:
-    """Strictly join Viterbi/logit and alignment-free feature families.
-
-    The join preserves every raw research feature, but adds explicit construct
-    applicability flags so downstream criterion code can build separate
-    ordinary-segmental and special-mora models instead of accidentally mixing
-    them.
-    """
+    """Strictly join Viterbi/logit and alignment-free feature families."""
     model_id = str(criterion.model_id or frame_local.model_id or "")
     revision = str(criterion.revision or "")
     if not frame_local.available:
@@ -130,16 +128,35 @@ def build_hybrid_phone_criterion_bundle(
             return _unavailable("phone_index_mismatch", model_id=model_id, revision=revision)
         if str(frame_row.canonical_phone) != str(af_row.canonical_phone):
             return _unavailable("canonical_phone_row_mismatch", model_id=model_id, revision=revision)
+
         phone = str(frame_row.canonical_phone)
-        special_mora = phone in SPECIAL_MORA_TOKENS
+        expected_special = phone in SPECIAL_MORA_TOKENS
+        expected_role = "special_mora_timing" if expected_special else "ordinary_segmental_clarity"
+        if str(af_row.construct_role) != expected_role:
+            return _unavailable("alignment_free_construct_role_mismatch", model_id=model_id, revision=revision)
+        if bool(af_row.ordinary_segmental_clarity_feature_applicable) != (not expected_special):
+            return _unavailable("alignment_free_clarity_applicability_mismatch", model_id=model_id, revision=revision)
+        if bool(af_row.substitution_feature_applicable) != (not expected_special):
+            return _unavailable("alignment_free_substitution_applicability_mismatch", model_id=model_id, revision=revision)
+        if not bool(af_row.deletion_feature_applicable):
+            return _unavailable("alignment_free_deletion_applicability_mismatch", model_id=model_id, revision=revision)
+        if bool(af_row.normalized_occ_is_physical_duration):
+            return _unavailable("alignment_free_occ_duration_semantics_mismatch", model_id=model_id, revision=revision)
+
         rows.append(
             HybridPhoneCriterionRow(
                 phone_index=int(frame_row.phone_index),
                 canonical_phone=phone,
-                construct_role=("special_mora_timing" if special_mora else "ordinary_segmental_clarity"),
-                frame_local_ordinary_clarity_feature_applicable=not special_mora,
-                alignment_free_substitution_feature_applicable=not special_mora,
-                alignment_free_deletion_feature_applicable=True,
+                construct_role=str(af_row.construct_role),
+                frame_local_ordinary_clarity_feature_applicable=bool(
+                    af_row.ordinary_segmental_clarity_feature_applicable
+                ),
+                alignment_free_substitution_feature_applicable=bool(
+                    af_row.substitution_feature_applicable
+                ),
+                alignment_free_deletion_feature_applicable=bool(
+                    af_row.deletion_feature_applicable
+                ),
                 frame_local_mean_logit_margin=float(frame_row.mean_logit_margin),
                 frame_local_max_logit_margin=float(frame_row.max_logit_margin),
                 frame_local_posterior_gop_margin=float(frame_row.posterior_gop_margin),
@@ -169,6 +186,7 @@ def build_hybrid_phone_criterion_bundle(
             "phone_count": len(rows),
             "ordinary_segmental_row_count": len(rows) - special_count,
             "special_mora_row_count": special_count,
+            "alignment_free_construct_metadata_verified": True,
             "contains_frame_local_logit_features": True,
             "contains_frame_local_posterior_features": True,
             "contains_frame_local_uncertainty": True,
