@@ -81,13 +81,21 @@ class OfficialJvsPhoneCtcAnchorPreflightTest(unittest.TestCase):
         self.assertEqual(_find_subsequence(phones, contaminated), [])
         self.assertEqual(DOWNLOAD.PHONE_PROVENANCE["policy"], "reviewed_logical_phone_override_v1")
 
-    def test_reviewed_segments_flatten_exactly_to_target_phones(self) -> None:
+    def test_reviewed_segments_flatten_exactly_to_target_phones_and_roles(self) -> None:
         flattened = [
             str(phone)
             for segment in DOWNLOAD.TARGET_PHONE_SEGMENTS
             for phone in segment["phones"]
         ]
+        flattened_roles = [
+            str(role)
+            for segment in DOWNLOAD.TARGET_PHONE_SEGMENTS
+            for role in segment["roles"]
+        ]
         self.assertEqual(flattened, list(DOWNLOAD.TARGET_PHONES))
+        self.assertEqual(flattened_roles, list(DOWNLOAD.TARGET_PHONE_ROLES))
+        self.assertEqual(len(flattened_roles), len(flattened))
+
         meiou_segments = [
             segment for segment in DOWNLOAD.TARGET_PHONE_SEGMENTS
             if segment["surface"] == "明王"
@@ -97,13 +105,34 @@ class OfficialJvsPhoneCtcAnchorPreflightTest(unittest.TestCase):
             [tuple(segment["phones"]) for segment in meiou_segments],
             [("my", "o", "o", "o", "o"), ("my", "o", "o", "o", "o")],
         )
+        self.assertEqual(
+            [tuple(segment["roles"]) for segment in meiou_segments],
+            [
+                (
+                    DOWNLOAD.ORDINARY_ROLE,
+                    DOWNLOAD.ORDINARY_ROLE,
+                    DOWNLOAD.LONG_VOWEL_ROLE,
+                    DOWNLOAD.ORDINARY_ROLE,
+                    DOWNLOAD.LONG_VOWEL_ROLE,
+                ),
+                (
+                    DOWNLOAD.ORDINARY_ROLE,
+                    DOWNLOAD.ORDINARY_ROLE,
+                    DOWNLOAD.LONG_VOWEL_ROLE,
+                    DOWNLOAD.ORDINARY_ROLE,
+                    DOWNLOAD.LONG_VOWEL_ROLE,
+                ),
+            ],
+        )
 
     def test_reviewed_phone_index_metadata_is_contiguous_and_segment_traceable(self) -> None:
         metadata = list(DOWNLOAD.TARGET_PHONE_INDEX_METADATA)
         phones = list(DOWNLOAD.TARGET_PHONES)
+        roles = list(DOWNLOAD.TARGET_PHONE_ROLES)
         self.assertEqual(len(metadata), len(phones))
         self.assertEqual([int(row["phone_index"]) for row in metadata], list(range(len(phones))))
         self.assertEqual([str(row["phone"]) for row in metadata], phones)
+        self.assertEqual([str(row["construct_role"]) for row in metadata], roles)
         meiou_rows = [row for row in metadata if row["segment_surface"] == "明王"]
         self.assertEqual(len(meiou_rows), 10)
         self.assertEqual(
@@ -115,7 +144,7 @@ class OfficialJvsPhoneCtcAnchorPreflightTest(unittest.TestCase):
             ["my", "o", "o", "o", "o"],
         )
 
-    def test_manifest_v5_requires_same_reviewed_phone_target_for_all_speakers(self) -> None:
+    def test_manifest_v6_requires_same_reviewed_phone_target_and_roles_for_all_speakers(self) -> None:
         rows = []
         for speaker in ("jvs001", "jvs002", "jvs003"):
             rows.append(
@@ -124,14 +153,17 @@ class OfficialJvsPhoneCtcAnchorPreflightTest(unittest.TestCase):
                     "target_text": MODULE.TARGET_TEXT,
                     "target_reading": DOWNLOAD.TARGET_READING,
                     "target_phones": list(DOWNLOAD.TARGET_PHONES),
+                    "target_phone_roles": list(DOWNLOAD.TARGET_PHONE_ROLES),
                     "target_phone_source": "reviewed_logical_phone_override_v1",
                     "automatic_surface_g2p_is_safe_for_anchor": False,
                     "automatic_kana_g2p_is_phone_exact_for_anchor": False,
                 }
             )
         payload = {
-            "schema": "jvs_official_samples_manifest_v5",
+            "schema": "jvs_official_samples_manifest_v6",
             "target_phone_override_required": True,
+            "target_phone_construct_roles_required": True,
+            "long_vowel_extension_is_ordinary_segmental_clarity": False,
             "samples": rows,
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -139,17 +171,20 @@ class OfficialJvsPhoneCtcAnchorPreflightTest(unittest.TestCase):
             path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
             loaded = MODULE._load_manifest(path)
         reading, phones = MODULE._reviewed_target(loaded)
+        roles = MODULE._reviewed_roles(loaded, phones)
         self.assertEqual(reading, DOWNLOAD.TARGET_READING)
         self.assertEqual(phones, list(DOWNLOAD.TARGET_PHONES))
+        self.assertEqual(roles, list(DOWNLOAD.TARGET_PHONE_ROLES))
+        self.assertGreater(sum(role == MODULE.LONG_VOWEL_ROLE for role in roles), 0)
 
     def test_old_manifest_schema_is_rejected_for_phone_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.json"
             path.write_text(
-                json.dumps({"schema": "jvs_official_samples_manifest_v4", "samples": []}),
+                json.dumps({"schema": "jvs_official_samples_manifest_v5", "samples": []}),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "requires reviewed-phone manifest v5"):
+            with self.assertRaisesRegex(ValueError, "construct-aware reviewed-phone manifest v6"):
                 MODULE._load_manifest(path)
 
     def test_current_semantic_manifest_keeps_raw_hash_as_provenance_only(self) -> None:
