@@ -121,7 +121,10 @@ class PublicApiTest(unittest.TestCase):
         )
         self.assertIn("目標文とは違う", response["raw_result"]["feedback"][0])
         dims = {item["key"]: item for item in response["user_facing"]["score_dimensions"]}
-        self.assertFalse(dims["pitch_accent"]["available"])
+        self.assertEqual(set(dims), {"delivery_fluency", "clarity", "mora_timing", "intonation"})
+        self.assertTrue(all(item["available"] for item in dims.values()))
+        self.assertNotIn("pitch_accent", dims)
+        self.assertIn("reference_independent", dims["clarity"]["evidence_tier"])
 
     def test_nonsense_target_mismatch_does_not_enter_broad_fallback(self) -> None:
         fixed = _raw_result()
