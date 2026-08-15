@@ -1,0 +1,45 @@
+name: phone-gop-construct-preflight
+
+on:
+  push:
+    branches:
+      - free-assessment-integration-v1
+  workflow_dispatch:
+
+jobs:
+  construct-aware-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-construct-preflight]') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ver1.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ver1.3/requirements.txt
+      - name: Cache pinned Beatrice model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: phone-gop-construct-${{ runner.os }}-beatrice-f5fe070
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0,<3.0"
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+      - name: Run construct-aware Beatrice preflight
+        run: >-
+          python scripts/run_construct_aware_phone_preflight.py
+          --allow-download
+          --output outputs/construct_aware_phone_preflight.json
+      - name: Upload construct-aware report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: construct-aware-phone-preflight
+          path: ver1.3/outputs/construct_aware_phone_preflight.json
+          if-no-files-found: warn
