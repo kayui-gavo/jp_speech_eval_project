@@ -21,6 +21,8 @@ on:
       - "ver1.3/src/jp_speech_eval/transcript_assisted.py"
       - "ver1.3/src/jp_speech_eval/spontaneous_fluency.py"
       - "ver1.3/src/jp_speech_eval/reliability_counterfactual.py"
+      - "ver1.3/src/jp_speech_eval/native_cap_telemetry.py"
+      - "ver1.3/src/jp_speech_eval/evaluator.py"
       - "ver1.3/src/jp_speech_eval/ssl_features.py"
       - "ver1.3/src/jp_speech_eval/ssl_reference_panel.py"
       - "ver1.3/src/jp_speech_eval/rhythm_dtw.py"
@@ -44,6 +46,7 @@ on:
       - "ver1.3/tests/test_transcript_assisted_language_gate.py"
       - "ver1.3/tests/test_spontaneous_fluency.py"
       - "ver1.3/tests/test_reliability_counterfactual.py"
+      - "ver1.3/tests/test_native_cap_telemetry.py"
       - "ver1.3/tests/test_rhythm_dtw.py"
       - "ver1.3/tests/test_ssl_reference_panel.py"
       - "ver1.3/tests/test_research_manifest.py"
@@ -95,6 +98,7 @@ jobs:
             tests/test_transcript_assisted_language_gate.py \
             tests/test_spontaneous_fluency.py \
             tests/test_reliability_counterfactual.py \
+            tests/test_native_cap_telemetry.py \
             tests/test_rhythm_dtw.py \
             tests/test_ssl_reference_panel.py \
             tests/test_research_manifest.py \
