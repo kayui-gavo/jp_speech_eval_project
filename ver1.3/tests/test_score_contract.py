@@ -40,11 +40,18 @@ def test_legacy_history_is_not_compared_as_progress():
         "score_contract_version": SCORE_CONTRACT_VERSION,
         "mode_family": "general_japanese",
     }
-    decision = history_comparability(current, {})
-    assert decision == {"comparable": False, "reason": "no_previous_record"}
-    decision = history_comparability(current, {"mode_family": "general_japanese"})
-    assert decision["comparable"] is False
-    assert decision["reason"] == "legacy_record_without_score_contract"
+    no_previous = history_comparability(current, None)
+    assert no_previous == {"comparable": False, "reason": "no_previous_record"}
+
+    legacy_empty = history_comparability(current, {})
+    assert legacy_empty == {
+        "comparable": False,
+        "reason": "legacy_record_without_score_contract",
+    }
+
+    legacy = history_comparability(current, {"mode_family": "general_japanese"})
+    assert legacy["comparable"] is False
+    assert legacy["reason"] == "legacy_record_without_score_contract"
 
 
 def test_fixed_reference_progress_requires_same_target_and_reference_identity():
