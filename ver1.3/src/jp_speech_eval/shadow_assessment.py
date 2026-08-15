@@ -49,7 +49,8 @@ def run_assessment_shadows(
     if enable_ssl_shadow:
         started = time.perf_counter()
         try:
-            from .ssl_features import SSLFeatureExtractor, cosine_dtw_distance
+            from .rhythm_dtw import tempo_irregularity_from_dtw_path
+            from .ssl_features import SSLFeatureExtractor, cosine_dtw_alignment
 
             waveform, sr = _audio(user_audio_path, sample_rate)
             cache_prefix = result.get("cache_prefix")
@@ -69,10 +70,11 @@ def run_assessment_shadows(
                     _SSL_EXTRACTOR_CACHE[ssl_model_id] = extractor
             user_features = extractor.extract_layer(waveform, ssl_layer, sr)
             reference_features = extractor.extract_layer(reference, ssl_layer, reference_sr)
-            distance = cosine_dtw_distance(reference_features, user_features)
+            alignment = cosine_dtw_alignment(reference_features, user_features)
+            path = alignment.pop("path")
             reference_distance = {
                 "reference_id": details.get("reference_id"),
-                "distance": distance["normalized_cumulative_distance"],
+                "distance": alignment["normalized_cumulative_distance"],
             }
             elapsed = time.perf_counter() - started
             if elapsed > ssl_timeout_sec:
@@ -83,10 +85,10 @@ def run_assessment_shadows(
                 "model_id": ssl_model_id,
                 "layer": ssl_layer,
                 "reference_id": details.get("reference_id"),
-                **distance,
-                "dtw_distance": distance["normalized_cumulative_distance"],
-                "frame_count_reference": distance["reference_frame_count"],
-                "frame_count_user": distance["user_frame_count"],
+                **alignment,
+                "dtw_distance": alignment["normalized_cumulative_distance"],
+                "frame_count_reference": alignment["reference_frame_count"],
+                "frame_count_user": alignment["user_frame_count"],
                 "reference_distances": [reference_distance],
                 "aggregate_strategy": "median",
                 "interpretation": "shadow_not_user_score",
@@ -94,10 +96,40 @@ def run_assessment_shadows(
                 "latency_ms": round(elapsed * 1000.0, 3),
                 "user_facing": False,
             }
+            rhythm_started = time.perf_counter()
+            try:
+                rhythm = tempo_irregularity_from_dtw_path(
+                    path,
+                    reference_frame_count=int(alignment["reference_frame_count"]),
+                    smoothing_frames=5,
+                )
+                shadow["rhythm_dtw_v1"] = {
+                    "available": True,
+                    "backend": "wavlm_cosine_dtw_warp_path",
+                    "model_id": ssl_model_id,
+                    "layer": ssl_layer,
+                    "reference_id": details.get("reference_id"),
+                    "reference_frame_count": int(alignment["reference_frame_count"]),
+                    "user_frame_count": int(alignment["user_frame_count"]),
+                    "global_frame_duration_ratio": (
+                        float(alignment["user_frame_count"]) / max(float(alignment["reference_frame_count"]), 1.0)
+                    ),
+                    **rhythm,
+                    "latency_ms": round((time.perf_counter() - rhythm_started) * 1000.0, 3),
+                }
+            except Exception as rhythm_exc:
+                shadow["rhythm_dtw_v1"] = _failure(
+                    "wavlm_cosine_dtw_warp_path",
+                    rhythm_exc,
+                    time.perf_counter() - rhythm_started,
+                )
         except Exception as exc:
-            shadow["ssl_pronunciation"] = _failure(
-                "huggingface_ssl_cosine_dtw", exc, time.perf_counter() - started
-            )
+            failure = _failure("huggingface_ssl_cosine_dtw", exc, time.perf_counter() - started)
+            shadow["ssl_pronunciation"] = failure
+            shadow.setdefault("rhythm_dtw_v1", {
+                **failure,
+                "backend": "wavlm_cosine_dtw_warp_path",
+            })
 
     if enable_special_mora_v2_shadow:
         started = time.perf_counter()
