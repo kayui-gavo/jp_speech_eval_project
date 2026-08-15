@@ -7,6 +7,13 @@ artifact includes frame-local logit/posterior evidence, alignment-free phone
 features, Japanese position-masked SD/Occ(i), a strict hybrid criterion bundle,
 and explicit CTC posterior peakiness/uncertainty diagnostics.
 
+Before criterion assembly, canonical kana is aligned to the actual canonical
+phone sequence to infer construct roles. This prevents a repeated vowel that
+realizes a lexical long-vowel extension from being silently treated as ordinary
+segmental clarity. If construct-role inference cannot be established exactly,
+the criterion/hybrid branch fails closed while independent model diagnostics
+remain available.
+
 Posterior peakiness uses the *acoustic* phone inventory, including special
 morae N/cl. That inventory is intentionally broader than the ordinary clarity
 competitor set.
@@ -41,6 +48,7 @@ from jp_speech_eval.japanese_phone_inventory import (  # noqa: E402
     acoustic_phone_token_ids,
     inventory_semantics,
 )
+from jp_speech_eval.japanese_phone_roles import infer_phone_construct_roles  # noqa: E402
 from jp_speech_eval.japanese_target_evidence import build_japanese_target_evidence  # noqa: E402
 from jp_speech_eval.phone_criterion_features import (  # noqa: E402
     SCHEMA as CRITERION_SCHEMA,
@@ -118,6 +126,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
     target = build_japanese_target_evidence(text)
     frame = backend.evaluate_frame_local(speech, target.phones, sr=16000)
     sf = backend.evaluate_segmentation_free(speech, target.phones, sr=16000)
+    role_result = infer_phone_construct_roles(target.reading_kana, sf.canonical_phones)
 
     norm_payload: dict
     criterion_payload: dict
@@ -129,17 +138,29 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
         )
         norm = compute_segmentation_free_norm_features(
             logical_logits,
-            target.phones,
+            sf.canonical_phones,
             vocab=logical_vocab,
             blank_id=blank_id,
             model_id=backend.model_id,
             revision=backend.revision,
         )
-        criterion = build_phone_criterion_feature_bundle(sf, norm)
-        hybrid = build_hybrid_phone_criterion_bundle(frame, criterion)
         norm_payload = norm.to_dict()
-        criterion_payload = criterion.to_dict()
-        hybrid_payload = hybrid.to_dict()
+
+        if role_result.available:
+            criterion = build_phone_criterion_feature_bundle(
+                sf,
+                norm,
+                construct_roles=role_result.roles,
+            )
+            hybrid = build_hybrid_phone_criterion_bundle(frame, criterion)
+            criterion_payload = criterion.to_dict()
+            hybrid_payload = hybrid.to_dict()
+        else:
+            role_reason = str(role_result.summary.get("reason") or "unknown")
+            reason = f"target_construct_role_inference_failed:{role_reason}"
+            criterion_payload = _unavailable_bundle(reason, backend)
+            hybrid_payload = _unavailable_hybrid(reason, backend)
+
         phone_ids = acoustic_phone_token_ids(logical_vocab, blank_id=blank_id)
         posterior_payload = compute_ctc_posterior_diagnostics(
             logical_logits,
@@ -157,7 +178,7 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
             "model_id": backend.model_id,
             "revision": backend.revision,
             "method": NORM_METHOD,
-            "canonical_phones": list(target.phones),
+            "canonical_phones": list(sf.canonical_phones),
             "evidence": [],
             "summary": {"reason": reason, "detail": str(exc)},
             "warnings": ["norm_or_diagnostic_extraction_failed"],
@@ -170,7 +191,9 @@ def _evaluate(backend: DualCtcPhoneCandidateBackend, speech: np.ndarray, text: s
 
     return {
         "text": text,
-        "phones": target.phones,
+        "phones": list(sf.canonical_phones),
+        "target_evidence": target.to_dict(),
+        "target_construct_roles": role_result.to_dict(),
         "frame_local": frame.to_dict(),
         "segmentation_free": sf.to_dict(),
         "segmentation_free_norm": norm_payload,
@@ -204,7 +227,7 @@ def main() -> None:
     correct_lp = correct["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     wrong_lp = wrong["segmentation_free"]["summary"].get("canonical_ctc_log_posterior")
     payload = {
-        "schema": "dual_ctc_candidate_preflight_v8",
+        "schema": "dual_ctc_candidate_preflight_v9",
         "model_id": args.model,
         "revision": args.revision,
         "audio": str(BUNDLED_AUDIO.relative_to(ROOT)),
@@ -217,6 +240,8 @@ def main() -> None:
         "occ_i_is_physical_phone_duration": False,
         "ctc_peakiness_is_pronunciation_score": False,
         "ctc_peakiness_phone_inventory_includes_special_morae": True,
+        "construct_roles_inferred_before_criterion_assembly": True,
+        "long_vowel_extension_is_ordinary_segmental_clarity": False,
         "cross_model_raw_feature_averaging_allowed": False,
         "normalized_sd_method": NORM_METHOD,
         "criterion_schema": CRITERION_SCHEMA,
@@ -242,6 +267,9 @@ def main() -> None:
     print(f"correct-minus-wrong sequence log posterior: {payload['sequence_logposterior_gap_correct_minus_wrong']}")
     norm_summary = correct["segmentation_free_norm"].get("summary", {})
     posterior = correct["ctc_posterior_diagnostics"]
+    roles = correct["target_construct_roles"]
+    print("correct construct roles available:", roles.get("available"))
+    print("correct long-vowel timing phones:", roles.get("summary", {}).get("long_vowel_timing_phone_count"))
     print("correct Occ(i) range:", norm_summary.get("occ_i_min"), norm_summary.get("occ_i_max"))
     print("criterion bundle available:", correct["criterion_feature_bundle"].get("available"))
     print("hybrid criterion bundle available:", correct["hybrid_criterion_feature_bundle"].get("available"))
