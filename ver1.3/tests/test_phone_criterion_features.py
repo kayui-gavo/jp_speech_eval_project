@@ -56,6 +56,17 @@ class PhoneCriterionFeaturesTest(unittest.TestCase):
         self.assertFalse(bundle.summary["cross_model_raw_averaging_allowed"])
         self.assertTrue(bundle.summary["requires_labeled_phone_or_human_criterion"])
         self.assertFalse(bundle.summary["product_score_changed"])
+        self.assertTrue(bundle.summary["row_field_canonical_log_posterior_is_utterance_sequence_level"])
+        self.assertFalse(bundle.summary["row_field_canonical_log_posterior_is_phone_local"])
+        self.assertTrue(bundle.summary["row_field_canonical_log_posterior_repeated_across_phone_rows"])
+        self.assertAlmostEqual(
+            bundle.rows[0].canonical_log_posterior,
+            bundle.rows[1].canonical_log_posterior,
+        )
+        self.assertAlmostEqual(
+            bundle.summary["utterance_canonical_sequence_log_posterior"],
+            bundle.rows[0].canonical_log_posterior,
+        )
 
     def test_model_revision_mismatch_is_not_silently_joined(self) -> None:
         enumerated, normalized = self._results()
