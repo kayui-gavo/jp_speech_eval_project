@@ -455,6 +455,15 @@ def evaluate_utterance(
     tone_score, tone_fb, tone_details = score_tone_simple(f0_mora, y_speech, pause_info, config=config)
     timing["scoring"] = time.perf_counter() - ts
 
+    # Freeze scorer outputs before reliability-driven caps. This is audit-only
+    # telemetry: the learner-facing score path below is intentionally unchanged.
+    pre_reliability_cap_scores = {
+        "pronunciation": int(pronunciation_score),
+        "prosody": int(prosody_score),
+        "fluency": int(fluency_score),
+        "tone": int(tone_score),
+    }
+
     reliability = _build_reliability(
         endpointing=endpointing,
         alignment_mode=alignment_mode,
@@ -467,19 +476,22 @@ def evaluate_utterance(
     )
 
     score_adjustments: List[str] = []
-    if alignment_mode.endswith("fallback_equal"):
+    alignment_cap_triggered = alignment_mode.endswith("fallback_equal")
+    if alignment_cap_triggered:
         pronunciation_score = min(pronunciation_score, 80)
         score_adjustments.append(
             "mora 边界回退到等分切分，细节发音判断已降级。"
         )
     judgement_count = int(mora_evidence_summary.get("judgement_available_count", 0) or 0)
     judgement_needed = max(3, int(len(text_info.moras) * 0.55))
-    if judgement_count < judgement_needed:
+    mora_evidence_cap_triggered = judgement_count < judgement_needed
+    if mora_evidence_cap_triggered:
         pronunciation_score = min(pronunciation_score, 60)
         score_adjustments.append(
             "可判定的 mora 证据不足，发音代理分已封顶。"
         )
-    if float(reliability.get("f0_coverage", 0.0) or 0.0) < 0.50:
+    f0_cap_triggered = float(reliability.get("f0_coverage", 0.0) or 0.0) < 0.50
+    if f0_cap_triggered:
         prosody_score = min(prosody_score, 55)
         score_adjustments.append(
             "F0 覆盖不足 50%，韵律分已封顶。"
@@ -495,6 +507,15 @@ def evaluate_utterance(
     aggregate_denominator = sum(max(0.0, value) for value in aggregate_weights.values())
     if aggregate_denominator <= 0:
         raise ValueError("aggregate score weights must sum to a positive value")
+    pre_component_cap_total = round(
+        (
+            aggregate_weights["pronunciation"] * pre_reliability_cap_scores["pronunciation"]
+            + aggregate_weights["prosody"] * pre_reliability_cap_scores["prosody"]
+            + aggregate_weights["fluency"] * pre_reliability_cap_scores["fluency"]
+            + aggregate_weights["tone"] * pre_reliability_cap_scores["tone"]
+        )
+        / aggregate_denominator
+    )
     total_score = round(
         (
             aggregate_weights["pronunciation"] * pronunciation_score
@@ -504,11 +525,43 @@ def evaluate_utterance(
         )
         / aggregate_denominator
     )
-    if float(reliability.get("overall", 0.0) or 0.0) < 0.75:
+    total_before_overall_reliability_cap = int(total_score)
+    overall_reliability_cap_triggered = float(reliability.get("overall", 0.0) or 0.0) < 0.75
+    if overall_reliability_cap_triggered:
         total_score = min(total_score, 82)
         score_adjustments.append(
             "整体可靠性不足，本次综合分仅作练习参考。"
         )
+    reliability_cap_audit = {
+        "schema_version": "reliability_cap_audit_v1",
+        "pre_cap_scores": dict(pre_reliability_cap_scores),
+        "post_component_cap_scores": {
+            "pronunciation": int(pronunciation_score),
+            "prosody": int(prosody_score),
+            "fluency": int(fluency_score),
+            "tone": int(tone_score),
+        },
+        "cap_triggers": {
+            "alignment_equal_fallback": bool(alignment_cap_triggered),
+            "mora_evidence_below_threshold": bool(mora_evidence_cap_triggered),
+            "f0_coverage_below_0_50": bool(f0_cap_triggered),
+            "overall_reliability_below_0_75": bool(overall_reliability_cap_triggered),
+        },
+        "cap_values": {
+            "alignment_pronunciation": 80,
+            "mora_evidence_pronunciation": 60,
+            "f0_coverage_prosody": 55,
+            "overall_total": 82,
+        },
+        "aggregate_weights": dict(aggregate_weights),
+        "pre_component_cap_total": int(pre_component_cap_total),
+        "post_component_cap_total": int(total_before_overall_reliability_cap),
+        "post_overall_cap_total": int(total_score),
+        "user_facing": False,
+        "product_score_changed": False,
+        "interpretation": "audit_only_pre_post_cap_snapshot_not_a_new_scoring_policy",
+    }
+
     target_local_score_valid = not (
         content_match and content_match.status in {"fail", "uncertain"}
     )
@@ -607,6 +660,7 @@ def evaluate_utterance(
             },
             "target_local_score_valid": target_local_score_valid,
             "reliability": reliability,
+            "reliability_cap_audit": reliability_cap_audit,
             "technical_feedback": {
                 "score_adjustments": score_adjustments,
                 "raw_feedback": technical_feedback,
