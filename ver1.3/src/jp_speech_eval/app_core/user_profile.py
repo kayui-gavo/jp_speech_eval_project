@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-PROFILE_VERSION = "user_voice_profile_mvp_v1"
+PROFILE_VERSION = "user_voice_profile_mvp_v2"
 
 
 def utc_now_iso() -> str:
@@ -22,15 +22,18 @@ class CalibrationSample:
     audio_path: str
     kana: str
     mora_count: int
+    # Legacy evaluator scores are preserved for diagnostics only.
     scores: Dict[str, float]
     features: Dict[str, Optional[float]]
     reliability: Dict[str, Any]
+    consumer_scores: Dict[str, float] = field(default_factory=dict)
+    score_context: Dict[str, Any] = field(default_factory=dict)
     feedback: List[str] = field(default_factory=list)
 
 
 @dataclass
 class UserVoiceProfile:
-    """Lightweight user baseline for product feedback, not a new correctness target."""
+    """Lightweight user baseline for product feedback, not a correctness target."""
 
     user_id: str
     calibration_samples: List[CalibrationSample] = field(default_factory=list)
@@ -40,7 +43,12 @@ class UserVoiceProfile:
     avg_mora_duration_sec: Optional[float] = None
     pause_ratio_avg: Optional[float] = None
     intensity_avg: Optional[float] = None
+    # ``baseline_scores`` keeps the legacy evaluator means for audit/backward
+    # compatibility. Product progress uses consumer_baseline_scores only when
+    # score_context proves that the comparison is valid.
     baseline_scores: Dict[str, float] = field(default_factory=dict)
+    consumer_baseline_scores: Dict[str, float] = field(default_factory=dict)
+    score_context: Dict[str, Any] = field(default_factory=dict)
     common_issues: List[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
@@ -59,6 +67,8 @@ def _sample_from_dict(data: Dict[str, Any]) -> CalibrationSample:
         scores=dict(data.get("scores") or {}),
         features=dict(data.get("features") or {}),
         reliability=dict(data.get("reliability") or {}),
+        consumer_scores=dict(data.get("consumer_scores") or {}),
+        score_context=dict(data.get("score_context") or {}),
         feedback=[str(x) for x in (data.get("feedback") or [])],
     )
 
@@ -75,6 +85,8 @@ def user_profile_from_dict(data: Dict[str, Any]) -> UserVoiceProfile:
         pause_ratio_avg=data.get("pause_ratio_avg"),
         intensity_avg=data.get("intensity_avg"),
         baseline_scores=dict(data.get("baseline_scores") or {}),
+        consumer_baseline_scores=dict(data.get("consumer_baseline_scores") or {}),
+        score_context=dict(data.get("score_context") or {}),
         common_issues=[str(x) for x in (data.get("common_issues") or [])],
         created_at=str(data.get("created_at") or utc_now_iso()),
         updated_at=str(data.get("updated_at") or utc_now_iso()),
