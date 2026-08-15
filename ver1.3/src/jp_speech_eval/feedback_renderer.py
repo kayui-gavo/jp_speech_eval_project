@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Optional
 
+from .consumer_dimension_policy import build_consumer_score_dimensions
 from .reliability_gate import evaluate_reliability_gate
 from .scoring_policy import ScoringPolicy, policy_from_result
 from .special_mora_scorer import (
@@ -68,14 +69,6 @@ def _debug_payload(
     }
 
 
-def _as_score(value: Any, default: float = 0.0) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return default
-    return max(0.0, min(100.0, number))
-
-
 def _mode_notice(policy: ScoringPolicy, gate: Any) -> str:
     if policy.demo_only and "kanade" in policy.mode:
         return user_message("notice.kanade")
@@ -90,54 +83,23 @@ def _policy_message(message_key: str) -> str:
     return user_message(f"score_policy.{message_key}") if message_key else ""
 
 
-def _score_dimension(key: str, label: str, value: Any, *, available: bool, source_field: str) -> Dict[str, Any]:
-    return {
-        "key": key,
-        "label": label,
-        "value": int(round(_as_score(value))) if available and value is not None and value != "" else None,
-        "available": bool(available and value is not None and value != ""),
-        "source_field": source_field,
-    }
+def _score_dimensions(
+    result: Mapping[str, Any],
+    gate: Any,
+    user_score: Mapping[str, Any],
+    *,
+    mode: str,
+) -> List[Dict[str, Any]]:
+    """Expose the same four semantic components used by the product total.
 
-
-def _score_dimensions(result: Mapping[str, Any], gate: Any, user_score: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
-    fluency = details.get("fluency") if isinstance(details.get("fluency"), Mapping) else {}
-    prosody = details.get("prosody") if isinstance(details.get("prosody"), Mapping) else {}
-    rhythm = fluency.get("rhythm_timing_score", result.get("fluency_score"))
-    delivery = fluency.get("delivery_fluency_score", result.get("fluency_score"))
-    pitch_value = prosody.get("pitch_accent_score", result.get("prosody_score"))
-    score_available = bool(user_score.get("score_available")) and gate.practice_check_result != "retry"
-    return [
-        _score_dimension(
-            "pronunciation_clarity",
-            "発音の明瞭さ",
-            user_score.get("pronunciation_clarity_score"),
-            available=score_available and user_score.get("pronunciation_clarity_score") is not None,
-            source_field="pronunciation_clarity_score",
-        ),
-        _score_dimension(
-            "mora_rhythm",
-            "拍のリズム",
-            rhythm,
-            available=score_available,
-            source_field="rhythm_timing_score",
-        ),
-        _score_dimension(
-            "delivery_fluency",
-            "読み方のなめらかさ",
-            delivery,
-            available=score_available,
-            source_field="delivery_fluency_score",
-        ),
-        _score_dimension(
-            "pitch_accent",
-            "高低アクセント",
-            pitch_value,
-            available=score_available and bool(gate.allow_pitch_feedback),
-            source_field="pitch_accent_score",
-        ),
-    ]
+    Lexical pitch accent remains conditional detail feedback. It is not the
+    top-level intonation dimension. If the reliability gate makes the practice
+    result truly unscorable/retry, all four dimensions become unavailable.
+    """
+    surface = dict(user_score)
+    if gate.reliability == "unscorable" or gate.practice_check_result == "retry":
+        surface["display_score"] = None
+    return build_consumer_score_dimensions(result, surface, mode=mode)
 
 
 def _status(policy: ScoringPolicy, gate: Any, focus: Optional[Dict[str, Any]]) -> str:
@@ -318,7 +280,7 @@ def render_user_facing_result(
         confidence_label=str(user_score.get("confidence_label") or gate.reliability),
         score_policy_warnings=list(user_score.get("score_policy_warnings") or []),
         score_caps=dict(user_score.get("score_caps") or {}),
-        score_dimensions=_score_dimensions(result, gate, user_score),
+        score_dimensions=_score_dimensions(result, gate, user_score, mode=policy.mode),
         detail_feedback_allowed=bool(user_score.get("detail_feedback_allowed", True)),
         user_messages=messages[:2],
         focus_feedback=focus,
