@@ -162,7 +162,12 @@ def compare_to_profile(
         if current_pitch_range is not None and profile.f0_range_log is not None:
             personal_delta["f0_range_log_vs_calibration"] = round(current_pitch_range - profile.f0_range_log, 4)
 
-    previous_context = previous_record.get("score_context") if previous_record else None
+    if previous_record is None:
+        previous_context = None
+    else:
+        # An existing record with no score_context is a legacy record, not the
+        # same thing as having no previous record at all.
+        previous_context = previous_record.get("score_context") or {}
     comparability = history_comparability(current_context, previous_context)
     previous_total = _record_score(previous_record, "total") if comparability["comparable"] else None
     previous_rate = _record_feature(previous_record, "mora_rate")
