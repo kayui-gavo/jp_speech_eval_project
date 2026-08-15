@@ -1,0 +1,45 @@
+name: phone-gop-multibackbone-control
+
+on:
+  push:
+    branches:
+      - free-assessment-integration-v1
+  workflow_dispatch:
+
+jobs:
+  controlled-phone-edits:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-multibackbone-control]') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ver1.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ver1.3/requirements.txt
+      - name: Cache pinned Japanese phone-CTC models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: phone-gop-hf-${{ runner.os }}-beatrice-f5fe070-distil-01ffc3e-wavlm-47fa985
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0,<3.0"
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+      - name: Run three-backbone controlled local phone edits
+        run: >-
+          python scripts/run_multibackbone_controlled_phone_edits.py
+          --allow-download
+          --output outputs/multibackbone_controlled_phone_edits.json
+      - name: Upload audit JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multibackbone-controlled-phone-edits
+          path: ver1.3/outputs/multibackbone_controlled_phone_edits.json
+          if-no-files-found: warn
