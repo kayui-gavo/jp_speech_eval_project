@@ -9,7 +9,10 @@ Important boundaries:
 - candidate neighborhoods are Japanese research hypotheses, not learner labels;
 - ``N`` and ``cl`` use canonical-vs-deletion evidence only here;
 - no value is mapped to pronunciation correctness or a learner-facing /100;
-- unrestricted and restricted values are compared, never averaged together.
+- the raw restricted SD-GOP denominator changes with the candidate set, so raw
+  RPS GOP values are *not* directly comparable across phone types or against
+  unrestricted SD-GOP values. RPS/UPS are compared by search-space behavior,
+  target-specific LPRs and criterion performance, never by raw-score deltas.
 """
 
 from __future__ import annotations
@@ -123,10 +126,15 @@ def compute_restricted_fgop_sf_sd_features(
 ) -> RestrictedSegmentationFreeGopResult:
     """Compute exact CTC RPS substitution/deletion features per target phone.
 
-    Unlike the first prototype, this implementation computes the canonical CTC
-    posterior once and evaluates only the alternatives for the current target
-    position. Complexity therefore scales with the actual restricted candidate
-    count instead of repeatedly recomputing every utterance position.
+    The canonical CTC posterior is computed once. Only the alternatives for the
+    current target position are then evaluated, so complexity scales with the
+    actual restricted candidate count.
+
+    ``gop_sf_sd`` is retained as a model feature because a future criterion
+    model may learn from it. It must not be compared directly across rows with
+    different candidate sets: changing the denominator search space changes its
+    numerical scale. Target-specific LPRs have a clearer within-contrast
+    interpretation and are preferred for controlled localization tests.
     """
     raw = np.asarray(logits, dtype=np.float64)
     try:
@@ -279,6 +287,11 @@ def compute_restricted_fgop_sf_sd_features(
             "includes_substitution": True,
             "includes_deletion": True,
             "includes_insertion": False,
+            "phone_dependent_denominator": True,
+            "candidate_count_affects_raw_denominator": True,
+            "cross_phone_raw_gop_comparison_allowed": False,
+            "rps_vs_ups_raw_gop_direct_comparison_allowed": False,
+            "preferred_controlled_diagnostic": "target_specific_substitution_or_deletion_LPR",
             "interpretation": "restricted_alignment_free_research_feature_not_pronunciation_score",
         },
         warnings=sorted(set(warnings)),
@@ -291,7 +304,12 @@ def compare_restricted_vs_unrestricted(
     restricted: RestrictedSegmentationFreeGopResult,
     unrestricted: Any,
 ) -> Dict[str, Any]:
-    """Produce an audit-only RPS-vs-UPS comparison without score fusion."""
+    """Compare RPS/UPS search behavior without subtracting raw GOP scales.
+
+    Because the denominator changes with the candidate set, an RPS-minus-UPS
+    raw GOP delta has no stable pronunciation interpretation. This diagnostic
+    therefore reports candidate reduction and alternative identity only.
+    """
     if not restricted.available or not bool(getattr(unrestricted, "available", False)):
         return {"available": False, "reason": "one_or_both_feature_sets_unavailable"}
     if list(restricted.canonical_phones) != list(unrestricted.canonical_phones):
@@ -307,13 +325,14 @@ def compare_restricted_vs_unrestricted(
                 "canonical_phone": rps.canonical_phone,
                 "rps_candidate_count": rps.candidate_count,
                 "rps_search_policy": rps.search_policy,
-                "rps_gop_sf_sd": rps.gop_sf_sd,
                 "ups_candidate_count": len(ups.substitution_log_posterior_ratios),
-                "ups_gop_sf_sd": float(ups.gop_sf_sd),
-                "rps_minus_ups": float(rps.gop_sf_sd - float(ups.gop_sf_sd)),
+                "rps_best_noncanonical_type": rps.best_noncanonical_type,
                 "rps_best_noncanonical_phone": rps.best_noncanonical_phone,
+                "ups_best_noncanonical_type": ups.best_noncanonical_alternative_type,
                 "ups_best_noncanonical_phone": ups.best_noncanonical_alternative_phone,
+                "same_best_noncanonical_type": rps.best_noncanonical_type == ups.best_noncanonical_alternative_type,
                 "same_best_noncanonical_phone": rps.best_noncanonical_phone == ups.best_noncanonical_alternative_phone,
+                "raw_gop_values_intentionally_omitted": True,
             }
         )
     rps_counts = [row["rps_candidate_count"] for row in rows]
@@ -323,7 +342,9 @@ def compare_restricted_vs_unrestricted(
         "rows": rows,
         "candidate_count_reduction_mean": float(np.mean(ups_counts) - np.mean(rps_counts)),
         "candidate_count_ratio_mean": float(np.mean(rps_counts) / np.mean(ups_counts)) if np.mean(ups_counts) > 0 else None,
-        "interpretation": "RPS_vs_UPS_search_space_diagnostic_not_pronunciation_quality",
+        "phone_dependent_denominator": True,
+        "rps_vs_ups_raw_gop_direct_comparison_allowed": False,
         "raw_values_must_not_be_averaged": True,
+        "interpretation": "RPS_vs_UPS_search_space_diagnostic_not_pronunciation_quality",
         "product_score_changed": False,
     }
