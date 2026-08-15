@@ -81,6 +81,40 @@ class OfficialJvsPhoneCtcAnchorPreflightTest(unittest.TestCase):
         self.assertEqual(_find_subsequence(phones, contaminated), [])
         self.assertEqual(DOWNLOAD.PHONE_PROVENANCE["policy"], "reviewed_logical_phone_override_v1")
 
+    def test_reviewed_segments_flatten_exactly_to_target_phones(self) -> None:
+        flattened = [
+            str(phone)
+            for segment in DOWNLOAD.TARGET_PHONE_SEGMENTS
+            for phone in segment["phones"]
+        ]
+        self.assertEqual(flattened, list(DOWNLOAD.TARGET_PHONES))
+        meiou_segments = [
+            segment for segment in DOWNLOAD.TARGET_PHONE_SEGMENTS
+            if segment["surface"] == "明王"
+        ]
+        self.assertEqual(len(meiou_segments), 2)
+        self.assertEqual(
+            [tuple(segment["phones"]) for segment in meiou_segments],
+            [("my", "o", "o", "o", "o"), ("my", "o", "o", "o", "o")],
+        )
+
+    def test_reviewed_phone_index_metadata_is_contiguous_and_segment_traceable(self) -> None:
+        metadata = list(DOWNLOAD.TARGET_PHONE_INDEX_METADATA)
+        phones = list(DOWNLOAD.TARGET_PHONES)
+        self.assertEqual(len(metadata), len(phones))
+        self.assertEqual([int(row["phone_index"]) for row in metadata], list(range(len(phones))))
+        self.assertEqual([str(row["phone"]) for row in metadata], phones)
+        meiou_rows = [row for row in metadata if row["segment_surface"] == "明王"]
+        self.assertEqual(len(meiou_rows), 10)
+        self.assertEqual(
+            [str(row["phone"]) for row in meiou_rows[:5]],
+            ["my", "o", "o", "o", "o"],
+        )
+        self.assertEqual(
+            [str(row["phone"]) for row in meiou_rows[5:]],
+            ["my", "o", "o", "o", "o"],
+        )
+
     def test_manifest_v5_requires_same_reviewed_phone_target_for_all_speakers(self) -> None:
         rows = []
         for speaker in ("jvs001", "jvs002", "jvs003"):
