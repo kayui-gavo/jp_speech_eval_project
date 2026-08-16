@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f5f0e8">
+  <title>日本語スピーキング｜Karaoke Practice</title>
+  <style>
+    :root{
+      --ivory:#f5f0e8;--ivory2:#fbf8f2;--paper:#fffdf9;--ink:#2c292c;--navy:#1c2a45;
+      --rose:#9a5c6c;--rose2:#7f4857;--rose-soft:#efe2e5;--gold:#b18e58;--gold-soft:#e5d5b8;
+      --muted:#716a64;--muted2:#958b82;--line:rgba(28,42,69,.11);--line2:rgba(28,42,69,.18);
+      --good:#54796b;--warn:#9c733b;--bad:#9b525a;
+      --serif:"Iowan Old Style","Baskerville","Times New Roman","Hiragino Mincho ProN","Yu Mincho","Songti SC",serif;
+      --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP","Noto Sans","PingFang SC","Hiragino Sans","Yu Gothic",sans-serif;
+      --ease:cubic-bezier(.2,.8,.2,1)
+    }
+    *{box-sizing:border-box}html{background:var(--ivory2);scroll-behavior:smooth}body{margin:0;color:var(--ink);font-family:var(--sans);background:var(--ivory2);-webkit-font-smoothing:antialiased}button,input{font:inherit}button{color:inherit}button:focus-visible,input:focus-visible{outline:2px solid rgba(154,92,108,.5);outline-offset:3px}
+    .page{min-height:100svh;background:radial-gradient(44rem 28rem at 100% 0%,rgba(154,92,108,.06),transparent 70%),radial-gradient(36rem 28rem at -8% 100%,rgba(177,142,88,.06),transparent 75%),var(--ivory2)}
+    header{position:sticky;top:0;z-index:20;height:58px;border-bottom:1px solid rgba(28,42,69,.06);background:rgba(251,248,242,.92);backdrop-filter:blur(18px)}.nav{height:100%;width:min(1180px,calc(100% - 48px));margin:auto;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{font-family:var(--serif);font-size:19px;color:var(--navy);letter-spacing:-.01em}.brand small{margin-left:10px;font:11px var(--sans);letter-spacing:.05em;color:var(--muted2)}.nav-note{font-size:11px;color:var(--muted2)}
+    main{width:min(1180px,calc(100% - 48px));margin:auto;padding:38px 0 70px}.layout{display:grid;grid-template-columns:minmax(250px,.58fr) minmax(0,1.42fr);gap:56px;align-items:start}.intro{position:sticky;top:94px;padding-top:7px}.kicker{margin:0 0 11px;font:11px var(--serif);letter-spacing:.1em;color:var(--rose2)}h1{margin:0;font:400 clamp(44px,5vw,67px)/1.02 var(--serif);letter-spacing:-.04em;color:var(--navy)}h1 em{display:block;font-style:normal;color:var(--rose);margin-top:5px}.lead{max-width:430px;margin:20px 0 0;font-size:14px;line-height:1.9;color:#57514d}.principle{margin-top:25px;padding-top:15px;border-top:1px solid var(--line2);font-size:11.5px;line-height:1.75;color:var(--muted)}
+    .modes{margin-top:30px;border-top:1px solid var(--line)}.mode{position:relative;width:100%;padding:16px 0 16px 17px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer;opacity:.55;transition:.22s ease}.mode:before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:2px;background:transparent}.mode.on{opacity:1}.mode.on:before{background:var(--rose)}.mode b{display:block;font:400 18px var(--serif);color:var(--navy)}.mode span{display:block;margin-top:5px;font-size:11.5px;color:var(--muted)}
+    .stage{overflow:hidden;border:1px solid var(--line2);border-radius:20px;background:rgba(255,253,249,.94);box-shadow:0 28px 70px rgba(28,42,69,.08)}.stage-top{display:flex;justify-content:space-between;gap:16px;padding:15px 22px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted2)}.stage-top strong{font:400 12px var(--serif);color:var(--navy)}.practice{padding:clamp(28px,4vw,46px)}.label{font:11px var(--serif);letter-spacing:.09em;color:var(--rose2)}
+    .target{margin:11px 0 0;font:400 clamp(34px,4.4vw,57px)/1.2 var(--serif);letter-spacing:-.028em;color:var(--navy)}.kana{margin-top:9px;font-size:12px;color:var(--muted);letter-spacing:.04em}.free-prompt{display:none}.free-prompt.show{display:block}.fixed-prompt.hide{display:none}.prompt-question{margin:11px 0 0;font:400 clamp(26px,3.2vw,38px)/1.38 var(--serif);color:var(--navy)}.prompt-help{margin:10px 0 0;color:var(--muted);font-size:12.5px;line-height:1.7}.topic-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.topic-chips span{padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:#665e58;background:rgba(245,240,232,.45)}
+    .reference{display:grid;grid-template-columns:90px 1fr;gap:16px;align-items:center;margin-top:20px}.reference span{font:12px var(--serif);color:#735e45}.reference audio{width:100%;height:36px}.reference.hide{display:none}
+    .record-zone{position:relative;margin-top:34px;padding-top:30px;border-top:1px solid var(--line2)}.record-zone:before{content:"";position:absolute;top:-1px;left:0;width:56px;height:1px;background:var(--gold)}.record-head{display:flex;align-items:end;justify-content:space-between;gap:16px}.record-head h2{margin:0;font:400 20px var(--serif);color:var(--navy)}.record-head p{margin:4px 0 0;font-size:11.5px;color:var(--muted)}
+    .record-controls{display:flex;align-items:center;gap:14px;margin-top:20px;flex-wrap:wrap}.record-btn{position:relative;width:72px;height:72px;border-radius:50%;border:1px solid var(--navy);background:var(--navy);color:#fff;cursor:pointer;transition:.22s var(--ease);box-shadow:0 8px 22px rgba(28,42,69,.15)}.record-btn:hover{transform:translateY(-2px);background:var(--rose2);border-color:var(--rose2)}.record-btn:after{content:"";position:absolute;inset:24px;border-radius:50%;background:currentColor}.record-btn.recording{background:var(--rose2);border-color:var(--rose2);animation:pulse 1.45s infinite}.record-btn.recording:after{inset:25px;border-radius:3px}@keyframes pulse{50%{box-shadow:0 0 0 10px rgba(154,92,108,.09)}}.record-copy strong{display:block;font:400 16px var(--serif);color:var(--navy)}.record-copy span{display:block;margin-top:4px;font-size:11px;color:var(--muted)}.upload{margin-left:auto}.upload input{display:none}.ghost{min-height:40px;padding:0 13px;border:1px solid var(--line2);background:transparent;cursor:pointer;font-size:11.5px;color:#615a55}.ghost:hover{border-color:var(--gold);color:var(--navy)}.meter{height:3px;margin-top:18px;background:rgba(28,42,69,.07);overflow:hidden}.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--rose),var(--gold));transition:width 70ms}.status{min-height:22px;margin-top:9px;font-size:11.5px;color:var(--muted)}
+    .results{display:none;margin-top:48px;padding-top:42px;border-top:1px solid var(--line2)}.results.show{display:block}.result-head{display:grid;grid-template-columns:185px 1fr;gap:36px;align-items:center}.score{padding-right:28px;border-right:1px solid var(--line2)}.score strong{display:block;font:400 86px/.85 var(--serif);letter-spacing:-.06em;color:var(--navy)}.score span{display:block;margin-top:12px;font:11px var(--serif);letter-spacing:.08em;color:var(--rose)}.score small{display:block;margin-top:8px;font-size:10.5px;color:var(--muted)}.result-copy h2{margin:0;font:400 clamp(25px,3vw,35px)/1.3 var(--serif);color:var(--navy)}.result-copy p{margin:9px 0 0;font-size:12.5px;line-height:1.75;color:var(--muted)}
+    .karaoke{margin-top:34px;padding:26px 0 4px;border-top:1px solid var(--line2)}.karaoke-head{display:flex;align-items:start;justify-content:space-between;gap:16px}.karaoke-head h3{margin:0;font:400 21px var(--serif);color:var(--navy)}.karaoke-head p{margin:5px 0 0;font-size:11px;color:var(--muted)}.sync-badge{flex:0 0 auto;padding:5px 8px;border:1px solid var(--line);border-radius:999px;font-size:10px;color:var(--muted);background:rgba(245,240,232,.52)}
+    .lyrics{min-height:108px;margin-top:21px;padding:21px 20px;border:1px solid var(--line);background:rgba(245,240,232,.36);font:400 clamp(24px,3.5vw,38px)/1.65 var(--serif);letter-spacing:.01em;color:rgba(28,42,69,.35);word-break:normal}.lyric-word{appearance:none;border:0;padding:2px 3px;margin:0;background:transparent;color:inherit;font:inherit;cursor:pointer;border-radius:5px;transition:color .12s ease,background .12s ease,transform .12s ease}.lyric-word.past{color:rgba(28,42,69,.68)}.lyric-word.active{color:var(--navy);background:var(--rose-soft);transform:translateY(-1px)}.lyric-word.low-asr{ text-decoration:underline dotted rgba(177,142,88,.6);text-underline-offset:5px }.lyrics.static{color:var(--navy)}
+    .visual{position:relative;height:148px;margin-top:14px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,253,249,.7),rgba(245,240,232,.35));overflow:hidden}.visual canvas{display:block;width:100%;height:100%}.visual-empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:20px;text-align:center;font-size:11px;color:var(--muted)}.visual-empty.show{display:flex}
+    .player{display:grid;grid-template-columns:44px 1fr 76px;gap:12px;align-items:center;margin-top:13px}.play{width:44px;height:38px;border:1px solid var(--navy);background:var(--navy);color:#fff;cursor:pointer}.play:before{content:"▶"}.play.playing:before{content:"Ⅱ"}.scrub{width:100%;accent-color:var(--rose)}.time{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);text-align:right}.layers{display:flex;gap:16px;margin-top:9px;font-size:10.5px;color:var(--muted)}.layers label{display:flex;align-items:center;gap:6px;cursor:pointer}.layers input{accent-color:var(--rose)}
+    .dimensions{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:33px}.dim{min-width:0;padding:16px 15px;border:1px solid var(--line);background:rgba(255,253,249,.55)}.dim-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.dim h4{margin:0;font:400 14px var(--serif);color:var(--navy)}.dim .num{margin-top:8px;font:400 34px/1 var(--serif);color:var(--navy)}.dim .bar{height:3px;margin-top:12px;background:rgba(28,42,69,.07)}.dim .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--rose),var(--gold-soft))}.dim .meta{margin-top:9px;font-size:10px;line-height:1.5;color:var(--muted)}.evidence{padding:3px 6px;border-radius:999px;font-size:9px;white-space:nowrap;border:1px solid var(--line);color:var(--muted)}.evidence.measured{color:var(--good);border-color:rgba(84,121,107,.28);background:rgba(84,121,107,.05)}.evidence.broad{color:var(--warn);border-color:rgba(156,115,59,.28);background:rgba(156,115,59,.05)}.evidence.neutral{color:var(--rose2);border-color:rgba(154,92,108,.24);background:rgba(154,92,108,.05)}
+    .focus{display:none;grid-template-columns:140px 1fr;gap:28px;margin-top:34px;padding:26px 0;border-top:1px solid var(--line2);border-bottom:1px solid var(--line2)}.focus.show{display:grid}.focus h3{margin:0;font:400 18px var(--serif);color:var(--navy)}.focus p{margin:0;font-size:13px;line-height:1.8;color:#554f4b}.focus p:before{content:"";display:inline-block;width:18px;height:1px;margin:0 10px 4px 0;background:var(--gold)}
+    details{margin-top:26px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}summary{cursor:pointer;list-style:none;padding:15px 0;font:400 13px var(--serif);color:#625a54}summary::-webkit-details-marker{display:none}.details-body{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;padding-bottom:20px;background:var(--line)}.fact{padding:14px;background:var(--paper)}.fact span{display:block;font-size:9px;letter-spacing:.06em;color:var(--muted2)}.fact strong{display:block;margin-top:5px;font:400 13px var(--serif);color:var(--navy);word-break:break-word}
+    .error{display:none;margin-top:20px;padding:14px 15px;border:1px solid rgba(155,82,90,.25);background:rgba(155,82,90,.05);font-size:12px;color:var(--bad)}.error.show{display:block}
+    @media(max-width:900px){.layout{grid-template-columns:1fr;gap:28px}.intro{position:static}.intro h1{font-size:46px}.principle{display:none}.modes{display:grid;grid-template-columns:1fr 1fr}.mode{border-top:0}.mode+ .mode{border-left:1px solid var(--line)}.stage{border-radius:16px}.result-head{grid-template-columns:145px 1fr}.score strong{font-size:68px}.dimensions{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.nav{width:calc(100% - 28px)}.brand small,.nav-note{display:none}main{width:calc(100% - 24px);padding-top:22px}.intro{padding:0 8px}.intro h1{font-size:38px}.lead{font-size:13px}.practice{padding:25px 18px}.stage-top{padding:13px 17px}.target{font-size:34px}.prompt-question{font-size:25px}.record-head{display:block}.upload{margin-left:0}.results{margin-top:38px;padding-top:32px}.result-head{grid-template-columns:1fr;gap:20px}.score{border-right:0;border-bottom:1px solid var(--line2);padding:0 0 18px}.score strong{font-size:74px}.lyrics{padding:17px 14px;font-size:25px;min-height:98px}.visual{height:128px}.player{grid-template-columns:42px 1fr 63px}.dimensions{gap:7px}.dim{padding:13px 11px}.dim .num{font-size:30px}.dim-top{display:block}.evidence{display:inline-block;margin-top:5px}.focus{grid-template-columns:1fr;gap:10px}.details-body{grid-template-columns:1fr}.reference{grid-template-columns:72px 1fr}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+  </style>
+</head>
+<body>
+<div class="page">
+  <header><div class="nav"><div class="brand">日本語スピーキング<small>Speech Lab</small></div><div class="nav-note">話す → 見える → もう一度</div></div></header>
+  <main>
+    <div class="layout">
+      <section class="intro">
+        <p class="kicker">SPEAKING PRACTICE</p>
+        <h1>声を、<em>見ながら整える。</em></h1>
+        <p class="lead">録音した日本語をその場で聞き返しながら、字幕・間・声の上がり下がりを一つの時間軸で確認します。数字だけではなく、「次にどう話すか」が見える練習画面です。</p>
+        <p class="principle">字幕のタイミングは ASR の実時間情報があるときだけ同期します。声の線は抑揚の可視化であり、単語ごとの発音正誤やアクセント核の判定ではありません。</p>
+        <div class="modes">
+          <button class="mode on" id="fixedMode" type="button"><b>お手本練習</b><span>決まった一文を丁寧に</span></button>
+          <button class="mode" id="freeMode" type="button"><b>自由に話す</b><span>自然な日本語をそのまま</span></button>
+        </div>
+      </section>
+
+      <section class="stage">
+        <div class="stage-top"><strong id="stageTitle">お手本練習</strong><span id="serverLabel">Speech evaluation</span></div>
+        <div class="practice">
+          <div class="fixed-prompt" id="fixedPrompt">
+            <div class="label">TODAY'S LINE</div>
+            <div class="target" id="target">読み込み中…</div>
+            <div class="kana" id="kana"></div>
+          </div>
+          <div class="free-prompt" id="freePrompt">
+            <div class="label">FREE TALK</div>
+            <div class="prompt-question">今日あったことを、日本語で少し話してみましょう。</div>
+            <p class="prompt-help">短くても大丈夫です。言い直しや自然な「えーと」も、そのまま話してください。</p>
+            <div class="topic-chips"><span>今日の予定</span><span>最近食べたもの</span><span>今の気分</span></div>
+          </div>
+          <div class="reference" id="referenceWrap"><span>お手本</span><audio id="referenceAudio" controls preload="none"></audio></div>
+
+          <div class="record-zone">
+            <div class="record-head"><div><h2>あなたの声</h2><p>録音後、自動で評価して可視化します。</p></div></div>
+            <div class="record-controls">
+              <button class="record-btn" id="recordBtn" type="button" aria-label="録音を開始"></button>
+              <div class="record-copy"><strong id="recordTitle">タップして録音</strong><span id="recordHint">もう一度押すと停止します</span></div>
+              <input id="upload" type="file" accept="audio/*" hidden>
+              <div class="upload"><button class="ghost" id="uploadProxy" type="button">音声ファイルを選ぶ</button></div>
+            </div>
+            <div class="meter"><i id="meterBar"></i></div>
+            <div class="status" id="status">準備できています。</div>
+            <audio id="userAudio" preload="metadata"></audio>
+            <div class="error" id="errorBox"></div>
+          </div>
+
+          <section class="results" id="results">
+            <div class="result-head">
+              <div class="score"><strong id="scoreValue">—</strong><span>今回の練習スコア</span><small id="confidenceText">—</small></div>
+              <div class="result-copy"><div class="label">RESULT</div><h2 id="summary">今回の話し方を確認しました。</h2><p id="modeNotice"></p></div>
+            </div>
+
+            <section class="karaoke">
+              <div class="karaoke-head"><div><h3>あなたの話し方</h3><p id="syncNote">録音を再生すると、時間に合わせて表示します。</p></div><span class="sync-badge" id="syncBadge">待機中</span></div>
+              <div class="lyrics" id="lyrics">ここに、あなたが話した内容が表示されます。</div>
+              <div class="visual"><canvas id="timelineCanvas"></canvas><div class="visual-empty" id="visualEmpty">声の動きを表示できる十分な F0 情報がありません。これは低い抑揚スコアを意味しません。</div></div>
+              <div class="player"><button class="play" id="playBtn" type="button" aria-label="再生・一時停止"></button><input class="scrub" id="scrub" type="range" min="0" max="1" step="0.01" value="0" aria-label="再生位置"><span class="time" id="timeText">0:00 / 0:00</span></div>
+              <div class="layers"><label><input id="pitchLayer" type="checkbox" checked><span id="pitchLayerLabel">声の動き</span></label><label><input id="pauseLayer" type="checkbox" checked>間</label></div>
+            </section>
+
+            <div class="dimensions" id="dimensions"></div>
+            <div class="focus" id="focus"><h3>今回の一つ</h3><p id="focusText"></p></div>
+
+            <details>
+              <summary>この結果の見方</summary>
+              <div class="details-body">
+                <div class="fact"><span>字幕同期</span><strong id="factSync">—</strong></div>
+                <div class="fact"><span>録音の解析しやすさ</span><strong id="factRecording">—</strong></div>
+                <div class="fact"><span>評価モード</span><strong id="factMode">—</strong></div>
+              </div>
+            </details>
+          </section>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let mode = 'reference';
+  let mediaStream = null, audioContext = null, sourceNode = null, processor = null;
+  let recording = false, chunks = [], inputRate = 48000, lastBlob = null, lastPayload = null;
+  let raf = 0, meterRaf = 0, analyser = null;
+
+  const evidenceMeta = state => {
+    if(state === 'measured_proxy') return ['音声から確認','measured'];
+    if(state === 'broad_proxy') return ['大まかな目安','broad'];
+    if(state === 'neutral_prior') return ['参考値','neutral'];
+    return ['未測定',''];
+  };
+  const confidenceJa = value => ({high:'信頼度 高',medium:'信頼度 中',low:'信頼度 低',unavailable:'証拠不足'}[value] || '信頼度 参考');
+  const fmtTime = sec => { sec=Math.max(0,Number(sec)||0); const m=Math.floor(sec/60),s=Math.floor(sec%60); return `${m}:${String(s).padStart(2,'0')}` };
+
+  async function loadConfig(){
+    try{
+      const r=await fetch('/api/config'); const c=await r.json();
+      $('target').textContent=c.target_text||c.reference?.target_text||'—';
+      $('kana').textContent=c.kana||c.reference?.kana||'';
+      $('referenceAudio').src=c.reference_audio_url||'/api/reference.wav';
+      $('serverLabel').textContent=c.server_label||'Speech evaluation';
+    }catch(e){ showError('設定を読み込めませんでした。サーバーを確認してください。'); }
+  }
+
+  function setMode(next){
+    mode=next;
+    const free=mode==='transcript_assisted_light';
+    $('fixedMode').classList.toggle('on',!free); $('freeMode').classList.toggle('on',free);
+    $('fixedPrompt').classList.toggle('hide',free); $('freePrompt').classList.toggle('show',free);
+    $('referenceWrap').classList.toggle('hide',free); $('stageTitle').textContent=free?'自由に話す':'お手本練習';
+    $('results').classList.remove('show'); $('status').textContent='準備できています。';
+  }
+
+  function showError(message){ $('errorBox').textContent=message; $('errorBox').classList.add('show'); $('status').textContent='評価できませんでした。'; }
+  function clearError(){ $('errorBox').classList.remove('show'); $('errorBox').textContent=''; }
+
+  function mergeBuffers(buffers){ const length=buffers.reduce((n,b)=>n+b.length,0); const out=new Float32Array(length); let o=0; for(const b of buffers){out.set(b,o);o+=b.length} return out; }
+  function downsample(buffer, fromRate, toRate){
+    if(toRate>=fromRate) return buffer;
+    const ratio=fromRate/toRate, length=Math.round(buffer.length/ratio), out=new Float32Array(length);
+    let offset=0;
+    for(let i=0;i<length;i++){
+      const next=Math.round((i+1)*ratio); let sum=0,count=0;
+      for(let j=offset;j<next&&j<buffer.length;j++){sum+=buffer[j];count++}
+      out[i]=count?sum/count:0; offset=next;
+    }
+    return out;
+  }
+  function wavBlob(samples, sampleRate=16000){
+    const buf=new ArrayBuffer(44+samples.length*2), view=new DataView(buf);
+    const str=(o,s)=>{for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i))};
+    str(0,'RIFF');view.setUint32(4,36+samples.length*2,true);str(8,'WAVE');str(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);str(36,'data');view.setUint32(40,samples.length*2,true);
+    let o=44;for(let i=0;i<samples.length;i++,o+=2){const s=Math.max(-1,Math.min(1,samples[i]));view.setInt16(o,s<0?s*0x8000:s*0x7fff,true)}
+    return new Blob([view],{type:'audio/wav'});
+  }
+
+  async function startRecording(){
+    clearError();
+    try{
+      mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      audioContext=new (window.AudioContext||window.webkitAudioContext)(); inputRate=audioContext.sampleRate;
+      sourceNode=audioContext.createMediaStreamSource(mediaStream); analyser=audioContext.createAnalyser(); analyser.fftSize=512;
+      processor=audioContext.createScriptProcessor(4096,1,1); chunks=[];
+      processor.onaudioprocess=e=>{if(recording)chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))};
+      sourceNode.connect(analyser);sourceNode.connect(processor);processor.connect(audioContext.destination);
+      recording=true;$('recordBtn').classList.add('recording');$('recordTitle').textContent='録音中';$('recordHint').textContent='もう一度押して停止';$('status').textContent='自然に話してください。';
+      updateMeter();
+    }catch(e){showError('マイクを使用できません。ブラウザのマイク権限を確認してください。')}
+  }
+  async function stopRecording(){
+    if(!recording)return;recording=false;cancelAnimationFrame(meterRaf);$('meterBar').style.width='0';
+    $('recordBtn').classList.remove('recording');$('recordTitle').textContent='評価しています…';$('recordHint').textContent='音声を解析しています';
+    try{processor&&processor.disconnect();sourceNode&&sourceNode.disconnect();mediaStream&&mediaStream.getTracks().forEach(t=>t.stop())}catch(e){}
+    const merged=mergeBuffers(chunks), ds=downsample(merged,inputRate,16000);lastBlob=wavBlob(ds,16000);setUserAudio(lastBlob);
+    if(audioContext){try{await audioContext.close()}catch(e){}} audioContext=null;
+    await evaluate(lastBlob);
+  }
+  function updateMeter(){
+    if(!recording||!analyser)return;const a=new Uint8Array(analyser.fftSize);analyser.getByteTimeDomainData(a);let sum=0;for(const v of a){const x=(v-128)/128;sum+=x*x}const rms=Math.sqrt(sum/a.length);$('meterBar').style.width=`${Math.min(100,rms*450)}%`;meterRaf=requestAnimationFrame(updateMeter);
+  }
+
+  function setUserAudio(blob){
+    if($('userAudio').src)URL.revokeObjectURL($('userAudio').src);$('userAudio').src=URL.createObjectURL(blob);$('userAudio').load();
+    $('userAudio').onloadedmetadata=()=>{const d=$('userAudio').duration||0;$('scrub').max=d||1;updatePlayer()};
+  }
+
+  async function evaluate(blob){
+    clearError();$('status').textContent='音声を分析しています…';$('results').classList.remove('show');
+    const fd=new FormData();fd.append('audio',blob,'practice.wav');fd.append('mode',mode);
+    try{
+      const r=await fetch('/api/evaluate',{method:'POST',body:fd});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||'evaluation_failed');
+      lastPayload=p;renderResult(p);$('status').textContent='評価できました。再生しながら確認してみましょう。';
+    }catch(e){showError(`評価に失敗しました：${e.message||e}`)}
+    finally{$('recordTitle').textContent='タップして録音';$('recordHint').textContent='もう一度押すと停止します'}
+  }
+
+  function renderResult(payload){
+    const u=payload.user_facing||{}, t=payload.karaoke_timeline||{};
+    const practice=u.practice_score||{}, score=practice.value??u.display_score;
+    $('scoreValue').textContent=score==null?'—':Math.round(score);$('confidenceText').textContent=confidenceJa(u.confidence||u.reliability);
+    $('summary').textContent=u.summary_text||'今回の話し方を確認しました。';$('modeNotice').textContent=u.mode_notice||'';
+    renderLyrics(t);renderDimensions(t.dimensions||u.score_dimensions||[]);renderFocus(u);
+    $('factSync').textContent=t.sync_mode==='word_timestamps'?'単語ごとに同期':t.sync_mode==='mora_alignment'?'拍ごとに同期':t.sync_mode==='mora_alignment_approximate'?'拍ごと・概算':t.sync_mode==='sentence_progress_only'?'全文のみ':'利用できません';
+    const rq=t.recording?.analyzability; $('factRecording').textContent=rq==null?'参考情報なし':`${Math.round(Number(rq)*100)} / 100（採点項目ではありません）`;
+    $('factMode').textContent=mode==='transcript_assisted_light'?'自由発話・広義日本語':'お手本練習';
+    $('results').classList.add('show');setTimeout(()=>{$('results').scrollIntoView({behavior:'smooth',block:'start'});drawTimeline()},80);
+  }
+
+  function renderLyrics(t){
+    const box=$('lyrics');box.innerHTML='';box.classList.remove('static');
+    $('syncNote').textContent=t.sync_note||'録音を再生して確認します。';
+    const words=Array.isArray(t.words)?t.words:[], moras=Array.isArray(t.moras)?t.moras:[];
+    if(words.length){
+      $('syncBadge').textContent='字幕同期 ON';
+      words.forEach((w,i)=>{const b=document.createElement('button');b.type='button';b.className='lyric-word'+(w.asr_confidence==='low'?' low-asr':'');b.textContent=w.text;b.dataset.start=w.start_sec;b.dataset.end=w.end_sec;b.dataset.index=i;b.title='字幕位置はASRの時間情報です。発音の正誤判定ではありません。';b.addEventListener('click',()=>{if($('userAudio').src){$('userAudio').currentTime=Number(w.start_sec)||0;updatePlaybackVisual()}});box.appendChild(b)});
+    }else if(moras.length){
+      const approximate=t.sync_mode==='mora_alignment_approximate';
+      $('syncBadge').textContent=approximate?'拍同期・概算':'拍同期 ON';
+      moras.forEach((m,i)=>{const b=document.createElement('button');b.type='button';b.className='lyric-word';b.textContent=m.text;b.dataset.start=m.start_sec;b.dataset.end=m.end_sec;b.dataset.index=i;b.title=approximate?'モーラ境界は概算です。発音の正誤判定ではありません。':'ユーザー音声へのモーラ境界です。発音の正誤判定ではありません。';b.addEventListener('click',()=>{if($('userAudio').src){$('userAudio').currentTime=Number(m.start_sec)||0;updatePlaybackVisual()}});box.appendChild(b)});
+    }else{
+      $('syncBadge').textContent=t.sync_mode==='sentence_progress_only'?'全文表示':'同期なし';box.classList.add('static');box.textContent=t.transcript||'字幕として表示できる文字情報がありません。';
+    }
+    $('visualEmpty').classList.toggle('show',!(t.pitch&&t.pitch.available));
+    $('pitchLayerLabel').textContent=t.pitch?.reference_available?'声の動き（あなた＋お手本）':'声の動き';
+  }
+
+  function renderDimensions(dimensions){
+    const root=$('dimensions');root.innerHTML='';const fallbackLabels=['流暢さ','明瞭さ','リズム','抑揚'];
+    (dimensions.length?dimensions:fallbackLabels.map((label,i)=>({key:['delivery_fluency','clarity','mora_timing','intonation'][i],label,score:null,evidence_state:'unavailable'}))).forEach(d=>{
+      const value=d.score??d.value, [text,cls]=evidenceMeta(d.evidence_state);const el=document.createElement('div');el.className='dim';
+      el.innerHTML=`<div class="dim-top"><h4>${escapeHtml(d.label||'')}</h4><span class="evidence ${cls}">${text}</span></div><div class="num">${value==null?'—':Math.round(value)}</div><div class="bar"><i style="width:${value==null?0:Math.max(0,Math.min(100,value))}%"></i></div><div class="meta">${confidenceJa(d.confidence)}${d.evidence_state==='neutral_prior'?' · 直接測定ではない参考値':''}</div>`;root.appendChild(el);
+    });
+  }
+  function renderFocus(u){const text=u.primary_suggestion_text||u.focus_feedback?.message||'';$('focus').classList.toggle('show',!!text);$('focusText').textContent=text}
+  function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+
+  function drawTimeline(){
+    const canvas=$('timelineCanvas'), box=canvas.parentElement, dpr=window.devicePixelRatio||1, w=box.clientWidth, h=box.clientHeight;canvas.width=Math.max(1,Math.round(w*dpr));canvas.height=Math.max(1,Math.round(h*dpr));const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+    const t=lastPayload?.karaoke_timeline||{}, duration=Math.max(0.1,Number(t.duration_sec)||$('userAudio').duration||1), x=sec=>Math.max(0,Math.min(w,(Number(sec)||0)/duration*w));
+    ctx.strokeStyle='rgba(28,42,69,.08)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
+    if($('pauseLayer').checked){ctx.fillStyle='rgba(177,142,88,.10)';(t.pauses||[]).forEach(p=>{ctx.fillRect(x(p.start_sec),0,Math.max(2,x(p.end_sec)-x(p.start_sec)),h)})}
+    if($('pitchLayer').checked&&t.pitch?.available){
+      const points=t.pitch.points||[], refPoints=t.pitch.reference_points||[], all=[...points,...refPoints], values=all.map(p=>Number(p.relative_semitone)).filter(Number.isFinite), maxAbs=Math.max(3,...values.map(v=>Math.abs(v)));
+      const drawSeries=(series,color,dashed)=>{let started=false;ctx.strokeStyle=color;ctx.lineWidth=dashed?1.5:2;ctx.lineJoin='round';ctx.lineCap='round';ctx.setLineDash(dashed?[6,5]:[]);ctx.beginPath();series.forEach(p=>{const v=p.relative_semitone;if(v==null||!Number.isFinite(Number(v))){started=false;return}const px=x(p.t_sec),py=h/2-(Number(v)/maxAbs)*(h*.34);if(!started){ctx.moveTo(px,py);started=true}else ctx.lineTo(px,py)});ctx.stroke();ctx.setLineDash([])};
+      const rose=getComputedStyle(document.documentElement).getPropertyValue('--rose').trim()||'#9a5c6c', gold=getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()||'#b18e58';
+      drawSeries(points,rose,false);
+      if(refPoints.length){
+        drawSeries(refPoints,gold,true);
+        ctx.font='11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';ctx.textBaseline='middle';
+        ctx.strokeStyle=rose;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(12,16);ctx.lineTo(32,16);ctx.stroke();ctx.fillStyle=rose;ctx.fillText('あなた',38,16);
+        ctx.strokeStyle=gold;ctx.lineWidth=1.5;ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(92,16);ctx.lineTo(112,16);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=gold;ctx.fillText('お手本',118,16);
+      }
+    }
+    drawCursor(ctx,w,h,x($('userAudio').currentTime||0));
+  }
+  function drawCursor(ctx,w,h,x){ctx.strokeStyle='rgba(28,42,69,.65)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();ctx.fillStyle='rgba(28,42,69,.8)';ctx.beginPath();ctx.arc(x,7,3,0,Math.PI*2);ctx.fill()}
+
+  function updatePlaybackVisual(){
+    const audio=$('userAudio'), time=audio.currentTime||0;updatePlayer();const words=[...$('lyrics').querySelectorAll('.lyric-word')];
+    words.forEach(el=>{const s=Number(el.dataset.start),e=Number(el.dataset.end);el.classList.toggle('active',time>=s&&time<e);el.classList.toggle('past',time>=e)});drawTimeline();
+  }
+  function animationLoop(){updatePlaybackVisual();if(!$('userAudio').paused&&!$('userAudio').ended)raf=requestAnimationFrame(animationLoop)}
+  function updatePlayer(){const a=$('userAudio'),d=Number.isFinite(a.duration)?a.duration:0;$('scrub').max=d||1;$('scrub').value=Math.min(d||1,a.currentTime||0);$('timeText').textContent=`${fmtTime(a.currentTime) } / ${fmtTime(d)}`;$('playBtn').classList.toggle('playing',!a.paused&&!a.ended)}
+
+  $('recordBtn').addEventListener('click',()=>recording?stopRecording():startRecording());
+  $('uploadProxy').addEventListener('click',e=>{e.preventDefault();$('upload').click()});
+  $('upload').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;lastBlob=file;setUserAudio(file);await evaluate(file);e.target.value=''});
+  $('fixedMode').addEventListener('click',()=>setMode('reference'));$('freeMode').addEventListener('click',()=>setMode('transcript_assisted_light'));
+  $('playBtn').addEventListener('click',async()=>{const a=$('userAudio');if(!a.src)return;if(a.paused){try{await a.play();cancelAnimationFrame(raf);animationLoop()}catch(e){}}else a.pause();updatePlayer()});
+  $('scrub').addEventListener('input',()=>{const a=$('userAudio');a.currentTime=Number($('scrub').value)||0;updatePlaybackVisual()});
+  $('userAudio').addEventListener('timeupdate',updatePlaybackVisual);$('userAudio').addEventListener('play',()=>{cancelAnimationFrame(raf);animationLoop()});$('userAudio').addEventListener('pause',()=>{cancelAnimationFrame(raf);updatePlayer()});$('userAudio').addEventListener('ended',()=>{cancelAnimationFrame(raf);updatePlayer();updatePlaybackVisual()});
+  $('pitchLayer').addEventListener('change',drawTimeline);$('pauseLayer').addEventListener('change',drawTimeline);window.addEventListener('resize',()=>{if(lastPayload)drawTimeline()});
+  loadConfig();
+})();
+</script>
+</body>
+</html>

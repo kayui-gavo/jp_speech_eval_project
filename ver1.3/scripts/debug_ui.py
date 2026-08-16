@@ -43,6 +43,7 @@ from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_ligh
 from jp_speech_eval.unified_result import unify_evaluation_result
 from jp_speech_eval.vad import detect_speech_region
 from jp_speech_eval.feedback_renderer import render_user_facing_result
+from jp_speech_eval.app_core.karaoke_timeline import build_consumer_karaoke_timeline
 
 
 BACKGROUND_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="debug-ui-bg")
@@ -122,19 +123,18 @@ def _field_value(form: cgi.FieldStorage, name: str, default: str) -> str:
 
 CORE_MODES = [
     "reference",
+    "transcript_assisted_light",
     "asr_pseudo_reference",
     "kanade_asr_voice_reference",
 ]
 
 PUBLIC_DEMO_MODES = [
     "reference",
-    "asr_pseudo_reference",
-    "kanade_asr_voice_reference",
+    "transcript_assisted_light",
 ]
 
 EXPERIMENTAL_MODES = [
     "kanade_voice_reference",
-    "transcript_assisted_light",
     "acoustic",
 ]
 
@@ -146,7 +146,7 @@ def _mode_labels() -> Dict[str, str]:
         "reference": "Reference fixed-sentence scoring",
         "asr_pseudo_reference": "Free speech: ASR-generated pseudo-reference",
         "asr_confirmed_weak_reference": "Free speech: confirmed weak-reference practice",
-        "transcript_assisted_light": "Free speech: transcript-assisted light diagnosis",
+        "transcript_assisted_light": "Free speech: direct broad Japanese scoring",
         "acoustic": "Recording/acoustic quality diagnosis",
         "kanade_voice_reference": "Experimental: voice-conditioned fixed-sentence reference",
         "kanade_asr_voice_reference": "Experimental: ASR pseudo-reference with voice playback",
@@ -164,6 +164,11 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT / "debug_ui"), **kwargs)
 
     def do_GET(self) -> None:
+        # Keep the established Hugging Face Space / debug root on index.html.
+        # The experimental consumer surface remains available explicitly at /consumer.
+        if self.path in {"/consumer", "/consumer/"}:
+            self.path = "/consumer_v3.html"
+            return super().do_GET()
         if self.path == "/api/config":
             cache = load_sentence_cache(self.server.cache_prefix)  # type: ignore[attr-defined]
             payload = {
@@ -396,6 +401,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
             user_facing = render_user_facing_result(result, mode=result.get("details", {}).get("mode") or mode)
+            karaoke_timeline = build_consumer_karaoke_timeline(result, user_facing)
             _json_response(self, {
                 "ok": True,
                 "mode": mode,
@@ -406,6 +412,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "result": result,
                 "unified": unified_payload,
                 "user_facing": user_facing,
+                "karaoke_timeline": karaoke_timeline,
                 "realtime": realtime,
             })
         except Exception as exc:
@@ -485,6 +492,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
+            confirmed_user_facing = render_user_facing_result(result, mode=mode)
+            confirmed_karaoke_timeline = build_consumer_karaoke_timeline(result, confirmed_user_facing)
             _json_response(self, {
                 "ok": True,
                 "mode": response_mode,
@@ -498,7 +507,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "kanade": (kanade_job if kanade_job else None),
                 "result": result,
                 "unified": unified_payload,
-                "user_facing": render_user_facing_result(result, mode=mode),
+                "user_facing": confirmed_user_facing,
+                "karaoke_timeline": confirmed_karaoke_timeline,
             })
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
@@ -711,6 +721,7 @@ def main() -> None:
     server.available_modes = available_modes
     server.asr_confirmation_sessions = {}
     server.kanade_jobs = {}
+    server.public_demo = bool(args.public_demo)
     server.retain_uploads = not args.public_demo
     server.enable_logs = not args.public_demo
     server.server_label = "Public demo" if args.public_demo else "Local debug"
@@ -718,6 +729,7 @@ def main() -> None:
     server.latest_reference_wav = default_ref if default_ref.exists() else server.sample_wav
 
     print(f"Debug UI: http://{args.host}:{args.port}")
+    print(f"Consumer: http://{args.host}:{args.port}/consumer")
     print(f"Cache   : {server.cache_prefix}")
     print(f"Sample  : {server.sample_wav}")
     try:

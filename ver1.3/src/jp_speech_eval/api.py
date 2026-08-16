@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .asr_confirmation import build_asr_confirmation_prompt
+from .app_core.karaoke_timeline import build_consumer_karaoke_timeline
 from .asr import AsrTranscript, detect_spoken_language
 from .audio_features import load_audio
 from .vad import trim_to_speech
@@ -206,6 +207,7 @@ class EvaluationResponse:
     mode: str
     user_facing: Dict[str, Any]
     raw_result: Dict[str, Any]
+    karaoke_timeline: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -405,6 +407,7 @@ class SpeechEvaluationClient:
             mode=effective_mode,
             user_facing=user_facing,
             raw_result=raw,
+            karaoke_timeline=build_consumer_karaoke_timeline(raw, user_facing),
         )
 
 

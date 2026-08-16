@@ -10,6 +10,7 @@ from .asr import transcribe_language_aware
 from .asr_confirmation import free_speech_language_eligibility
 from .audio_features import basic_energy_stats, detect_pauses, extract_f0, load_audio
 from .config import load_scoring_config
+from .app_core.karaoke_timeline import build_relative_f0_visualization
 from .free_speech_evidence import (
     build_free_speech_dimension_evidence,
     build_shadow_candidate_surface,
@@ -276,6 +277,7 @@ def evaluate_transcript_assisted_light(
         f0_hz=f0_arr,
         spontaneous_fluency=spontaneous_fluency_v2,
     )
+    relative_f0_visualization = build_relative_f0_visualization(_times, f0_arr)
 
     feedback: List[str] = [
         "当前为 Transcript-assisted light 模式： transcript 只用于估计 mora 数，不生成 TTS reference、不做 DTW，因此不输出具体假名纠错。"
@@ -374,6 +376,13 @@ def evaluate_transcript_assisted_light(
             "mode": "transcript_assisted_light",
             "interpretation": "transcript_assisted_acoustic_proxy_not_kana_correctness",
             "score_eligible": True,
+            "visualization_source": {
+                "schema_version": "consumer_visualization_source_v1",
+                "timebase": "speech_trim_relative",
+                "score_role": "visualization_only",
+                "product_score_changed": False,
+                "relative_f0": relative_f0_visualization,
+            },
             "asr": asr_info,
             "language_gate": {
                 "eligible": True,
