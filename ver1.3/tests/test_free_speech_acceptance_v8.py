@@ -14,8 +14,8 @@ def _row(sample_id: str, expected_language: str, *, speaker_group: str = "learne
         "audio_path": f"audio/{sample_id}.wav",
         "speaker_id": f"spk_{sample_id}",
         "speaker_group": speaker_group,
-        "l1": "zh" if speaker_group == "learner" else "ja",
-        "task_mode": "dialogue_response",
+        "l1": "zh" if speaker_group == "learner" else "control" if speaker_group == "negative_control" else "ja",
+        "task_mode": "controlled_dialogue",
         "prompt_id": f"prompt_{sample_id}",
         "split": "held",
         "expected_language": expected_language,
@@ -45,7 +45,7 @@ def test_acceptance_runs_product_batch_analysis_and_routing_summary(tmp_path) ->
         [
             _row("ja_ok", "ja"),
             _row("ja_no_score", "ja"),
-            _row("en_control", "en", speaker_group="control"),
+            _row("en_control", "en", speaker_group="negative_control"),
         ],
     )
 
@@ -98,9 +98,10 @@ def test_acceptance_runs_product_batch_analysis_and_routing_summary(tmp_path) ->
 
     routing = report["routing"]
     assert routing["groups"]["expected_japanese"]["n"] == 2
-    assert routing["groups"]["expected_non_japanese"]["n"] == 1
+    assert routing["groups"]["expected_non_japanese_speech"]["n"] == 1
     assert routing["valid_japanese_false_no_score_count"] == 1
-    assert routing["non_japanese_normal_score_count"] == 0
+    assert routing["non_japanese_speech_normal_score_count"] == 0
+    assert routing["nonspeech_control_normal_score_count"] == 0
 
     assert (out_dir / "free_speech_validation_v8.jsonl").exists()
     assert (out_dir / "partial_evidence_analysis_v8.json").exists()
@@ -110,10 +111,10 @@ def test_acceptance_runs_product_batch_analysis_and_routing_summary(tmp_path) ->
     assert saved["partial_evidence_analysis"]["decision"] == "telemetry_only_no_product_promotion"
 
 
-def test_acceptance_exits_semantically_with_candidate_unavailable_when_product_has_no_evidence(tmp_path) -> None:
+def test_acceptance_keeps_nonspeech_controls_separate_and_candidate_unavailable(tmp_path) -> None:
     manifest = tmp_path / "manifest.csv"
     out_dir = tmp_path / "out"
-    _write_manifest(manifest, [_row("noise_control", "und", speaker_group="control")])
+    _write_manifest(manifest, [_row("noise_control", "non_speech", speaker_group="negative_control")])
 
     def fake_evaluator(wav_path, transcript=None, **kwargs):
         return {"details": {"mode": "transcript_assisted_light", "language_gate": {"eligible": False}, "recording_quality": {}, "shadow": {}}, "fluency_score": None}
@@ -141,4 +142,7 @@ def test_acceptance_exits_semantically_with_candidate_unavailable_when_product_h
     analysis = report["partial_evidence_analysis"]
     assert analysis["candidate_available_rate"] == 0.0
     assert analysis["paired_score_count"] == 0
-    assert report["routing"]["groups"]["expected_non_japanese"]["product_score_available"] == 0
+    routing = report["routing"]
+    assert routing["groups"]["expected_nonspeech_control"]["product_score_available"] == 0
+    assert routing["nonspeech_control_normal_score_count"] == 0
+    assert "expected_non_japanese_speech" not in routing["groups"]
