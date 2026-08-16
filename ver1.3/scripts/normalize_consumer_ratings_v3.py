@@ -11,7 +11,7 @@ import argparse
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, Mapping
+from typing import Any, Dict
 
 from validate_consumer_ratings_v3 import CONSTRUCT_TO_FIELD, validate_rating_file
 from validate_free_speech_sample_manifest import validate_manifest_file
@@ -81,6 +81,7 @@ def normalize_file(
                     "expected_language": _text(meta.get("expected_language")),
                     "condition": _text(meta.get("channel_condition")),
                     "channel_pair_id": _text(meta.get("channel_pair_id")),
+                    "source_recording_id": _text(meta.get("source_recording_id")),
                     "context_type": _text(meta.get("context_type")),
                     "context_id": _text(meta.get("context_id")),
                     "normalization_schema": SCHEMA_VERSION,
@@ -91,7 +92,7 @@ def normalize_file(
         "sample_id", "criterion", "human_rating", "rater_id", "presentation_id",
         "presentation_variant", "task", "speaker_id", "speaker_group", "l1",
         "prompt_id", "subset", "expected_language", "condition", "channel_pair_id",
-        "context_type", "context_id", "normalization_schema",
+        "source_recording_id", "context_type", "context_id", "normalization_schema",
     ]
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -107,6 +108,7 @@ def normalize_file(
         "criteria": sorted({row["criterion"] for row in output_rows}),
         "speaker_count": len({row["speaker_id"] for row in output_rows if row["speaker_id"]}),
         "channel_pair_count": len({row["channel_pair_id"] for row in output_rows if row["channel_pair_id"]}),
+        "source_recording_count": len({row["source_recording_id"] for row in output_rows if row["source_recording_id"]}),
     }
 
 
