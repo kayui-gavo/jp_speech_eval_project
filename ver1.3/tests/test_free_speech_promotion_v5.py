@@ -24,6 +24,11 @@ ALL_CANDIDATES = [
     ("intonation.robust_range_semitones", "intonation_utterance_naturalness"),
     ("intonation.shadow_candidate_score", "intonation_utterance_naturalness"),
 ]
+SHADOWS = {
+    "clarity.shadow_candidate_score",
+    "rhythm.shadow_candidate_score",
+    "intonation.shadow_candidate_score",
+}
 
 
 def _write(path: Path, fields, rows):
@@ -75,19 +80,32 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False, bad_con
                 )
         for candidate, construct in ALL_CANDIDATES:
             if candidate in SCORE_SURFACES:
-                value = score
+                numeric_value = score
             elif candidate.startswith("clarity."):
-                value = score / 100.0
+                numeric_value = score / 100.0
             elif candidate.startswith("rhythm."):
-                value = (score - 70.0) / 100.0
+                numeric_value = (score - 70.0) / 100.0
             elif candidate == "fluency.speech_rate_mora_per_sec":
-                value = 4.5 + (i % 5) * 0.25
+                numeric_value = 4.5 + (i % 5) * 0.25
             else:
-                value = 5.0 + (i % 7) * 0.2
+                numeric_value = 5.0 + (i % 7) * 0.2
+
             available = True
+            fallback_numeric_value = numeric_value if candidate in SHADOWS else ""
+            evidence_value = numeric_value
+            failure_reason = ""
             if candidate == "intonation.robust_range_semitones" and i == 30:
-                value = ""
+                evidence_value = ""
                 available = False
+                failure_reason = "f0_unavailable"
+            if candidate == "intonation.shadow_candidate_score" and i == 30:
+                # Real v4 surface intentionally keeps neutral 70 while marking
+                # source evidence unavailable. It must not enter correlation.
+                evidence_value = ""
+                fallback_numeric_value = 70.0
+                available = False
+                failure_reason = "neutral_placeholder_without_source_evidence"
+
             contract = "wrong_contract" if bad_contract and i == 0 else "consumer_four_score_v2"
             evidence_rows.append(
                 {
@@ -106,9 +124,10 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False, bad_con
                     "context_id": f"ctx{pair}",
                     "candidate": candidate,
                     "candidate_construct": construct,
-                    "evidence_value": value,
+                    "evidence_value": evidence_value,
+                    "fallback_numeric_value": fallback_numeric_value,
                     "available": "true" if available else "false",
-                    "failure_reason": "" if available else "f0_unavailable",
+                    "failure_reason": failure_reason,
                     "evidence_direction": "higher_better_hypothesis",
                     "model_id": "test",
                     "model_version": "v1",
@@ -146,6 +165,7 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False, bad_con
                     "candidate": candidate,
                     "candidate_construct": construct,
                     "evidence_value": "",
+                    "fallback_numeric_value": "",
                     "available": "false",
                     "failure_reason": "language_reject",
                     "evidence_direction": "higher_better_hypothesis",
@@ -184,8 +204,10 @@ def test_score_surfaces_can_pass_only_full_cend_gate(tmp_path):
     assert report["candidates"]["clarity.asr_recoverability_index"]["promotion_decision"] == "diagnostic_only"
     assert report["candidates"]["intonation.robust_range_semitones"]["promotion_decision"] == "diagnostic_only"
     assert "intonation_contextual_appropriateness" not in report["candidates"]["intonation.shadow_candidate_score"]["construct_match"]
+    assert report["candidates"]["intonation.shadow_candidate_score"]["criteria"]["intonation_utterance_naturalness"]["held_available_count"] == 49
     assert report["f0_missingness_safety"]["f0_missing_case_count"] == 1
     assert report["f0_missingness_safety"]["pass"] is True
+    assert report["f0_missingness_safety"]["cases"][0]["candidate_score"] == 70.0
     assert report["global_dataset"]["negative_control_no_score_rate"] == 1.0
     assert report["overall_direct_promotion_state"] == "pass"
 
