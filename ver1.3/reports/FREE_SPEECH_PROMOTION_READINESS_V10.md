@@ -64,6 +64,61 @@ Therefore:
 - no gold transcript is used for duration slicing;
 - v10 does not create a new candidate score formula.
 
+## Historical-data reuse audit
+
+`audit_historical_free_speech_reuse_v10.py` makes the old-data boundary explicit instead of relying on project memory.
+
+The current repository contains useful historical assets, but they must not be silently relabeled as free-speech criterion data:
+
+- `JVS_parallel100` contains scripted native read speech. Two historical samples were also executed through `transcript_assisted_light`, but changing the evaluator mode does not change the original elicitation construct. These remain native fixed-reading/broad-mode regression assets.
+- `JANON` contains real native and learner productions, but the inventory entries used here are isolated fixed-reading words. They remain valuable for pronunciation/timing regression, not spontaneous fluency or long-utterance intonation validation.
+- `JVS_controlled_edit` rows are synthetic edits of real recordings. They can test engineering robustness but must not be called learner errors or independent human productions.
+- the historical demo recording lacks criterion-grade speaker/task/split provenance and remains a smoke-test asset.
+- historical English/Mandarin/noise controls are useful for routing logic, but the saved inventory points to temporary paths; they must be recovered or regenerated before a fresh acceptance run.
+
+The legacy `data/human_eval/learner_recording_needed.csv` also remains a fixed-word acquisition plan. It should not be reused as the main v10 collection plan because it does not cover spontaneous fluency or long-utterance rhythm/intonation.
+
+This audit is intentionally conservative: a historical sample is not promoted to free-speech criterion eligibility merely because it was once evaluated in a broad mode.
+
+## Minimum practical new collection
+
+Operational blueprint: `data/human_eval/free_speech_v10_minimum_collection_plan.json`
+
+The plan is derived from the already-frozen v5/v10 engineering gates with buffer; it is not presented as a formal psychometric power calculation.
+
+### Held Japanese core
+
+- 8 learner speakers x 5 clean free-speech clips = 40 learner clips;
+- 4 native speakers x 4 clean free-speech clips = 16 native clips;
+- total = 56 clean held Japanese clips.
+
+The learner mix intentionally includes short spontaneous, short controlled-dialogue, long spontaneous, and long controlled-dialogue speech. The 40 learner clips provide buffer above the v10 minimum of 30 held learner pairs.
+
+### Development core
+
+- 4 learner speakers x 4 clips = 16;
+- 2 native speakers x 4 clips = 8;
+- total = 24 clean development clips.
+
+Development identities never appear in held.
+
+### Duration collection policy
+
+Participants are given natural response instructions rather than asked to hit an exact stopwatch duration. The actual product endpointing result determines the v10 bucket after recording:
+
+- <= 3 s: short slice;
+- >= 8 s: long slice;
+- 3-8 s: still valid for overall criterion analysis, but not counted toward either duration-specific gate.
+
+The plan deliberately oversamples short and long prompts so ordinary variation in response length does not leave the held set below coverage requirements.
+
+### Channel and negative controls
+
+- derive channel variants from the exact same clean source recording and preserve `source_recording_id`;
+- do not create a channel pair by asking a person to re-speak the utterance;
+- include real English and real Mandarin speech in the final negative-control set rather than relying only on TTS;
+- non-speech/environmental controls remain routing tests, not four-dimension listener-rating material.
+
 ## End-to-end runner
 
 `run_free_speech_promotion_readiness_v10.py` provides one execution path:
