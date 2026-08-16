@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Layer C-end discrimination gates on top of the frozen v5 promotion analysis.
 
-The v5 protocol remains the scientific construct-validity baseline.  v10 adds
+The v5 protocol remains the scientific construct-validity baseline. v10 adds
 product-specific checks that prevent a candidate from passing merely because it
 separates native and learner groups while collapsing learner scores into a
-narrow band, or because it only works for one utterance-length regime.
+narrow band, or because native controls rescue a learner-only failure in one
+utterance-length or task regime.
 
 No score mapping or threshold is fitted here.
 """
@@ -25,7 +26,7 @@ from analyze_free_speech_promotion_v5 import analyze as analyze_v5
 from analyze_free_speech_promotion_v5 import aggregate_human
 
 
-ANALYSIS_SCHEMA = "free_speech_promotion_analysis_v10"
+ANALYSIS_SCHEMA = "free_speech_promotion_analysis_v10_v2"
 
 
 def _text(value: Any) -> str:
@@ -133,6 +134,7 @@ def _joined_rows(
                 "evidence_value": value,
                 "speech_duration_sec": _finite(evidence.get("speech_duration_sec")),
                 "speaker_group": _text(row.get("speaker_group")) or _text(evidence.get("speaker_group")),
+                "task": _text(row.get("task")) or _text(evidence.get("task")),
             }
         )
     return output
@@ -143,6 +145,7 @@ def _length_report(rows: Sequence[Mapping[str, Any]], *, short_max: float, long_
     long_rows = [row for row in rows if (_finite(row.get("speech_duration_sec")) or -1.0) >= long_min]
     duration_available = sum(_finite(row.get("speech_duration_sec")) is not None for row in rows)
     return {
+        "population": "held_learner_only",
         "duration_available_count": duration_available,
         "duration_availability_rate": (duration_available / len(rows)) if rows else None,
         "short": {"pair_count": len(short_rows), "spearman": _spearman(short_rows)},
@@ -150,13 +153,37 @@ def _length_report(rows: Sequence[Mapping[str, Any]], *, short_max: float, long_
     }
 
 
-def _group_direction(rows: Sequence[Mapping[str, Any]], *, minimum_human_gap: float) -> dict[str, Any]:
+def _task_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    output: dict[str, Any] = {"population": "held_learner_only"}
+    for task in ("spontaneous", "controlled_dialogue"):
+        selected = [row for row in rows if _text(row.get("task")) == task]
+        output[task] = {"pair_count": len(selected), "spearman": _spearman(selected)}
+    unknown_count = sum(_text(row.get("task")) not in {"spontaneous", "controlled_dialogue"} for row in rows)
+    output["unknown_task_pair_count"] = unknown_count
+    return output
+
+
+def _direction_gate(report: Mapping[str, Any], minimum_pair_count: int) -> str:
+    pair_count = int(report.get("pair_count") or 0)
+    if pair_count < minimum_pair_count:
+        return "insufficient"
+    rho = _finite((report.get("spearman") if isinstance(report.get("spearman"), Mapping) else {}).get("rho"))
+    return "pass" if rho is not None and rho > 0 else "fail"
+
+
+def _group_direction(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    minimum_human_gap: float,
+    maximum_machine_gap_when_human_small: float,
+) -> dict[str, Any]:
     learner = [row for row in rows if _text(row.get("speaker_group")) == "learner"]
     native = [row for row in rows if _text(row.get("speaker_group")) == "native"]
     learner_human = _median(learner, "human_rating_mean")
     native_human = _median(native, "human_rating_mean")
     learner_machine = _median(learner, "evidence_value")
     native_machine = _median(native, "evidence_value")
+    regime = "unavailable"
     if None in {learner_human, native_human, learner_machine, native_machine}:
         state = "insufficient"
         human_gap = machine_gap = None
@@ -164,8 +191,10 @@ def _group_direction(rows: Sequence[Mapping[str, Any]], *, minimum_human_gap: fl
         human_gap = float(native_human - learner_human)
         machine_gap = float(native_machine - learner_machine)
         if abs(human_gap) < minimum_human_gap:
-            state = "insufficient"
+            regime = "human_group_gap_small"
+            state = "pass" if abs(machine_gap) <= maximum_machine_gap_when_human_small else "fail"
         else:
+            regime = "human_group_gap_interpretable"
             state = "pass" if human_gap * machine_gap > 0 else "fail"
     return {
         "learner_pair_count": len(learner),
@@ -176,8 +205,12 @@ def _group_direction(rows: Sequence[Mapping[str, Any]], *, minimum_human_gap: fl
         "native_candidate_median": native_machine,
         "human_native_minus_learner": human_gap,
         "candidate_native_minus_learner": machine_gap,
+        "regime": regime,
         "state": state,
-        "interpretation": "machine_group_direction_must_follow_human_criterion_not_assume_native_likeness",
+        "interpretation": (
+            "native_controls_check_construct_contamination_not_native_likeness: follow_human_direction_when_human_gap_is_interpretable; "
+            "otherwise_do_not_invent_a_large_machine_group_gap"
+        ),
     }
 
 
@@ -214,32 +247,30 @@ def analyze(
         learner_spearman = _spearman(learner)
         learner_iqr = _iqr(learner)
         length = _length_report(
-            rows,
+            learner,
             short_max=float(gates["short_utterance_max_speech_sec"]),
             long_min=float(gates["long_utterance_min_speech_sec"]),
         )
+        task = _task_report(learner)
         group_direction = _group_direction(
             rows,
             minimum_human_gap=float(gates["native_vs_learner_group_direction_min_human_gap_1to7"]),
+            maximum_machine_gap_when_human_small=float(gates["machine_group_gap_max_when_human_gap_small_points"]),
         )
 
-        short_n = int((length.get("short") or {}).get("pair_count") or 0)
-        long_n = int((length.get("long") or {}).get("pair_count") or 0)
-        short_rho = (((length.get("short") or {}).get("spearman") or {}).get("rho"))
-        long_rho = (((length.get("long") or {}).get("spearman") or {}).get("rho"))
-        short_min = int(gates["held_short_construct_matched_pair_count"])
-        long_min = int(gates["held_long_construct_matched_pair_count"])
+        short = length.get("short") if isinstance(length.get("short"), Mapping) else {}
+        long = length.get("long") if isinstance(length.get("long"), Mapping) else {}
+        spontaneous = task.get("spontaneous") if isinstance(task.get("spontaneous"), Mapping) else {}
+        controlled = task.get("controlled_dialogue") if isinstance(task.get("controlled_dialogue"), Mapping) else {}
+        short_n = int(short.get("pair_count") or 0)
+        long_n = int(long.get("pair_count") or 0)
+        spontaneous_n = int(spontaneous.get("pair_count") or 0)
+        controlled_n = int(controlled.get("pair_count") or 0)
+        short_min = int(gates["held_learner_short_construct_matched_pair_count"])
+        long_min = int(gates["held_learner_long_construct_matched_pair_count"])
+        spontaneous_min = int(gates["held_learner_spontaneous_construct_matched_pair_count"])
+        controlled_min = int(gates["held_learner_controlled_dialogue_construct_matched_pair_count"])
 
-        short_direction = (
-            "insufficient" if short_n < short_min
-            else "pass" if short_rho is not None and float(short_rho) > 0
-            else "fail"
-        )
-        long_direction = (
-            "insufficient" if long_n < long_min
-            else "pass" if long_rho is not None and float(long_rho) > 0
-            else "fail"
-        )
         base_decision = ((base.get("candidates") or {}).get(candidate) or {}).get("promotion_decision", "insufficient")
         gate_states = {
             "base_v5_scientific_promotion": base_decision,
@@ -252,11 +283,15 @@ def analyze(
             "held_learner_candidate_iqr": _gate_min(
                 learner_iqr, float(gates["held_learner_candidate_iqr_min_points"])
             ),
-            "held_short_pair_count": _gate_min(float(short_n), float(short_min)),
-            "held_long_pair_count": _gate_min(float(long_n), float(long_min)),
-            "short_direction_positive": short_direction,
-            "long_direction_positive": long_direction,
-            "native_learner_group_direction_consistency": group_direction["state"],
+            "held_learner_short_pair_count": _gate_min(float(short_n), float(short_min)),
+            "held_learner_long_pair_count": _gate_min(float(long_n), float(long_min)),
+            "learner_short_direction_positive": _direction_gate(short, short_min),
+            "learner_long_direction_positive": _direction_gate(long, long_min),
+            "held_learner_spontaneous_pair_count": _gate_min(float(spontaneous_n), float(spontaneous_min)),
+            "held_learner_controlled_dialogue_pair_count": _gate_min(float(controlled_n), float(controlled_min)),
+            "learner_spontaneous_direction_positive": _direction_gate(spontaneous, spontaneous_min),
+            "learner_controlled_dialogue_direction_positive": _direction_gate(controlled, controlled_min),
+            "native_learner_construct_contamination_check": group_direction["state"],
         }
         reports[candidate] = {
             "criterion": criterion,
@@ -266,7 +301,8 @@ def analyze(
                 "spearman": learner_spearman,
                 "candidate_iqr": learner_iqr,
             },
-            "utterance_length": length,
+            "held_learner_utterance_length": length,
+            "held_learner_task_mode": task,
             "native_learner_group_direction": group_direction,
             "gate_states": gate_states,
             "promotion_readiness": _combine(list(gate_states.values())),
