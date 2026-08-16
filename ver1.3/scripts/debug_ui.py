@@ -164,6 +164,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT / "debug_ui"), **kwargs)
 
     def do_GET(self) -> None:
+        if self.path in {"/consumer", "/consumer/"}:
+            self.path = "/consumer_v3.html"
+            return super().do_GET()
         if self.path == "/api/config":
             cache = load_sentence_cache(self.server.cache_prefix)  # type: ignore[attr-defined]
             payload = {
@@ -723,6 +726,7 @@ def main() -> None:
     server.latest_reference_wav = default_ref if default_ref.exists() else server.sample_wav
 
     print(f"Debug UI: http://{args.host}:{args.port}")
+    print(f"Consumer: http://{args.host}:{args.port}/consumer")
     print(f"Cache   : {server.cache_prefix}")
     print(f"Sample  : {server.sample_wav}")
     try:

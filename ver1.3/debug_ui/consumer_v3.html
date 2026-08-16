@@ -76,7 +76,8 @@
             <div class="record-controls">
               <button class="record-btn" id="recordBtn" type="button" aria-label="録音を開始"></button>
               <div class="record-copy"><strong id="recordTitle">タップして録音</strong><span id="recordHint">もう一度押すと停止します</span></div>
-              <label class="upload"><input id="upload" type="file" accept="audio/*"><button class="ghost" id="uploadProxy" type="button">音声ファイルを選ぶ</button></label>
+              <input id="upload" type="file" accept="audio/*" hidden>
+              <div class="upload"><button class="ghost" id="uploadProxy" type="button">音声ファイルを選ぶ</button></div>
             </div>
             <div class="meter"><i id="meterBar"></i></div>
             <div class="status" id="status">準備できています。</div>
