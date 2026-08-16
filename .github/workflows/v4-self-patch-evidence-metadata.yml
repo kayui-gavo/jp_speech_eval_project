@@ -1,0 +1,52 @@
+name: v4-one-shot-evidence-metadata
+
+on:
+  push:
+    branches:
+      - free-speech-four-dimension-evidence-v4
+    paths:
+      - ".github/workflows/v4-self-patch-evidence-metadata.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: free-speech-four-dimension-evidence-v4
+      - name: Keep evidence semantics consistent across product APIs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("ver1.3/src/jp_speech_eval/consumer_dimension_policy.py")
+          text = path.read_text(encoding="utf-8")
+          old = '        precision_hint = "reference_only"\n'
+          new = '        precision_hint = "neutral_placeholder"\n'
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit("neutral precision metadata anchor not found")
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("ver1.3/src/jp_speech_eval/user_score_policy.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''            "evidence_tier": str(components[key].get("evidence_tier") or "unknown"),\n            "source_field": str(components[key].get("source_field") or ""),\n'''
+          new = '''            "evidence_tier": str(components[key].get("evidence_tier") or "unknown"),\n            "evidence_state": str(components[key].get("evidence_state") or "unknown"),\n            "precision_hint": str(components[key].get("precision_hint") or "unknown"),\n            "numeric_semantics": str(components[key].get("numeric_semantics") or ""),\n            "source_field": str(components[key].get("source_field") or ""),\n'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit("component score metadata anchor not found")
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/src/jp_speech_eval/consumer_dimension_policy.py ver1.3/src/jp_speech_eval/user_score_policy.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "product: expose consistent dimension evidence semantics"
+          git push origin HEAD:free-speech-four-dimension-evidence-v4
