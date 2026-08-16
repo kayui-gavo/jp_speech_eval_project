@@ -10,6 +10,10 @@ from .asr import transcribe_language_aware
 from .asr_confirmation import free_speech_language_eligibility
 from .audio_features import basic_energy_stats, detect_pauses, extract_f0, load_audio
 from .config import load_scoring_config
+from .free_speech_evidence import (
+    build_free_speech_dimension_evidence,
+    build_shadow_candidate_surface,
+)
 from .recording_quality import assess_recording_quality
 from .scoring import clamp_score
 from .spontaneous_fluency import build_spontaneous_fluency_evidence
@@ -265,6 +269,13 @@ def evaluate_transcript_assisted_light(
             else None
         ),
     )
+    free_speech_dimension_evidence = build_free_speech_dimension_evidence(
+        asr_info=asr_info,
+        speech_duration_sec=speech_duration,
+        f0_times=_times,
+        f0_hz=f0_arr,
+        spontaneous_fluency=spontaneous_fluency_v2,
+    )
 
     feedback: List[str] = [
         "当前为 Transcript-assisted light 模式： transcript 只用于估计 mora 数，不生成 TTS reference、不做 DTW，因此不输出具体假名纠错。"
@@ -324,6 +335,10 @@ def evaluate_transcript_assisted_light(
     clarity_score = 100.0 - (25.0 if voiced_ratio < 0.25 else 0.0) - (15.0 if energy["cv"] > 1.2 else 0.0)
     pronunciation_risk = 0.35 * clarity_score + 0.25 * prosody_score + 0.25 * fluency_score + 0.15 * recording_score
     total = 0.30 * pronunciation_risk + 0.25 * prosody_score + 0.30 * fluency_score + 0.15 * recording_score
+    free_speech_candidate_surface = build_shadow_candidate_surface(
+        free_speech_dimension_evidence,
+        current_fluency_score=fluency_score,
+    )
 
     reliability = {
         "overall": round(float(reliability_score), 4),
@@ -388,6 +403,10 @@ def evaluate_transcript_assisted_light(
                 "note": "transcript_assisted_proxy_no_dtw; spontaneous_v2_is_shadow_only",
             },
             "spontaneous_fluency_v2": spontaneous_fluency_v2,
+            "shadow": {
+                "free_speech_dimension_evidence": free_speech_dimension_evidence,
+                "free_speech_candidate_surface": free_speech_candidate_surface,
+            },
             "recording_quality": {
                 **quality,
                 "energy_mean": energy["mean"],

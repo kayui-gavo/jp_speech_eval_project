@@ -75,6 +75,19 @@ def _dimension(
     note: str = "",
 ) -> Dict[str, Any]:
     score = _score(value) if available else None
+    prior_fallback = source_field == "product_prior" or "prior" in str(evidence_tier).lower()
+    if score is None:
+        evidence_state = "unavailable"
+        precision_hint = "unavailable"
+    elif prior_fallback:
+        evidence_state = "neutral_prior"
+        precision_hint = "reference_only"
+    elif confidence == "low":
+        evidence_state = "broad_proxy"
+        precision_hint = "rough"
+    else:
+        evidence_state = "measured_proxy"
+        precision_hint = "normal"
     return {
         "key": key,
         "label": label,
@@ -84,6 +97,13 @@ def _dimension(
         "construct": construct,
         "confidence": confidence,
         "evidence_tier": evidence_tier,
+        "evidence_state": evidence_state,
+        "precision_hint": precision_hint,
+        "numeric_semantics": (
+            "neutral_anchor_not_direct_measurement"
+            if evidence_state == "neutral_prior"
+            else "practice_proxy_not_formal_measurement"
+        ),
         "product_calibrated": False,
         "note": note,
     }
