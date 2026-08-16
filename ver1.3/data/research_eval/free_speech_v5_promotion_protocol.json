@@ -64,7 +64,8 @@
     "negative_controls_no_score_rate_min": 0.9,
     "gold_transcript_scoring_usage_must_be_zero": true,
     "held_and_development_speakers_must_be_disjoint": true,
-    "f0_failure_must_not_create_low_intonation_penalty": true
+    "f0_failure_must_not_create_low_intonation_penalty": true,
+    "f0_failure_intonation_candidate_min_points": 65.0
   },
   "gate_applicability": {
     "construct_matched_pair_count": ["score_surface"],
