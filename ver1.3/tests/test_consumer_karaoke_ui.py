@@ -10,6 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML = ROOT / "debug_ui" / "consumer_v3.html"
+DEBUG_SERVER = ROOT / "scripts" / "debug_ui.py"
 
 
 class _IdCollector(HTMLParser):
@@ -40,16 +41,32 @@ def test_consumer_v3_free_mode_is_direct_broad_japanese_not_pseudo_reference():
     assert "ASR-generated pseudo-reference" not in text
 
 
-def test_karaoke_sync_requires_real_timestamp_payload():
+def test_karaoke_sync_requires_real_timestamp_or_mora_alignment_payload():
     text = HTML.read_text(encoding="utf-8")
     assert "dataset.start=w.start_sec" in text
     assert "dataset.end=w.end_sec" in text
+    assert "dataset.start=m.start_sec" in text
+    assert "dataset.end=m.end_sec" in text
     assert "t.sync_mode==='word_timestamps'" in text
+    assert "mora_alignment" in text
+    assert "mora_alignment_approximate" in text
     assert "sentence_progress_only" in text
     # The UI must not fabricate token timing from text length.
     assert "transcript.length" not in text
     assert "text.length" not in text
     assert "/ words.length" not in text
+    assert "/ moras.length" not in text
+
+
+def test_fixed_karaoke_pitch_overlay_is_visually_comparative_not_correctness_coloring():
+    text = HTML.read_text(encoding="utf-8")
+    assert "reference_points" in text
+    assert "声の動き（あなた＋お手本）" in text
+    assert "setLineDash" in text
+    assert "拍同期・概算" in text
+    assert "モーラ境界は概算です。発音の正誤判定ではありません。" in text
+    assert "className='lyric-word error'" not in text
+    assert "className='lyric-word correct'" not in text
 
 
 def test_karaoke_visualization_keeps_construct_guardrail_copy_visible():
@@ -81,6 +98,20 @@ def test_playback_visual_uses_audio_clock_and_exposes_layer_controls():
     assert "pauseLayer" in text
     assert "声の動き" in text
     assert ">間<" in text
+
+
+def test_upload_control_avoids_nested_interactive_label_markup():
+    text = HTML.read_text(encoding="utf-8")
+    assert '<input id="upload" type="file" accept="audio/*" hidden>' in text
+    assert '<div class="upload"><button class="ghost" id="uploadProxy"' in text
+    assert '<label class="upload">' not in text
+
+
+def test_debug_server_exposes_stable_consumer_route():
+    text = DEBUG_SERVER.read_text(encoding="utf-8")
+    assert 'self.path in {"/consumer", "/consumer/"}' in text
+    assert 'self.path = "/consumer_v3.html"' in text
+    assert 'Consumer: http://{args.host}:{args.port}/consumer' in text
 
 
 def test_consumer_v3_has_no_duplicate_dom_ids():
