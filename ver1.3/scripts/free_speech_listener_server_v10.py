@@ -167,6 +167,15 @@ class ListenerStore:
                     "completed": self.completed(_text(row.get("presentation_id"))),
                 }
             )
+        def presentation_order(item: Mapping[str, Any]) -> tuple[int, str]:
+            variant = _text(item.get("presentation_variant"))
+            block = 0 if variant == "isolated" else 1
+            digest = hashlib.sha256(
+                f"{rater_id}|{variant}|{_text(item.get('presentation_id'))}".encode("utf-8")
+            ).hexdigest()
+            return block, digest
+
+        presentations.sort(key=presentation_order)
         completed_count = sum(bool(row["completed"]) for row in presentations)
         constructs = self.rating_schema.get("validation_constructs") or {}
         allowed_constructs = {
@@ -185,6 +194,7 @@ class ListenerStore:
             "analysis_metadata_exposed": False,
             "target_transcript_exposed": False,
             "source_paths_exposed": False,
+            "presentation_order": "isolated_then_contextual_rater_hash_v1",
         }
 
     def audio_path(self, asset_id: str) -> Path:
