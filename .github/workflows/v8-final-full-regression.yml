@@ -33,5 +33,5 @@ jobs:
             "pyworld-prebuilt>=0.3.5,<0.4" \
             pytest
           python -m pip install -e .
-      - name: Run complete suite
+      - name: Run complete suite on final scoring-integrity head
         run: python -m pytest -q
