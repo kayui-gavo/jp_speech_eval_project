@@ -4,6 +4,7 @@ import numpy as np
 import soundfile as sf
 
 from jp_speech_eval.asr import AsrTranscript
+from jp_speech_eval.consumer_dimension_policy import build_consumer_score_dimensions
 from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_light
 from jp_speech_eval.user_score_policy import apply_user_score_policy
 
@@ -117,3 +118,64 @@ def test_language_aware_asr_word_timestamps_feed_only_weak_pause_location_candid
     assert breakdown["pause_location_confidence"] == "low"
     assert breakdown["pause_location_counts"]["after_asr_punctuation_candidate"] == 1
     assert breakdown["pause_location_source"] == "faster_whisper_word_timestamps_plus_asr_punctuation"
+
+
+def test_v4_free_speech_evidence_is_end_to_end_shadow_only(tmp_path, monkeypatch) -> None:
+    wav = tmp_path / "japanese_v4.wav"
+    _write_voice_like_wav(wav)
+
+    def fake_language_aware(*args, **kwargs):
+        return AsrTranscript(
+            available=True,
+            provider="faster-whisper",
+            model="small",
+            text="今日は友達と駅でラーメンを食べます",
+            language="ja",
+            note="ok",
+            language_probability=0.99,
+            words=[
+                {"start_sec": 0.05, "end_sec": 0.32, "text": "今日は", "probability": 0.96},
+                {"start_sec": 0.34, "end_sec": 0.68, "text": "友達と", "probability": 0.92},
+                {"start_sec": 0.72, "end_sec": 0.92, "text": "駅で", "probability": 0.89},
+                {"start_sec": 0.98, "end_sec": 1.37, "text": "ラーメンを", "probability": 0.94},
+                {"start_sec": 1.42, "end_sec": 1.72, "text": "食べます", "probability": 0.91},
+            ],
+            segments=[
+                {
+                    "start_sec": 0.0,
+                    "end_sec": 1.8,
+                    "avg_logprob": -0.15,
+                    "no_speech_prob": 0.01,
+                    "compression_ratio": 1.12,
+                }
+            ],
+        )
+
+    monkeypatch.setattr("jp_speech_eval.transcript_assisted.transcribe_language_aware", fake_language_aware)
+    monkeypatch.setattr("jp_speech_eval.transcript_assisted.extract_f0", _fake_f0)
+
+    raw = evaluate_transcript_assisted_light(wav)
+    evidence = raw["details"]["shadow"]["free_speech_dimension_evidence"]
+    candidate = raw["details"]["shadow"]["free_speech_candidate_surface"]
+    assert evidence["clarity"]["available"] is True
+    assert evidence["rhythm"]["available"] is True
+    assert evidence["intonation"]["available"] is True
+    assert candidate["product_score_changed"] is False
+    assert candidate["user_facing"] is False
+    assert candidate["component_candidates"]["clarity"] != 70.0
+
+    product = apply_user_score_policy(raw, mode="transcript_assisted_light")
+    assert product["score_contract_version"] == "consumer_four_score_v2"
+    assert product["evidence_schema_version"] == "consumer_evidence_v3"
+    assert product["component_scores"]["clarity"]["value"] == 70
+    assert product["component_scores"]["mora_timing"]["value"] == 70
+    assert product["component_scores"]["intonation"]["value"] == 70
+
+    dimensions = {
+        item["key"]: item
+        for item in build_consumer_score_dimensions(raw, product, mode="transcript_assisted_light")
+    }
+    assert dimensions["clarity"]["evidence_state"] == "neutral_prior"
+    assert dimensions["mora_timing"]["evidence_state"] == "neutral_prior"
+    assert dimensions["intonation"]["evidence_state"] == "neutral_prior"
+    assert dimensions["clarity"]["numeric_semantics"] == "neutral_anchor_not_direct_measurement"
