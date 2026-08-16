@@ -917,7 +917,7 @@
 
       <section>
         <div class="panel-head">
-          <h2 data-i18n="reliability">本次结果可信度</h2>
+          <h2 data-consumer-copy="resultBasis">结果依据</h2>
           <span class="pill" id="reliabilityLevel">暂无数据</span>
         </div>
         <div class="panel-body">
@@ -1885,7 +1885,7 @@
         karaokeReplay:"跟读回放", karaokeHint:"播放录音时，字幕、停顿和声音走势会同步。", karaokePlaceholder:"完成一次评价后，这里会显示你的发话。",
         pitchUnavailable:"这次没有足够的音高信息可供可视化；这不代表抑扬表现差。", voiceMovement:"声音走势", pauseLayer:"停顿",
         syncWord:"逐词同步", syncMora:"逐拍同步", syncMoraApprox:"逐拍同步·概算", syncSentence:"全文显示", syncUnavailable:"暂无同步",
-        evidenceMeasured:"音声证据", evidenceBroad:"大致参考", evidenceNeutral:"参考值", evidenceUnavailable:"未测定",
+        evidenceMeasured:"音声证据", evidenceBroad:"大致参考", evidenceNeutral:"参考值", evidenceUnavailable:"未测定", resultBasis:"结果依据", recordingStatus:"录音状态", scoreEvidence:"评分依据", recordingGood:"良好", recordingUsable:"可用", recordingCare:"需注意", evidenceStrong:"较充分", evidencePartial:"部分依据", evidenceLimited:"有限",
         modeFixed:"范例跟读", modeFree:"自由说话", fixedHint:"按目标句练习", freeHint:"自然说日语即可",
         fixedDesc:"跟着范例练习同一句话。结果会结合目标句和参考音。", freeDesc:"直接说自然日语，不要求和某个目标句一致。",
         modeGroup:"练习方式",
@@ -1895,7 +1895,7 @@
         karaokeReplay:"跟讀回放", karaokeHint:"播放錄音時，字幕、停頓與聲音走勢會同步。", karaokePlaceholder:"完成一次檢查後，這裡會顯示你的發話。",
         pitchUnavailable:"這次沒有足夠的音高資訊可供視覺化；這不代表抑揚表現差。", voiceMovement:"聲音走勢", pauseLayer:"停頓",
         syncWord:"逐詞同步", syncMora:"逐拍同步", syncMoraApprox:"逐拍同步・概算", syncSentence:"全文顯示", syncUnavailable:"暫無同步",
-        evidenceMeasured:"音聲證據", evidenceBroad:"大致參考", evidenceNeutral:"參考值", evidenceUnavailable:"未測定",
+        evidenceMeasured:"音聲證據", evidenceBroad:"大致參考", evidenceNeutral:"參考值", evidenceUnavailable:"未測定", resultBasis:"結果依據", recordingStatus:"錄音狀態", scoreEvidence:"評分依據", recordingGood:"良好", recordingUsable:"可用", recordingCare:"需注意", evidenceStrong:"較充分", evidencePartial:"部分依據", evidenceLimited:"有限",
         modeFixed:"範例跟讀", modeFree:"自由說話", fixedHint:"依目標句練習", freeHint:"自然說日語即可",
         fixedDesc:"跟著範例練習同一句話。結果會結合目標句與參考音。", freeDesc:"直接說自然日語，不要求和某個目標句一致。",
         modeGroup:"練習方式",
@@ -1905,7 +1905,7 @@
         karaokeReplay:"発話リプレイ", karaokeHint:"録音を再生すると、字幕・間・声の動きが時間に合わせて表示されます。", karaokePlaceholder:"評価後、ここにあなたの発話を表示します。",
         pitchUnavailable:"今回は声の動きを表示できる十分な F0 情報がありません。低い抑揚評価を意味しません。", voiceMovement:"声の動き", pauseLayer:"間",
         syncWord:"単語同期", syncMora:"拍同期", syncMoraApprox:"拍同期・概算", syncSentence:"全文表示", syncUnavailable:"同期なし",
-        evidenceMeasured:"音声から確認", evidenceBroad:"大まかな目安", evidenceNeutral:"参考値", evidenceUnavailable:"未測定",
+        evidenceMeasured:"音声から確認", evidenceBroad:"大まかな目安", evidenceNeutral:"参考値", evidenceUnavailable:"未測定", resultBasis:"結果の根拠", recordingStatus:"録音状態", scoreEvidence:"評価の根拠", recordingGood:"良好", recordingUsable:"利用可能", recordingCare:"要確認", evidenceStrong:"十分", evidencePartial:"一部参考", evidenceLimited:"限定的",
         modeFixed:"お手本練習", modeFree:"自由に話す", fixedHint:"目標文で練習", freeHint:"自然な日本語をそのまま",
         fixedDesc:"お手本と同じ文を練習します。目標文と参照音声を使って確認します。", freeDesc:"目標文に合わせず、自然な日本語をそのまま話します。",
         modeGroup:"練習方法",
@@ -1915,7 +1915,7 @@
         karaokeReplay:"Speech replay", karaokeHint:"Replay your recording to see transcript timing, pauses, and voice movement on one timeline.", karaokePlaceholder:"Your utterance will appear here after an evaluation.",
         pitchUnavailable:"There is not enough F0 evidence to visualize voice movement this time. This does not mean poor intonation.", voiceMovement:"Voice movement", pauseLayer:"Pauses",
         syncWord:"Word sync", syncMora:"Mora sync", syncMoraApprox:"Mora sync · approximate", syncSentence:"Full text", syncUnavailable:"No sync",
-        evidenceMeasured:"Audio evidence", evidenceBroad:"Broad estimate", evidenceNeutral:"Reference value", evidenceUnavailable:"Unavailable",
+        evidenceMeasured:"Audio evidence", evidenceBroad:"Broad estimate", evidenceNeutral:"Reference value", evidenceUnavailable:"Unavailable", resultBasis:"Result basis", recordingStatus:"Recording status", scoreEvidence:"Score evidence", recordingGood:"Good", recordingUsable:"Usable", recordingCare:"Needs care", evidenceStrong:"Strong", evidencePartial:"Partial", evidenceLimited:"Limited",
         modeFixed:"Model practice", modeFree:"Free speaking", fixedHint:"Practice the target sentence", freeHint:"Speak natural Japanese",
         fixedDesc:"Practice the same sentence as the model. The target and reference audio are used for feedback.", freeDesc:"Speak natural Japanese without matching a fixed target sentence.",
         modeGroup:"Practice mode",
@@ -2941,10 +2941,18 @@
       const mode = result.details?.mode || state.lastPayload?.mode || "reference";
       const gate = userFacing?.debug?.reliability_gate || {};
       const policy = userFacing?.debug?.scoring_policy || {};
-      const level = userFacing?.reliability || gate.reliability || reliability.level || "unknown";
-      const levelText = reliabilityDisplay(level);
-      $("reliabilityLevel").textContent = `${levelText} ${(Number(reliability.overall || 0) * 100).toFixed(0)}%`;
-      $("reliabilityLevel").className = level === "high" ? "pill good" : level === "medium" ? "pill warn" : "pill bad";
+      const analyzability = userFacing?.recording_analyzability || {};
+      const scoreEvidence = userFacing?.score_evidence || {};
+      const legacyLevel = userFacing?.reliability || gate.reliability || reliability.level || "unknown";
+
+      const recordingValue = Number(recording.score ?? reliability.recording_quality ?? 0);
+      const recordingLevel = analyzability.level || (recordingValue >= 0.80 ? "high" : recordingValue >= 0.50 ? "medium" : "low");
+      const evidenceLevel = scoreEvidence.level || legacyLevel;
+      const recordingLabel = recordingLevel === "high" ? cc("recordingGood") : recordingLevel === "medium" ? cc("recordingUsable") : cc("recordingCare");
+      const evidenceLabel = evidenceLevel === "high" ? cc("evidenceStrong") : evidenceLevel === "medium" ? cc("evidencePartial") : cc("evidenceLimited");
+
+      $("reliabilityLevel").textContent = `${cc("scoreEvidence")} · ${evidenceLabel}`;
+      $("reliabilityLevel").className = evidenceLevel === "high" ? "pill good" : evidenceLevel === "medium" ? "pill warn" : "pill bad";
 
       const reliable = [];
       if ((recording.score ?? reliability.recording_quality ?? 0) >= 0.75) reliable.push(t("recordingClear"));
@@ -2957,32 +2965,25 @@
       if (blocked.includes("pronunciation") || blocked.includes("special_mora")) caution.push(t("moraDetailLimited"));
       if (policy.weak_reference) caution.push(t("weakReferenceNote"));
 
-      const mainIssue = (gate.messages || [])[0] || (caution[0] || t("noMajorLimit"));
       const rows = [
+        [cc("recordingStatus"), recordingLabel],
+        [cc("scoreEvidence"), evidenceLabel],
         [t("reliableParts"), reliable.length ? reliable.join(" / ") : t("noData")],
-        [t("cautionParts"), caution.length ? caution.join(" / ") : t("noMajorLimit")],
-        [t("mainIssue"), mainIssue],
-        [tGroup("reliabilityLabels", "evalMode"), tMode(mode)]
+        [t("cautionParts"), caution.length ? caution.join(" / ") : t("noMajorLimit")]
       ];
       $("reliabilityGrid").innerHTML = rows
-        .map(([label, value]) => `<div class="reliability-item"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`)
+        .map(([label, value]) => `<div class="reliability-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
         .join("");
 
       const contentWarnings = [];
-      if (content.transcript) {
-        contentWarnings.unshift(`${t("asrPrefix")}：${content.transcript} / ${content.transcript_kana || ""}`);
-      }
-      if (mode.includes("fallback_acoustic")) {
-        contentWarnings.unshift(activeModeText().fallbackAcoustic || modeText["zh-CN"].fallbackAcoustic);
-      }
-      if (mode === "reference_free_acoustic" || mode === "acoustic" || mode.includes("fallback_acoustic")) {
-        contentWarnings.push(t("acousticModeWarning"));
-      }
-      if (mode === "transcript_assisted_light") {
-        contentWarnings.push(t("transcriptModeWarning"));
-      }
-      $("reliabilityWarnings").innerHTML = contentWarnings
-        .map((warning) => `<li>${warning}</li>`)
+      const mainIssue = (gate.messages || [])[0];
+      if (mainIssue) contentWarnings.push(mainIssue);
+      if (content.transcript) contentWarnings.push(`${t("asrPrefix")}：${content.transcript} / ${content.transcript_kana || ""}`);
+      if (mode.includes("fallback_acoustic")) contentWarnings.push(activeModeText().fallbackAcoustic || modeText["zh-CN"].fallbackAcoustic);
+      if (mode === "reference_free_acoustic" || mode === "acoustic" || mode.includes("fallback_acoustic")) contentWarnings.push(t("acousticModeWarning"));
+      if (mode === "transcript_assisted_light") contentWarnings.push(t("transcriptModeWarning"));
+      $("reliabilityWarnings").innerHTML = [...new Set(contentWarnings)]
+        .map((warning) => `<li>${escapeHtml(warning)}</li>`)
         .join("");
     }
 

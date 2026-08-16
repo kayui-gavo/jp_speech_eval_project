@@ -48,6 +48,10 @@ class UserFacingResult:
     Raw acoustic/debug values remain available under `debug`, while the main
     fields are designed for a stable practice experience. Score-contract
     versions are public telemetry so stored results can be compared safely.
+
+    ``recording_analyzability`` and ``score_evidence`` deliberately answer two
+    different questions. A clean recording can have weak four-dimensional
+    evidence, especially in direct free speech where neutral priors may remain.
     """
 
     mode: str
@@ -70,6 +74,8 @@ class UserFacingResult:
     score_policy_warnings: List[str]
     score_caps: Dict[str, Any]
     score_dimensions: List[Dict[str, Any]]
+    recording_analyzability: Dict[str, Any]
+    score_evidence: Dict[str, Any]
     detail_feedback_allowed: bool
     user_messages: List[str]
     focus_feedback: Optional[Dict[str, Any]]

@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from .consumer_dimension_policy import build_consumer_score_dimensions
 from .reliability_gate import evaluate_reliability_gate
+from .score_evidence_quality import build_score_evidence_quality
 from .scoring_policy import ScoringPolicy, policy_from_result
 from .special_mora_scorer import (
     decide_special_mora_runtime,
@@ -263,6 +264,8 @@ def render_user_facing_result(
         label=practice_score_label(display_score, status),
         explanation=practice_score_explanation(mode_notice),
     )
+    score_dimensions = _score_dimensions(result, gate, user_score, mode=policy.mode)
+    evidence_quality = build_score_evidence_quality(result, score_dimensions)
 
     return UserFacingResult(
         mode=policy.mode,
@@ -284,7 +287,9 @@ def render_user_facing_result(
         confidence_label=str(user_score.get("confidence_label") or gate.reliability),
         score_policy_warnings=list(user_score.get("score_policy_warnings") or []),
         score_caps=dict(user_score.get("score_caps") or {}),
-        score_dimensions=_score_dimensions(result, gate, user_score, mode=policy.mode),
+        score_dimensions=score_dimensions,
+        recording_analyzability=dict(evidence_quality.get("recording_analyzability") or {}),
+        score_evidence=dict(evidence_quality.get("score_evidence") or {}),
         detail_feedback_allowed=bool(user_score.get("detail_feedback_allowed", True)),
         user_messages=messages[:2],
         focus_feedback=focus,
