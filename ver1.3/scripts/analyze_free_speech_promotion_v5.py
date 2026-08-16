@@ -403,7 +403,11 @@ def _f0_missingness_safety(
         if raw_available:
             continue
         cases += 1
-        score = _finite(surface.get("evidence_value")) if surface is not None else None
+        score = (
+            _finite(surface.get("fallback_numeric_value"))
+            if surface is not None
+            else None
+        )
         is_unsafe = score is not None and score < minimum_candidate_score
         unsafe += int(is_unsafe)
         details.append({"sample_id": sample_id, "candidate_score": score, "unsafe_low_penalty": is_unsafe})
@@ -447,7 +451,8 @@ def analyze(
         ({
             "sample_id", "candidate", "candidate_construct", "evidence_value", "subset", "speaker_id",
             "condition", "channel_pair_id", "source_recording_id", "expected_language",
-            "score_contract_version", "evidence_schema_version", "candidate_surface_policy_id",
+            "fallback_numeric_value", "score_contract_version", "evidence_schema_version",
+            "candidate_surface_policy_id",
         }, set(evidence_fields), "evidence"),
     ):
         missing = sorted(required - fields)
