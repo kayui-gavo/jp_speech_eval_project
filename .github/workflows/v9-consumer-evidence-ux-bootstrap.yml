@@ -1,0 +1,60 @@
+name: v9-consumer-evidence-ux-bootstrap
+
+on:
+  push:
+    branches:
+      - consumer-evidence-ux-v9
+    paths:
+      - ".github/workflows/v9-consumer-evidence-ux-bootstrap.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: consumer-evidence-ux-v9
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Apply v9 evidence UX patch
+        run: python scripts/apply_v9_consumer_evidence_ux.py
+      - name: Install lightweight runtime
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install \
+            "numpy>=1.24,<2.0" \
+            "scipy>=1.10,<2.0" \
+            "librosa>=0.10.1,<1.0" \
+            "soundfile>=0.12,<1.0" \
+            "matplotlib>=3.7,<4.0" \
+            "pyopenjtalk-plus==0.4.1.post8" \
+            "pyworld-prebuilt>=0.3.5,<0.4" \
+            pytest
+          python -m pip install -e ver1.3
+      - name: Run targeted evidence UX guards
+        run: |
+          cd ver1.3
+          python -m pytest -q \
+            tests/test_measurement_context_v9.py \
+            tests/test_consumer_evidence_ux_v9.py \
+            tests/test_scoring_integrity_v8.py \
+            tests/test_consumer_dimension_policy.py \
+            tests/test_hf_space_karaoke_v7.py \
+            tests/test_consumer_karaoke_ui.py
+      - name: Run complete suite
+        run: |
+          cd ver1.3
+          python -m pytest -q
+      - name: Commit tested source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3 .github/workflows/baseline-evolution-light-tests.yml
+          git commit -m "feat: separate recording state from score evidence v9"
+          git push origin HEAD:consumer-evidence-ux-v9
