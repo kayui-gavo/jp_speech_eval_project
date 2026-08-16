@@ -33,7 +33,7 @@ def _write(path: Path, fields, rows):
         writer.writerows(rows)
 
 
-def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
+def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False, bad_contract: bool = False):
     human_rows = []
     evidence_rows = []
     criteria = list(SCORE_SURFACES.values())
@@ -45,6 +45,7 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
         task = "spontaneous" if pair % 2 == 0 else "controlled_dialogue"
         condition = "clean" if i % 2 == 0 else "low_level"
         pair_id = "" if blank_channel_pairs else f"pair{pair}"
+        source_recording_id = f"source{pair}"
         score = 50.0 + i * 0.8
         rating = min(7, 1 + i // 8)
         sample_id = f"s{i:02d}"
@@ -67,6 +68,7 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
                         "expected_language": "ja",
                         "condition": condition,
                         "channel_pair_id": pair_id,
+                        "source_recording_id": source_recording_id,
                         "context_type": "prompt",
                         "context_id": f"ctx{pair}",
                     }
@@ -86,6 +88,7 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
             if candidate == "intonation.robust_range_semitones" and i == 30:
                 value = ""
                 available = False
+            contract = "wrong_contract" if bad_contract and i == 0 else "consumer_four_score_v2"
             evidence_rows.append(
                 {
                     "sample_id": sample_id,
@@ -98,6 +101,7 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
                     "expected_language": "ja",
                     "condition": condition,
                     "channel_pair_id": pair_id,
+                    "source_recording_id": source_recording_id,
                     "context_type": "prompt",
                     "context_id": f"ctx{pair}",
                     "candidate": candidate,
@@ -114,6 +118,9 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
                     "language_gate_reason": "ja",
                     "recording_quality_score": "0.9",
                     "scoring_used_gold_transcript": "false",
+                    "score_contract_version": contract,
+                    "evidence_schema_version": "consumer_evidence_v3",
+                    "candidate_surface_policy_id": "free_speech_candidate_surface_v1_shadow",
                     "export_schema": "test",
                 }
             )
@@ -133,6 +140,7 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
                     "expected_language": language,
                     "condition": "clean",
                     "channel_pair_id": "",
+                    "source_recording_id": f"negative_source{j}",
                     "context_type": "none",
                     "context_id": "",
                     "candidate": candidate,
@@ -149,6 +157,9 @@ def _build_fixture(tmp_path: Path, *, blank_channel_pairs: bool = False):
                     "language_gate_reason": "non_ja",
                     "recording_quality_score": "0.9",
                     "scoring_used_gold_transcript": "false",
+                    "score_contract_version": "consumer_four_score_v2",
+                    "evidence_schema_version": "consumer_evidence_v3",
+                    "candidate_surface_policy_id": "free_speech_candidate_surface_v1_shadow",
                     "export_schema": "test",
                 }
             )
@@ -169,6 +180,7 @@ def test_score_surfaces_can_pass_only_full_cend_gate(tmp_path):
         candidate_report = report["candidates"][candidate]
         assert candidate_report["promotion_decision"] == "pass"
         assert set(candidate_report["gate_states"].values()) == {"pass"}
+        assert candidate_report["version_consistency"]["score_contract_match"] is True
     assert report["candidates"]["clarity.asr_recoverability_index"]["promotion_decision"] == "diagnostic_only"
     assert report["candidates"]["intonation.robust_range_semitones"]["promotion_decision"] == "diagnostic_only"
     assert "intonation_contextual_appropriateness" not in report["candidates"]["intonation.shadow_candidate_score"]["construct_match"]
@@ -185,3 +197,12 @@ def test_missing_channel_controls_yields_insufficient_not_false_pass(tmp_path):
     assert clarity["gate_states"]["channel_pair_coverage"] == "insufficient"
     assert clarity["gate_states"]["channel_drift_points"] == "insufficient"
     assert clarity["promotion_decision"] == "insufficient"
+
+
+def test_mixed_score_contract_versions_fail_closed(tmp_path):
+    human, evidence = _build_fixture(tmp_path, bad_contract=True)
+    report = analyze(human, evidence, "data/research_eval/free_speech_v5_promotion_protocol.json")
+    clarity = report["candidates"]["clarity.shadow_candidate_score"]
+    assert clarity["version_consistency"]["score_contract_match"] is False
+    assert clarity["gate_states"]["score_contract_version_match"] == "fail"
+    assert clarity["promotion_decision"] == "fail"
