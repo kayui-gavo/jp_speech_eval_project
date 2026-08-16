@@ -47,6 +47,7 @@ def _manifest_row(sample_id: str = "s1", **overrides):
         "expected_language": "ja",
         "channel_condition": "clean",
         "channel_pair_id": "pair1",
+        "source_recording_id": "source1",
         "context_type": "prompt",
         "context_id": "ctx1",
         "context_text": "週末は何をしましたか。",
@@ -100,9 +101,8 @@ def test_normalizer_reattaches_private_metadata_only_after_collection(tmp_path):
     manifest = tmp_path / "manifest.csv"
     output = tmp_path / "long.csv"
     _write(ratings, REQUIRED_COLUMNS, [_rating_row()])
-    # A channel-pair id represents an actual same-content channel control.  The
-    # manifest therefore contains both the clean anchor and one channel variant,
-    # even though only s1 is rated in this unit test.
+    # Channel variants are derived from one underlying source recording, so
+    # device/noise sensitivity cannot be confounded with a separately spoken take.
     _write(
         manifest,
         MANIFEST_COLUMNS,
@@ -125,3 +125,4 @@ def test_normalizer_reattaches_private_metadata_only_after_collection(tmp_path):
     assert all(row["speaker_group"] == "learner" for row in rows)
     assert all(row["condition"] == "clean" for row in rows)
     assert all(row["channel_pair_id"] == "pair1" for row in rows)
+    assert all(row["source_recording_id"] == "source1" for row in rows)
