@@ -107,11 +107,13 @@ def test_public_pitch_view_does_not_present_hl_match_as_red_green_correctness():
     assert legacy_color > gate
 
 
-def test_public_demo_hides_engineering_replay_and_research_debug_panels():
+def test_public_demo_hides_engineering_replay_and_legacy_diagnostic_panels():
     text = HTML.read_text(encoding="utf-8")
     assert '.public-mode .debug-only-panel { display:none!important; }' in text
-    assert '<section class="debug-only-panel">' in text
     assert '<details class="advanced-panel debug-only-panel">' in text
+    assert '<section class="debug-only-panel">\n        <div class="panel-head">\n          <h2 data-i18n="realtimeReplay">' in text
+    assert '<section class="debug-only-panel">\n        <div class="panel-head">\n          <h2 data-i18n="speechRegion">' in text
+    assert '<section class="debug-only-panel">\n        <div class="panel-head">\n          <h2 data-i18n="pitchContour">' in text
     assert 'document.body.classList.toggle("public-mode", config.server_label === "Public demo")' in text
 
 
