@@ -1,0 +1,145 @@
+name: v9-ui-reliability-patch
+
+on:
+  push:
+    branches:
+      - score-evidence-reliability-v9
+
+permissions:
+  contents: write
+
+jobs:
+  patch-ui:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: score-evidence-reliability-v9
+      - name: Patch established Space reliability semantics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('ver1.3/debug_ui/index.html')
+          text = path.read_text(encoding='utf-8')
+
+          old_heading = '<h2 data-i18n="reliability">本次结果可信度</h2>'
+          new_heading = '<h2 data-consumer-copy="resultBasis">结果依据</h2>'
+          if old_heading not in text:
+              raise SystemExit('reliability heading marker not found')
+          text = text.replace(old_heading, new_heading, 1)
+
+          copy_replacements = {
+              'evidenceMeasured:"音声证据", evidenceBroad:"大致参考", evidenceNeutral:"参考值", evidenceUnavailable:"未测定",':
+              'evidenceMeasured:"音声证据", evidenceBroad:"大致参考", evidenceNeutral:"参考值", evidenceUnavailable:"未测定", resultBasis:"结果依据", recordingStatus:"录音状态", scoreEvidence:"评分依据", recordingGood:"良好", recordingUsable:"可用", recordingCare:"需注意", evidenceStrong:"较充分", evidencePartial:"部分依据", evidenceLimited:"有限",',
+              'evidenceMeasured:"音聲證據", evidenceBroad:"大致參考", evidenceNeutral:"參考值", evidenceUnavailable:"未測定",':
+              'evidenceMeasured:"音聲證據", evidenceBroad:"大致參考", evidenceNeutral:"參考值", evidenceUnavailable:"未測定", resultBasis:"結果依據", recordingStatus:"錄音狀態", scoreEvidence:"評分依據", recordingGood:"良好", recordingUsable:"可用", recordingCare:"需注意", evidenceStrong:"較充分", evidencePartial:"部分依據", evidenceLimited:"有限",',
+              'evidenceMeasured:"音声から確認", evidenceBroad:"大まかな目安", evidenceNeutral:"参考値", evidenceUnavailable:"未測定",':
+              'evidenceMeasured:"音声から確認", evidenceBroad:"大まかな目安", evidenceNeutral:"参考値", evidenceUnavailable:"未測定", resultBasis:"結果の根拠", recordingStatus:"録音状態", scoreEvidence:"評価の根拠", recordingGood:"良好", recordingUsable:"利用可能", recordingCare:"要確認", evidenceStrong:"十分", evidencePartial:"一部参考", evidenceLimited:"限定的",',
+              'evidenceMeasured:"Audio evidence", evidenceBroad:"Broad estimate", evidenceNeutral:"Reference value", evidenceUnavailable:"Unavailable",':
+              'evidenceMeasured:"Audio evidence", evidenceBroad:"Broad estimate", evidenceNeutral:"Reference value", evidenceUnavailable:"Unavailable", resultBasis:"Result basis", recordingStatus:"Recording status", scoreEvidence:"Score evidence", recordingGood:"Good", recordingUsable:"Usable", recordingCare:"Needs care", evidenceStrong:"Strong", evidencePartial:"Partial", evidenceLimited:"Limited",',
+          }
+          for old, new in copy_replacements.items():
+              if old not in text:
+                  raise SystemExit(f'consumer copy marker not found: {old[:40]}')
+              text = text.replace(old, new, 1)
+
+          start_marker = '    function renderReliability(result, userFacing = null) {'
+          end_marker = '    function renderEndpointing(endpointing) {'
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('renderReliability block markers not found')
+
+          replacement = r'''    function renderReliability(result, userFacing = null) {
+      const reliability = result.details?.reliability || {};
+      const content = result.details?.content_match || {};
+      const recording = result.details?.recording_quality || {};
+      const evidence = result.details?.mora_evidence_summary || {};
+      const mode = result.details?.mode || state.lastPayload?.mode || "reference";
+      const gate = userFacing?.debug?.reliability_gate || {};
+      const policy = userFacing?.debug?.scoring_policy || {};
+      const analyzability = userFacing?.recording_analyzability || {};
+      const scoreEvidence = userFacing?.score_evidence || {};
+      const legacyLevel = userFacing?.reliability || gate.reliability || reliability.level || "unknown";
+
+      const recordingValue = Number(recording.score ?? reliability.recording_quality ?? 0);
+      const recordingLevel = analyzability.level || (recordingValue >= 0.80 ? "high" : recordingValue >= 0.50 ? "medium" : "low");
+      const evidenceLevel = scoreEvidence.level || legacyLevel;
+      const recordingLabel = recordingLevel === "high" ? cc("recordingGood") : recordingLevel === "medium" ? cc("recordingUsable") : cc("recordingCare");
+      const evidenceLabel = evidenceLevel === "high" ? cc("evidenceStrong") : evidenceLevel === "medium" ? cc("evidencePartial") : cc("evidenceLimited");
+
+      $("reliabilityLevel").textContent = `${cc("scoreEvidence")} · ${evidenceLabel}`;
+      $("reliabilityLevel").className = evidenceLevel === "high" ? "pill good" : evidenceLevel === "medium" ? "pill warn" : "pill bad";
+
+      const reliable = [];
+      if ((recording.score ?? reliability.recording_quality ?? 0) >= 0.75) reliable.push(t("recordingClear"));
+      if (content.status === "pass" || mode !== "reference") reliable.push(t("contentUsable"));
+      if ((reliability.mora_evidence ?? 0) >= 0.65 || (evidence.judgement_available_count || 0) >= 3) reliable.push(t("timingEvidenceUsable"));
+
+      const blocked = gate.blocked_categories || [];
+      const caution = [];
+      if (blocked.includes("pitch") || (reliability.f0_coverage ?? 1) < 0.5) caution.push(t("pitchLimited"));
+      if (blocked.includes("pronunciation") || blocked.includes("special_mora")) caution.push(t("moraDetailLimited"));
+      if (policy.weak_reference) caution.push(t("weakReferenceNote"));
+
+      const rows = [
+        [cc("recordingStatus"), recordingLabel],
+        [cc("scoreEvidence"), evidenceLabel],
+        [t("reliableParts"), reliable.length ? reliable.join(" / ") : t("noData")],
+        [t("cautionParts"), caution.length ? caution.join(" / ") : t("noMajorLimit")]
+      ];
+      $("reliabilityGrid").innerHTML = rows
+        .map(([label, value]) => `<div class="reliability-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+        .join("");
+
+      const contentWarnings = [];
+      const mainIssue = (gate.messages || [])[0];
+      if (mainIssue) contentWarnings.push(mainIssue);
+      if (content.transcript) {
+        contentWarnings.push(`${t("asrPrefix")}：${content.transcript} / ${content.transcript_kana || ""}`);
+      }
+      if (mode.includes("fallback_acoustic")) {
+        contentWarnings.push(activeModeText().fallbackAcoustic || modeText["zh-CN"].fallbackAcoustic);
+      }
+      if (mode === "reference_free_acoustic" || mode === "acoustic" || mode.includes("fallback_acoustic")) {
+        contentWarnings.push(t("acousticModeWarning"));
+      }
+      if (mode === "transcript_assisted_light") {
+        contentWarnings.push(t("transcriptModeWarning"));
+      }
+      $("reliabilityWarnings").innerHTML = [...new Set(contentWarnings)]
+        .map((warning) => `<li>${escapeHtml(warning)}</li>`)
+        .join("");
+    }
+
+'''
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate patch shape
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('ver1.3/debug_ui/index.html').read_text(encoding='utf-8')
+          assert 'userFacing?.recording_analyzability' in text
+          assert 'userFacing?.score_evidence' in text
+          start = text.index('function renderReliability(result, userFacing = null)')
+          end = text.index('function renderEndpointing', start)
+          block = text[start:end]
+          assert '* 100).toFixed(0)}%' not in block
+          assert 'data-consumer-copy="resultBasis"' in text
+          PY
+          git diff --check
+      - name: Commit UI patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/debug_ui/index.html
+          if git diff --cached --quiet; then
+            echo "No UI patch needed"
+            exit 0
+          fi
+          git commit -m "ui: separate recording status from score evidence"
+          git push origin HEAD:score-evidence-reliability-v9
