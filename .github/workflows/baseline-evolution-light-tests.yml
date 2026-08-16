@@ -107,6 +107,7 @@ on:
       - "ver1.3/tests/test_free_speech_collection_v10.py"
       - "ver1.3/tests/test_free_speech_collection_server_v10.py"
       - "ver1.3/tests/test_free_speech_listener_server_v10.py"
+      - "ver1.3/tests/test_free_speech_listener_order_v10.py"
       - "ver1.3/tests/test_karaoke_timeline.py"
       - "ver1.3/tests/test_consumer_karaoke_ui.py"
       - "ver1.3/tests/test_hf_space_karaoke_v7.py"
@@ -181,6 +182,7 @@ jobs:
             tests/test_free_speech_collection_v10.py \
             tests/test_free_speech_collection_server_v10.py \
             tests/test_free_speech_listener_server_v10.py \
+            tests/test_free_speech_listener_order_v10.py \
             tests/test_karaoke_timeline.py \
             tests/test_consumer_karaoke_ui.py \
             tests/test_hf_space_karaoke_v7.py \
