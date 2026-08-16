@@ -1,0 +1,113 @@
+{
+  "schema_version": "free_speech_v5_promotion_protocol_v1",
+  "status": "frozen_before_criterion_results",
+  "inherits": "free_speech_v4_promotion_protocol_v1",
+  "scope": "C-end Japanese free-speech candidate promotion with executable metadata and listener-context controls",
+  "product_score_contract_under_test": "consumer_four_score_v2",
+  "candidate_evidence_schema": "consumer_evidence_v3",
+  "candidate_surface_policy_under_test": "free_speech_candidate_surface_v1_shadow",
+  "public_dimensions": ["clarity", "fluency", "rhythm", "intonation"],
+  "validation_constructs": {
+    "clarity_comprehensibility": "clarity",
+    "fluency": "fluency",
+    "rhythm_naturalness": "rhythm",
+    "intonation_utterance_naturalness": "intonation",
+    "intonation_contextual_appropriateness": "intonation"
+  },
+  "candidate_types": {
+    "clarity.asr_recoverability_index": "diagnostic_feature",
+    "clarity.word_probability_median": "diagnostic_feature",
+    "clarity.shadow_candidate_score": "score_surface",
+    "rhythm.negative_local_tempo_mad": "diagnostic_feature",
+    "rhythm.negative_local_tempo_spread": "diagnostic_feature",
+    "rhythm.shadow_candidate_score": "score_surface",
+    "fluency.current_product_proxy": "score_surface",
+    "fluency.speech_rate_mora_per_sec": "diagnostic_feature_nonmonotonic",
+    "intonation.robust_range_semitones": "diagnostic_feature_nonmonotonic",
+    "intonation.shadow_candidate_score": "score_surface"
+  },
+  "candidate_construct_match": {
+    "clarity.asr_recoverability_index": ["clarity_comprehensibility"],
+    "clarity.word_probability_median": ["clarity_comprehensibility"],
+    "clarity.shadow_candidate_score": ["clarity_comprehensibility"],
+    "rhythm.negative_local_tempo_mad": ["rhythm_naturalness"],
+    "rhythm.negative_local_tempo_spread": ["rhythm_naturalness"],
+    "rhythm.shadow_candidate_score": ["rhythm_naturalness"],
+    "fluency.current_product_proxy": ["fluency"],
+    "fluency.speech_rate_mora_per_sec": ["fluency"],
+    "intonation.robust_range_semitones": ["intonation_utterance_naturalness"],
+    "intonation.shadow_candidate_score": ["intonation_utterance_naturalness"]
+  },
+  "direct_product_promotion_eligibility": {
+    "clarity.shadow_candidate_score": ["clarity_comprehensibility"],
+    "rhythm.shadow_candidate_score": ["rhythm_naturalness"],
+    "fluency.current_product_proxy": ["fluency"],
+    "intonation.shadow_candidate_score": ["intonation_utterance_naturalness"]
+  },
+  "explicitly_forbidden_promotions": [
+    "isolated_F0_or_pitch_range_to_intonation_contextual_appropriateness",
+    "recording_quality_to_clarity_or_pronunciation_ability",
+    "language_probability_to_clarity",
+    "ASR_word_timing_to_phone_or_mora_correctness",
+    "raw_diagnostic_feature_directly_to_ProductScore",
+    "raw_nonmonotonic_features_to_score_without_predeclared_mapping",
+    "mixing_multiple_score_contract_or_evidence_or_candidate_policy_versions_in_one_promotion_analysis",
+    "claiming_stability_when_the_effect_disappears_or_reverses_in_one_task_mode_or_after_leaving_out_one_speaker"
+  ],
+  "minimum_promotion_gates": {
+    "human_rating_count_minimum_for_held_inclusion": 3,
+    "human_rating_count_target_per_sample_criterion": 5,
+    "held_construct_matched_pair_count": 50,
+    "candidate_availability_rate": 0.8,
+    "construct_matched_spearman_rho": 0.35,
+    "candidate_component_iqr_min_points": 8.0,
+    "channel_paired_median_absolute_candidate_score_drift_max_points": 8.0,
+    "minimum_task_groups_with_usable_pairs": 2,
+    "task_group_associations_must_keep_positive_direction": true,
+    "minimum_leave_one_speaker_out_usable": 5,
+    "leave_one_speaker_out_associations_must_keep_positive_direction": true,
+    "minimum_speakers": 10,
+    "minimum_learner_speakers": 6,
+    "minimum_native_speakers": 4,
+    "negative_controls_no_score_rate_min": 0.9,
+    "gold_transcript_scoring_usage_must_be_zero": true,
+    "held_and_development_speakers_must_be_disjoint": true,
+    "f0_failure_must_not_create_low_intonation_penalty": true,
+    "f0_failure_intonation_candidate_min_points": 65.0,
+    "score_contract_version_must_match_protocol": true,
+    "evidence_schema_version_must_match_protocol": true,
+    "candidate_surface_policy_must_match_protocol": true
+  },
+  "gate_applicability": {
+    "human_rating_count_minimum_for_held_inclusion": ["score_surface"],
+    "construct_matched_pair_count": ["score_surface"],
+    "candidate_availability_rate": ["score_surface"],
+    "construct_matched_spearman_rho": ["score_surface"],
+    "candidate_component_iqr_min_points": ["score_surface"],
+    "task_direction_stability": ["score_surface"],
+    "leave_one_speaker_out_direction_stability": ["score_surface"],
+    "channel_paired_score_drift": ["score_surface"],
+    "version_consistency": ["score_surface"],
+    "raw_feature_scale_dependent_iqr_or_point_drift": []
+  },
+  "decision_semantics": {
+    "pass": "score surface is eligible for a separate product A/B branch and score-contract version bump",
+    "fail": "score surface must remain shadow and cannot affect ProductScore",
+    "insufficient": "data are not sufficient for a promotion decision; do not tune on held data to force a pass",
+    "diagnostic_only": "feature may support model design but cannot directly enter ProductScore"
+  },
+  "listener_protocol": {
+    "isolated_presentation_constructs": [
+      "clarity_comprehensibility",
+      "fluency",
+      "rhythm_naturalness",
+      "intonation_utterance_naturalness"
+    ],
+    "contextual_presentation_constructs": [
+      "intonation_contextual_appropriateness"
+    ],
+    "target_transcript_visible": false,
+    "analysis_metadata_visible": false,
+    "reason": "context needed for contextual intonation must not prime clarity or other isolated ratings"
+  }
+}
