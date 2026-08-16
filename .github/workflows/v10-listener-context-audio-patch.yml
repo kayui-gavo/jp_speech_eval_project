@@ -13,14 +13,13 @@ jobs:
         with:
           ref: free-speech-promotion-readiness-v10
           fetch-depth: 0
-      - name: Apply contextual audio playback patch
+      - name: Add contextual-audio guard to permanent CI
         run: python ver1.3/scripts/_patch_listener_context_audio_v10.py
       - name: Validate and commit
         run: |
-          python -m py_compile ver1.3/scripts/free_speech_listener_server_v10.py
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add ver1.3/scripts/free_speech_listener_server_v10.py
-          git commit -m 'research: play contextual audio in listener UI'
+          git add .github/workflows/baseline-evolution-light-tests.yml
+          git commit -m 'ci: guard contextual audio listener playback'
           git push origin HEAD:free-speech-promotion-readiness-v10
