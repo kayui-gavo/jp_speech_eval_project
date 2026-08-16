@@ -1,0 +1,297 @@
+name: v8-scoring-integrity-bootstrap
+
+on:
+  push:
+    branches: [scoring-integrity-v8]
+    paths: [.github/workflows/v8-scoring-integrity-bootstrap.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: scoring-integrity-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Apply scoring-integrity repairs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one match in {path}, got {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # 1) Direct free speech must not inherit pseudo-reference length rules.
+          p = Path("ver1.3/src/jp_speech_eval/transcript_sanity.py")
+          text = p.read_text(encoding="utf-8")
+          marker = "\n\ndef check_free_speech_transcript_sanity("
+          if marker not in text:
+              text += '''\n\ndef check_free_speech_transcript_sanity(text: str) -> TranscriptSanityResult:\n    \"\"\"Gate transcript usability for direct free-speech scoring.\n\n    Unlike :func:`check_asr_transcript_sanity`, this function does not impose\n    pseudo-reference synthesis limits such as 3--80 content characters. Short\n    conversational turns (for example ``はい`` or ``え？``) and longer natural\n    answers remain score-eligible when the language gate says Japanese.\n\n    This gate only rejects missing text, clearly non-Japanese script mixtures,\n    and obvious repetition/noise-like ASR hallucinations. Utterance duration\n    and per-dimension evidence sufficiency are handled later as reliability,\n    not as language eligibility.\n    \"\"\"\n\n    normalized = re.sub(r"\\s+", "", str(text or "").strip())\n    content_chars = _CONTENT_CHAR_RE.findall(normalized)\n    ja_chars = _JA_CHAR_RE.findall(normalized)\n    content_len = len(content_chars)\n    ja_ratio = len(ja_chars) / max(content_len, 1)\n    punct_ratio = len(_PUNCT_SPACE_RE.findall(normalized)) / max(len(normalized), 1)\n    run_ratio = _longest_run_ratio(normalized)\n    uniq_ratio = _unique_ratio(normalized)\n\n    metrics: Dict[str, float | int | str] = {\n        "char_count": len(normalized),\n        "content_char_count": content_len,\n        "ja_ratio": round(float(ja_ratio), 4),\n        "punct_ratio": round(float(punct_ratio), 4),\n        "longest_run_ratio": round(float(run_ratio), 4),\n        "unique_content_ratio": round(float(uniq_ratio), 4),\n        "purpose": "direct_free_speech_scoreability",\n    }\n\n    reason = "ok"\n    score = 1.0\n    ok = True\n    if content_len <= 0:\n        ok = False\n        reason = "empty_or_no_content_transcript"\n        score = 0.05\n    elif ja_ratio < 0.55:\n        ok = False\n        reason = "not_enough_japanese_content"\n        score = 0.20\n    elif content_len >= 8 and run_ratio >= 0.45:\n        ok = False\n        reason = "repetitive_or_shouted_transcript"\n        score = 0.20\n    elif content_len >= 8 and uniq_ratio < 0.18:\n        ok = False\n        reason = "low_information_repetition"\n        score = 0.25\n    elif content_len >= 4 and punct_ratio > 0.60:\n        ok = False\n        reason = "mostly_punctuation_or_fillers"\n        score = 0.20\n    elif _contains_any(normalized.lower(), {"www", "ahaha", "哈哈", "呵呵"}):\n        ok = False\n        reason = "laughter_or_noise_like_transcript"\n        score = 0.20\n\n    return TranscriptSanityResult(\n        ok=ok,\n        score=round(float(score), 4),\n        reason=reason,\n        normalized_text=normalized,\n        metrics=metrics,\n    )\n'''
+              p.write_text(text, encoding="utf-8")
+
+          replace_once(
+              "ver1.3/src/jp_speech_eval/transcript_assisted.py",
+              "from .transcript_sanity import check_asr_transcript_sanity",
+              "from .transcript_sanity import check_free_speech_transcript_sanity",
+          )
+          replace_once(
+              "ver1.3/src/jp_speech_eval/transcript_assisted.py",
+              "sanity = check_asr_transcript_sanity(transcript or \"\")",
+              "sanity = check_free_speech_transcript_sanity(transcript or \"\")",
+          )
+
+          # 2) Expose reference-boundary provenance to every downstream consumer.
+          replace_once(
+              "ver1.3/src/jp_speech_eval/evaluator.py",
+              '''                "requested_mode": requested_alignment_mode,\n            },''',
+              '''                "requested_mode": requested_alignment_mode,\n                "reference_boundary_method": cache.meta.ref_boundary_method if cache else None,\n                "reference_boundary_confidence": (\n                    round(float(cache.meta.ref_boundary_confidence), 4) if cache else None\n                ),\n                "reference_boundary_tier": cache.meta.ref_boundary_tier if cache else None,\n                "reference_boundary_source": cache.meta.ref_boundary_source if cache else None,\n                "local_boundary_precision_role": "limits_target_local_evidence_not_global_performance",\n            },''',
+          )
+
+          old_alignment_state = '''def _alignment_state(\n    result: Mapping[str, Any],\n    details: Mapping[str, Any],\n) -> tuple[bool, bool, str]:\n    \"\"\"Resolve alignment availability from both legacy and current fields.\n\n    Some evaluators historically wrote the fallback state only to the top-level\n    ``alignment_mode`` while ``details.alignment`` still looked nominal. A C-end\n    dimension must not treat equal-segmentation fallback as trustworthy local\n    alignment merely because the nested legacy object is stale.\n    \"\"\"\n    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}\n    mode = str(result.get("alignment_mode") or alignment.get("mode") or "")\n    mode_lower = mode.lower()\n    fallback = bool(alignment.get("used_equal_fallback")) or "fallback" in mode_lower\n    available = bool(alignment.get("available", True)) and not fallback\n    return available, fallback, mode\n'''
+          new_alignment_state = '''def _alignment_state(\n    result: Mapping[str, Any],\n    details: Mapping[str, Any],\n) -> tuple[bool, bool, str]:\n    \"\"\"Resolve whether target-local alignment is precise enough to consume.\n\n    A good DTW path cannot manufacture precise mora boundaries when the\n    reference boundaries it maps from were themselves equal-time placeholders.\n    Reference provenance therefore limits *local* timing/F0 evidence while\n    leaving broad/global speaking scores available.\n    \"\"\"\n    alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}\n    mode = str(result.get("alignment_mode") or alignment.get("mode") or "")\n    mode_lower = mode.lower()\n    path_fallback = bool(alignment.get("used_equal_fallback")) or "fallback" in mode_lower\n    ref_tier = str(alignment.get("reference_boundary_tier") or "").strip().lower()\n    ref_confidence = _number(alignment.get("reference_boundary_confidence"))\n    reference_precision_limited = (\n        ref_tier in {"equal_fallback", "unknown_alignment"}\n        or (ref_confidence is not None and ref_confidence < 0.45)\n    )\n    fallback = bool(path_fallback or reference_precision_limited)\n    available = bool(alignment.get("available", True)) and not fallback\n    return available, fallback, mode\n'''
+          replace_once(
+              "ver1.3/src/jp_speech_eval/consumer_dimension_policy.py",
+              old_alignment_state,
+              new_alignment_state,
+          )
+          replace_once(
+              "ver1.3/src/jp_speech_eval/consumer_dimension_policy.py",
+              'alignment_note = " local alignment fell back, so target-local timing/F0 evidence was not used as if it were precise." if alignment_fallback else ""',
+              'alignment_note = " local alignment or reference timing is approximate, so target-local timing/F0 evidence was not used as if it were precise." if alignment_fallback else ""',
+          )
+
+          # 3) Reliability gate: low-precision reference timing blocks local claims,
+          # but does not make the learner worse or erase the broad score.
+          replace_once(
+              "ver1.3/src/jp_speech_eval/reliability_gate.py",
+              '''    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")\n    is_fixed_reference = policy.fixed_reference\n''',
+              '''    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")\n    is_fixed_reference = policy.fixed_reference\n    reference_boundary_tier = str(alignment.get("reference_boundary_tier") or "").strip().lower()\n    reference_boundary_confidence_raw = alignment.get("reference_boundary_confidence")\n    reference_boundary_confidence = (\n        None\n        if reference_boundary_confidence_raw is None\n        else _clip01(reference_boundary_confidence_raw, default=0.0)\n    )\n    reference_boundary_precision_limited = bool(\n        is_fixed_reference\n        and (\n            reference_boundary_tier in {"equal_fallback", "unknown_alignment"}\n            or (reference_boundary_confidence is not None and reference_boundary_confidence < 0.45)\n        )\n    )\n''',
+          )
+          replace_once(
+              "ver1.3/src/jp_speech_eval/reliability_gate.py",
+              '''    allow_pitch = policy.allow_pitch_feedback and is_fixed_reference and not policy.weak_reference and not policy.demo_only\n\n    if not is_fixed_reference:\n''',
+              '''    allow_pitch = policy.allow_pitch_feedback and is_fixed_reference and not policy.weak_reference and not policy.demo_only\n\n    if reference_boundary_precision_limited:\n        practice = "needs_attention"\n        allow_special = False\n        allow_pitch = False\n        allow_detail = False\n        blocked.extend(["special_mora", "pitch", "pronunciation_detail"])\n        reasons.append("reference_boundary_precision_low_broad_only")\n        messages.append("参照音声の細かい拍位置が概算のため、今回は全体的な話し方を中心に表示します。")\n\n    if not is_fixed_reference:\n''',
+          )
+
+          # 4) Karaoke must also surface the same provenance as approximate sync.
+          replace_once(
+              "ver1.3/src/jp_speech_eval/app_core/karaoke_timeline.py",
+              '''    confidence = _finite(alignment.get("confidence"))\n    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")\n    approximate = bool(\n''',
+              '''    confidence = _finite(alignment.get("confidence"))\n    reference_boundary_confidence = _finite(alignment.get("reference_boundary_confidence"))\n    reference_boundary_tier = str(alignment.get("reference_boundary_tier") or "").strip().lower()\n    reference_boundary_limited = bool(\n        reference_boundary_tier in {"equal_fallback", "unknown_alignment"}\n        or (reference_boundary_confidence is not None and reference_boundary_confidence < 0.45)\n    )\n    effective_local_confidence = confidence\n    if reference_boundary_confidence is not None:\n        effective_local_confidence = (\n            reference_boundary_confidence\n            if effective_local_confidence is None\n            else min(effective_local_confidence, reference_boundary_confidence)\n        )\n    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")\n    approximate = bool(\n''',
+          )
+          replace_once(
+              "ver1.3/src/jp_speech_eval/app_core/karaoke_timeline.py",
+              '''        or alignment_mode.endswith("fallback_equal")\n        or confidence is None\n        or confidence < 0.50\n''',
+              '''        or alignment_mode.endswith("fallback_equal")\n        or reference_boundary_limited\n        or effective_local_confidence is None\n        or effective_local_confidence < 0.50\n''',
+          )
+          replace_once(
+              "ver1.3/src/jp_speech_eval/app_core/karaoke_timeline.py",
+              '''            "alignment_confidence": None if confidence is None else round(_clip(confidence, 0.0, 1.0), 4),\n            "approximate": approximate,\n''',
+              '''            "alignment_confidence": None if effective_local_confidence is None else round(_clip(effective_local_confidence, 0.0, 1.0), 4),\n            "path_alignment_confidence": None if confidence is None else round(_clip(confidence, 0.0, 1.0), 4),\n            "reference_boundary_confidence": None if reference_boundary_confidence is None else round(_clip(reference_boundary_confidence, 0.0, 1.0), 4),\n            "reference_boundary_tier": reference_boundary_tier or None,\n            "approximate": approximate,\n''',
+          )
+
+          # 5) Learner feedback for special mora stays shadow by default until
+          # learner-side validation explicitly opts in.
+          replace_once(
+              "ver1.3/src/jp_speech_eval/feedback_renderer.py",
+              "    enable_user_facing_calibrated_special_mora: bool = True,",
+              "    enable_user_facing_calibrated_special_mora: bool = False,",
+          )
+
+          # 6) Public HF demo should not spend CPU on hidden realtime debug rows.
+          replace_once(
+              "ver1.3/scripts/debug_ui.py",
+              '''                realtime = _realtime_rows(\n                    wav_path=wav_path,\n                    cache_prefix=self.server.cache_prefix,  # type: ignore[attr-defined]\n                    config_path=self.server.config_path,  # type: ignore[attr-defined]\n                    chunk_ms=float(self.server.chunk_ms),  # type: ignore[attr-defined]\n                )\n''',
+              '''                realtime = [] if self.server.public_demo else _realtime_rows(  # type: ignore[attr-defined]\n                    wav_path=wav_path,\n                    cache_prefix=self.server.cache_prefix,  # type: ignore[attr-defined]\n                    config_path=self.server.config_path,  # type: ignore[attr-defined]\n                    chunk_ms=float(self.server.chunk_ms),  # type: ignore[attr-defined]\n                )\n''',
+          )
+
+          # Keep the standing light CI active on the new branch.
+          replace_once(
+              ".github/workflows/baseline-evolution-light-tests.yml",
+              "      - hf-space-karaoke-integration-v7\n",
+              "      - hf-space-karaoke-integration-v7\n      - scoring-integrity-v8\n",
+          )
+
+          # Regression tests specific to the audit findings.
+          Path("ver1.3/tests/test_scoring_integrity_v8.py").write_text(r'''from __future__ import annotations
+
+import inspect
+
+import numpy as np
+import soundfile as sf
+
+from jp_speech_eval.app_core.karaoke_timeline import build_consumer_karaoke_timeline
+from jp_speech_eval.consumer_dimension_policy import build_consumer_score_components
+from jp_speech_eval.feedback_renderer import render_user_facing_result
+from jp_speech_eval.reliability_gate import evaluate_reliability_gate
+from jp_speech_eval.scoring_policy import policy_from_result
+from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_light
+from jp_speech_eval.transcript_sanity import check_free_speech_transcript_sanity
+
+
+def _write_voice_like_wav(path, *, sr: int = 16000, duration: float = 0.8) -> None:
+    t = np.arange(int(sr * duration), dtype=float) / sr
+    y = 0.12 * np.sin(2.0 * np.pi * 190.0 * t)
+    sf.write(path, y, sr, subtype="FLOAT")
+
+
+def _fake_f0(y, sr):
+    times = np.linspace(0.0, len(y) / sr, 24, endpoint=False)
+    f0 = np.linspace(180.0, 220.0, 24)
+    return times, f0, "test_f0"
+
+
+def test_direct_free_speech_sanity_accepts_short_and_long_japanese() -> None:
+    assert check_free_speech_transcript_sanity("はい").ok is True
+    assert check_free_speech_transcript_sanity("え？").ok is True
+    assert check_free_speech_transcript_sanity("今日はとてもいい天気ですね" * 8).ok is True
+    assert check_free_speech_transcript_sanity("I like ramen very much").ok is False
+    assert check_free_speech_transcript_sanity("あ" * 12).ok is False
+
+
+def test_short_valid_japanese_turn_receives_score_in_direct_free_speech(tmp_path, monkeypatch) -> None:
+    wav = tmp_path / "short_ja.wav"
+    _write_voice_like_wav(wav)
+    monkeypatch.setattr("jp_speech_eval.transcript_assisted.extract_f0", _fake_f0)
+    raw = evaluate_transcript_assisted_light(wav, transcript="はい")
+    assert raw["details"]["score_eligible"] is True
+    assert raw["details"]["transcript_sanity"]["ok"] is True
+    assert raw["total_score"] is not None
+    assert raw["moras"]
+
+
+def _low_reference_provenance_result():
+    return {
+        "alignment_mode": "cached_dtw",
+        "pronunciation_score": 92,
+        "prosody_score": 91,
+        "fluency_score": 86,
+        "tone_score": 88,
+        "moras": ["ラ", "ー", "メ", "ン"],
+        "mora_table": [
+            {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2, "f0_hz": 180.0},
+            {"mora": "ー", "start_sec": 0.2, "end_sec": 0.4, "f0_hz": 195.0},
+            {"mora": "メ", "start_sec": 0.4, "end_sec": 0.6, "f0_hz": 188.0},
+            {"mora": "ン", "start_sec": 0.6, "end_sec": 0.8, "f0_hz": 175.0},
+        ],
+        "endpointing": {"detected": True, "raw_duration": 0.9, "speech_start": 0.05, "speech_end": 0.85},
+        "details": {
+            "mode": "reference",
+            "verified_level": "human_checked",
+            "content_match": {"status": "pass", "score": 0.9, "kana_similarity": 0.95, "duration_ratio": 1.0},
+            "alignment": {
+                "available": True,
+                "confidence": 0.92,
+                "used_equal_fallback": False,
+                "mode": "cached_dtw",
+                "reference_boundary_method": "equal_mora",
+                "reference_boundary_confidence": 0.15,
+                "reference_boundary_tier": "equal_fallback",
+            },
+            "reliability": {
+                "overall": 0.95,
+                "endpointing": 1.0,
+                "alignment": 0.92,
+                "mora_evidence": 0.9,
+                "f0_coverage": 0.9,
+                "duration_ratio_to_reference": 1.0,
+            },
+            "recording_quality": {"score": 0.95},
+            "fluency": {"rate_score": 88.0, "pause_score": 85.0, "speech_rate_mora_per_sec": 5.0},
+            "prosody": {"contour_corr": 0.8, "contour_valid_mora_count": 4, "note": "ok"},
+            "tone": {"pitch_range_log": 0.4, "pitch_score": 88.0},
+            "reference_f0_by_mora": [175.0, 190.0, 185.0, 172.0],
+        },
+    }
+
+
+def test_low_reference_boundary_provenance_cannot_become_local_public_evidence() -> None:
+    raw = _low_reference_provenance_result()
+    components = {item["key"]: item for item in build_consumer_score_components(raw, mode="reference")}
+    assert components["mora_timing"]["evidence_tier"] == "alignment_fallback_broad_timing"
+    assert components["mora_timing"]["confidence"] == "low"
+    assert components["intonation"]["source_field"] != "prosody_score"
+    assert components["intonation"]["confidence"] == "low"
+
+
+def test_low_reference_boundary_provenance_blocks_local_feedback_but_not_whole_score() -> None:
+    raw = _low_reference_provenance_result()
+    policy = policy_from_result(raw, mode="reference")
+    assert policy.allow_pitch_feedback is True
+    gate = evaluate_reliability_gate(raw, policy)
+    assert gate.practice_check_result == "needs_attention"
+    assert gate.allow_pitch_feedback is False
+    assert gate.allow_special_mora_feedback is False
+    assert gate.allow_pronunciation_detail is False
+    assert "reference_boundary_precision_low_broad_only" in gate.reasons
+
+
+def test_low_reference_boundary_provenance_marks_karaoke_mora_sync_approximate() -> None:
+    raw = _low_reference_provenance_result()
+    timeline = build_consumer_karaoke_timeline(raw, {"score_dimensions": []})
+    assert timeline["sync_mode"] == "mora_alignment_approximate"
+    assert timeline["moras"]
+    assert all(item["approximate"] for item in timeline["moras"])
+    assert all(item["alignment_confidence"] == 0.15 for item in timeline["moras"])
+
+
+def test_special_mora_user_feedback_is_opt_in_by_default() -> None:
+    defaults = inspect.signature(render_user_facing_result).parameters
+    assert defaults["enable_user_facing_calibrated_special_mora"].default is False
+''', encoding="utf-8")
+          PY
+      - name: Install lightweight runtime
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install \
+            "numpy>=1.24,<2.0" \
+            "scipy>=1.10,<2.0" \
+            "librosa>=0.10.1,<1.0" \
+            "soundfile>=0.12,<1.0" \
+            "matplotlib>=3.7,<4.0" \
+            "pyopenjtalk-plus==0.4.1.post8" \
+            "pyworld-prebuilt>=0.3.5,<0.4" \
+            pytest
+          python -m pip install -e ver1.3
+      - name: Run v8 targeted guards
+        run: |
+          cd ver1.3
+          python -m pytest -q \
+            tests/test_scoring_integrity_v8.py \
+            tests/test_transcript_assisted_language_gate.py \
+            tests/test_consumer_dimension_policy.py \
+            tests/test_karaoke_timeline.py \
+            tests/test_reference_boundary_provenance.py
+      - name: Run full lightweight suite
+        run: |
+          cd ver1.3
+          python -m pytest -q
+      - name: Commit repairs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            ver1.3/src/jp_speech_eval/transcript_sanity.py \
+            ver1.3/src/jp_speech_eval/transcript_assisted.py \
+            ver1.3/src/jp_speech_eval/evaluator.py \
+            ver1.3/src/jp_speech_eval/consumer_dimension_policy.py \
+            ver1.3/src/jp_speech_eval/reliability_gate.py \
+            ver1.3/src/jp_speech_eval/app_core/karaoke_timeline.py \
+            ver1.3/src/jp_speech_eval/feedback_renderer.py \
+            ver1.3/scripts/debug_ui.py \
+            ver1.3/tests/test_scoring_integrity_v8.py \
+            .github/workflows/baseline-evolution-light-tests.yml
+          git commit -m "fix: enforce scoring evidence integrity v8"
+          git push origin HEAD:scoring-integrity-v8
