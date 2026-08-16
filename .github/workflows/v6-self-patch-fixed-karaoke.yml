@@ -1,0 +1,92 @@
+name: v6-one-shot-fixed-karaoke
+
+on:
+  push:
+    branches:
+      - karaoke-consumer-ui-v6
+    paths:
+      - ".github/workflows/v6-self-patch-fixed-karaoke.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: karaoke-consumer-ui-v6
+      - name: Add mora-aligned fixed-practice karaoke playback
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("ver1.3/src/jp_speech_eval/app_core/karaoke_timeline.py")
+          text = path.read_text(encoding="utf-8")
+
+          anchor = '''def _pitch_payload(\n    details: Mapping[str, Any],\n'''
+          helper = '''def _mora_rows(\n    result: Mapping[str, Any],\n    details: Mapping[str, Any],\n    *,\n    speech_start: float,\n    raw_duration: float,\n) -> List[Dict[str, Any]]:\n    raw_rows = result.get("mora_table") if isinstance(result.get("mora_table"), list) else []\n    alignment = _mapping(details.get("alignment"))\n    confidence = _finite(alignment.get("confidence"))\n    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")\n    approximate = bool(\n        alignment.get("used_equal_fallback")\n        or alignment_mode == "equal"\n        or alignment_mode.endswith("fallback_equal")\n        or (confidence is not None and confidence < 0.50)\n    )\n    rows: List[Dict[str, Any]] = []\n    for raw in raw_rows:\n        item = _mapping(raw)\n        mora = str(item.get("mora") or "").strip()\n        start = _original_playback_time(item.get("start_sec"), speech_start=speech_start, raw_duration=raw_duration)\n        end = _original_playback_time(item.get("end_sec"), speech_start=speech_start, raw_duration=raw_duration)\n        if not mora or start is None or end is None or end <= start:\n            continue\n        rows.append({\n            "text": mora,\n            "start_sec": start,\n            "end_sec": end,\n            "alignment_confidence": None if confidence is None else round(_clip(confidence, 0.0, 1.0), 4),\n            "approximate": approximate,\n            "source": "user_mora_alignment",\n            "interpretation": "mora_playback_alignment_not_phone_correctness",\n        })\n    return rows\n\n\ndef _relative_semitone_series(values: Sequence[Any]) -> tuple[List[Optional[float]], Optional[float]]:\n    finite = [value for value in (_finite(raw) for raw in values) if value is not None and value > 0]\n    if len(finite) < 2:\n        return [None for _ in values], None\n    center = float(median(finite))\n    output: List[Optional[float]] = []\n    for raw in values:\n        value = _finite(raw)\n        if value is None or value <= 0:\n            output.append(None)\n            continue\n        semitone = 12.0 * math.log2(value / center)\n        output.append(round(_clip(semitone, -12.0, 12.0), 4))\n    return output, center\n\n\ndef _mora_pitch_payload(\n    result: Mapping[str, Any],\n    details: Mapping[str, Any],\n    moras: Sequence[Mapping[str, Any]],\n) -> Dict[str, Any]:\n    raw_rows = result.get("mora_table") if isinstance(result.get("mora_table"), list) else []\n    if not moras or not raw_rows:\n        return {\n            "available": False, "points": [], "reference_points": [],\n            "vertical_unit": "semitone_relative_to_each_speaker_median",\n            "source": "unavailable",\n            "interpretation": "voice_movement_visualization_not_lexical_pitch_accent_correctness",\n            "contextual_intonation_claim": False,\n        }\n    user_hz = [_mapping(row).get("f0_hz") for row in raw_rows[:len(moras)]]\n    reference_hz_raw = details.get("reference_f0_by_mora") if isinstance(details.get("reference_f0_by_mora"), list) else []\n    reference_hz = list(reference_hz_raw[:len(moras)])\n    if len(reference_hz) < len(moras):\n        reference_hz.extend([None] * (len(moras) - len(reference_hz)))\n    user_st, user_center = _relative_semitone_series(user_hz)\n    reference_st, reference_center = _relative_semitone_series(reference_hz)\n    user_points: List[Dict[str, Any]] = []\n    reference_points: List[Dict[str, Any]] = []\n    for index, mora in enumerate(moras):\n        start = _finite(mora.get("start_sec"))\n        end = _finite(mora.get("end_sec"))\n        if start is None or end is None or end <= start:\n            continue\n        midpoint = round((start + end) / 2.0, 4)\n        user_value = user_st[index] if index < len(user_st) else None\n        reference_value = reference_st[index] if index < len(reference_st) else None\n        user_points.append({"t_sec": midpoint, "relative_semitone": user_value})\n        reference_points.append({"t_sec": midpoint, "relative_semitone": reference_value})\n    user_available = sum(point["relative_semitone"] is not None for point in user_points) >= 2\n    reference_available = sum(point["relative_semitone"] is not None for point in reference_points) >= 2\n    return {\n        "available": user_available,\n        "points": user_points,\n        "reference_points": reference_points if reference_available else [],\n        "reference_available": reference_available,\n        "vertical_unit": "semitone_relative_to_each_speaker_median",\n        "source": "mora_median_f0_alignment" if user_available else "unavailable",\n        "user_median_f0_hz": None if user_center is None else round(user_center, 3),\n        "reference_median_f0_hz": None if reference_center is None else round(reference_center, 3),\n        "reference_time_mapping": "reference_mora_shape_mapped_to_user_mora_midpoints",\n        "interpretation": "mora_aligned_voice_movement_shape_not_strict_pitch_accent_correctness",\n        "contextual_intonation_claim": False,\n    }\n\n\n'''
+          if anchor not in text:
+              raise SystemExit("pitch helper anchor missing")
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old = '''    return {\n        "available": bool(points and any(point["relative_semitone"] is not None for point in points)),\n        "points": points,\n        "vertical_unit": "semitone_relative_to_speaker_median",\n'''
+          new = '''    return {\n        "available": bool(points and any(point["relative_semitone"] is not None for point in points)),\n        "points": points,\n        "reference_points": [],\n        "reference_available": False,\n        "vertical_unit": "semitone_relative_to_speaker_median",\n'''
+          if old not in text:
+              raise SystemExit("free pitch return anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''    words = _word_rows(asr, speech_start=speech_start, raw_duration=raw_duration)\n    transcript = str(asr.get("text") or result.get("target_text") or "").strip()\n    if words:\n        sync_mode = "word_timestamps"\n        sync_note = "ASRの実時間スタンプに合わせて字幕を表示します。単語の正誤判定ではありません。"\n    elif transcript:\n        sync_mode = "sentence_progress_only"\n        sync_note = "単語ごとの実時間スタンプがないため、字幕は同期せず全文表示します。"\n    else:\n        sync_mode = "unavailable"\n        sync_note = "同期表示に使える文字情報がありません。"\n\n    pauses = _pause_rows(result, speech_start=speech_start, raw_duration=raw_duration)\n    pitch = _pitch_payload(details, speech_start=speech_start, raw_duration=raw_duration)\n'''
+          new = '''    words = _word_rows(asr, speech_start=speech_start, raw_duration=raw_duration)\n    moras = _mora_rows(result, details, speech_start=speech_start, raw_duration=raw_duration)\n    transcript = str(asr.get("text") or result.get("target_text") or "").strip()\n    if words:\n        sync_mode = "word_timestamps"\n        sync_note = "ASRの実時間スタンプに合わせて字幕を表示します。単語の正誤判定ではありません。"\n    elif moras:\n        approximate = any(bool(item.get("approximate")) for item in moras)\n        sync_mode = "mora_alignment_approximate" if approximate else "mora_alignment"\n        sync_note = (\n            "ユーザー音声へのモーラ境界を概算して同期します。発音の正誤を色分けする表示ではありません。"\n            if approximate\n            else "ユーザー音声へのモーラ境界に合わせて拍ごとに表示します。発音の正誤を色分けする表示ではありません。"\n        )\n    elif transcript:\n        sync_mode = "sentence_progress_only"\n        sync_note = "実時間の単語・モーラ境界がないため、字幕は同期せず全文表示します。"\n    else:\n        sync_mode = "unavailable"\n        sync_note = "同期表示に使える文字情報がありません。"\n\n    pauses = _pause_rows(result, speech_start=speech_start, raw_duration=raw_duration)\n    pitch = _pitch_payload(details, speech_start=speech_start, raw_duration=raw_duration)\n    if not pitch.get("available") and moras:\n        pitch = _mora_pitch_payload(result, details, moras)\n'''
+          if old not in text:
+              raise SystemExit("sync builder anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''        "words": words,\n        "pauses": pauses,\n'''
+          new = '''        "words": words,\n        "moras": moras,\n        "pauses": pauses,\n'''
+          if old not in text:
+              raise SystemExit("mora payload anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''            "word_timestamps_are_phone_correctness": False,\n            "pitch_curve_is_lexical_pitch_accent_correctness": False,\n'''
+          new = '''            "word_timestamps_are_phone_correctness": False,\n            "mora_alignment_is_phone_correctness": False,\n            "pitch_curve_is_lexical_pitch_accent_correctness": False,\n'''
+          if old not in text:
+              raise SystemExit("guardrail anchor missing")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          html_path = Path("ver1.3/debug_ui/consumer_v3.html")
+          html = html_path.read_text(encoding="utf-8")
+          old = '''              <div class="layers"><label><input id="pitchLayer" type="checkbox" checked>声の動き</label><label><input id="pauseLayer" type="checkbox" checked>間</label></div>'''
+          new = '''              <div class="layers"><label><input id="pitchLayer" type="checkbox" checked><span id="pitchLayerLabel">声の動き</span></label><label><input id="pauseLayer" type="checkbox" checked>間</label></div>'''
+          if old not in html:
+              raise SystemExit("layer markup anchor missing")
+          html = html.replace(old, new, 1)
+
+          old = '''    $('factSync').textContent=t.sync_mode==='word_timestamps'?'単語ごとに同期':t.sync_mode==='sentence_progress_only'?'全文のみ':'利用できません';\n'''
+          new = '''    $('factSync').textContent=t.sync_mode==='word_timestamps'?'単語ごとに同期':t.sync_mode==='mora_alignment'?'拍ごとに同期':t.sync_mode==='mora_alignment_approximate'?'拍ごと・概算':t.sync_mode==='sentence_progress_only'?'全文のみ':'利用できません';\n'''
+          if old not in html:
+              raise SystemExit("fact sync anchor missing")
+          html = html.replace(old, new, 1)
+
+          old = '''    const words=Array.isArray(t.words)?t.words:[];\n    if(words.length){\n      $('syncBadge').textContent='字幕同期 ON';\n      words.forEach((w,i)=>{const b=document.createElement('button');b.type='button';b.className='lyric-word'+(w.asr_confidence==='low'?' low-asr':'');b.textContent=w.text;b.dataset.start=w.start_sec;b.dataset.end=w.end_sec;b.dataset.index=i;b.title='字幕位置はASRの時間情報です。発音の正誤判定ではありません。';b.addEventListener('click',()=>{if($('userAudio').src){$('userAudio').currentTime=Number(w.start_sec)||0;updatePlaybackVisual()}});box.appendChild(b)});\n    }else{\n      $('syncBadge').textContent=t.sync_mode==='sentence_progress_only'?'全文表示':'同期なし';box.classList.add('static');box.textContent=t.transcript||'字幕として表示できる文字情報がありません。';\n    }\n    $('visualEmpty').classList.toggle('show',!(t.pitch&&t.pitch.available));\n'''
+          new = '''    const words=Array.isArray(t.words)?t.words:[], moras=Array.isArray(t.moras)?t.moras:[];\n    if(words.length){\n      $('syncBadge').textContent='字幕同期 ON';\n      words.forEach((w,i)=>{const b=document.createElement('button');b.type='button';b.className='lyric-word'+(w.asr_confidence==='low'?' low-asr':'');b.textContent=w.text;b.dataset.start=w.start_sec;b.dataset.end=w.end_sec;b.dataset.index=i;b.title='字幕位置はASRの時間情報です。発音の正誤判定ではありません。';b.addEventListener('click',()=>{if($('userAudio').src){$('userAudio').currentTime=Number(w.start_sec)||0;updatePlaybackVisual()}});box.appendChild(b)});\n    }else if(moras.length){\n      const approximate=t.sync_mode==='mora_alignment_approximate';\n      $('syncBadge').textContent=approximate?'拍同期・概算':'拍同期 ON';\n      moras.forEach((m,i)=>{const b=document.createElement('button');b.type='button';b.className='lyric-word';b.textContent=m.text;b.dataset.start=m.start_sec;b.dataset.end=m.end_sec;b.dataset.index=i;b.title=approximate?'モーラ境界は概算です。発音の正誤判定ではありません。':'ユーザー音声へのモーラ境界です。発音の正誤判定ではありません。';b.addEventListener('click',()=>{if($('userAudio').src){$('userAudio').currentTime=Number(m.start_sec)||0;updatePlaybackVisual()}});box.appendChild(b)});\n    }else{\n      $('syncBadge').textContent=t.sync_mode==='sentence_progress_only'?'全文表示':'同期なし';box.classList.add('static');box.textContent=t.transcript||'字幕として表示できる文字情報がありません。';\n    }\n    $('visualEmpty').classList.toggle('show',!(t.pitch&&t.pitch.available));\n    $('pitchLayerLabel').textContent=t.pitch?.reference_available?'声の動き（あなた＋お手本）':'声の動き';\n'''
+          if old not in html:
+              raise SystemExit("lyrics render anchor missing")
+          html = html.replace(old, new, 1)
+
+          old = '''    if($('pitchLayer').checked&&t.pitch?.available){\n      const points=t.pitch.points||[], values=points.map(p=>Number(p.relative_semitone)).filter(Number.isFinite), maxAbs=Math.max(3,...values.map(v=>Math.abs(v)));let started=false;ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--rose').trim()||'#9a5c6c';ctx.lineWidth=2;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();\n      points.forEach(p=>{const v=p.relative_semitone;if(v==null||!Number.isFinite(Number(v))){started=false;return}const px=x(p.t_sec),py=h/2-(Number(v)/maxAbs)*(h*.34);if(!started){ctx.moveTo(px,py);started=true}else ctx.lineTo(px,py)});ctx.stroke();\n    }\n'''
+          new = '''    if($('pitchLayer').checked&&t.pitch?.available){\n      const points=t.pitch.points||[], refPoints=t.pitch.reference_points||[], all=[...points,...refPoints], values=all.map(p=>Number(p.relative_semitone)).filter(Number.isFinite), maxAbs=Math.max(3,...values.map(v=>Math.abs(v)));\n      const drawSeries=(series,color,dashed)=>{let started=false;ctx.strokeStyle=color;ctx.lineWidth=dashed?1.5:2;ctx.lineJoin='round';ctx.lineCap='round';ctx.setLineDash(dashed?[6,5]:[]);ctx.beginPath();series.forEach(p=>{const v=p.relative_semitone;if(v==null||!Number.isFinite(Number(v))){started=false;return}const px=x(p.t_sec),py=h/2-(Number(v)/maxAbs)*(h*.34);if(!started){ctx.moveTo(px,py);started=true}else ctx.lineTo(px,py)});ctx.stroke();ctx.setLineDash([])};\n      drawSeries(points,getComputedStyle(document.documentElement).getPropertyValue('--rose').trim()||'#9a5c6c',false);\n      if(refPoints.length)drawSeries(refPoints,getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()||'#b18e58',true);\n    }\n'''
+          if old not in html:
+              raise SystemExit("pitch drawing anchor missing")
+          html = html.replace(old, new, 1)
+          html_path.write_text(html, encoding="utf-8")
+          PY
+      - name: Commit fixed-practice karaoke
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/src/jp_speech_eval/app_core/karaoke_timeline.py ver1.3/debug_ui/consumer_v3.html
+          git commit -m "ui: add mora-aligned fixed-practice karaoke playback"
+          git push origin HEAD:karaoke-consumer-ui-v6
