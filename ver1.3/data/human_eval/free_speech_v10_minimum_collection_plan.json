@@ -1,0 +1,134 @@
+{
+  "schema_version": "free_speech_v10_minimum_collection_plan_v1",
+  "status": "operational_blueprint_not_score_calibration",
+  "purpose": "collect the smallest practical new corpus that has buffer above the frozen v5/v10 promotion gates without repeating the legacy isolated-word collection",
+  "principles": [
+    "speaker identities are disjoint between development and held splits",
+    "all Japanese criterion clips are naturally produced Japanese, not synthetic perturbations",
+    "gold/manual transcripts may be stored separately for research but are never supplied to ProductScore evaluation",
+    "fixed-reading JANON/JVS assets remain regression controls and are not counted toward free-speech criterion coverage",
+    "channel variants are derived from the exact same source recording and never treated as independent productions",
+    "native clips are controls for construct behavior, not a native-likeness scoring target"
+  ],
+  "held_japanese_core": {
+    "learner": {
+      "speaker_count": 8,
+      "clean_clips_per_speaker": 5,
+      "clean_clip_total": 40,
+      "per_speaker_target_mix": [
+        "short_spontaneous",
+        "short_spontaneous",
+        "short_controlled_dialogue",
+        "long_spontaneous",
+        "long_controlled_dialogue"
+      ]
+    },
+    "native": {
+      "speaker_count": 4,
+      "clean_clips_per_speaker": 4,
+      "clean_clip_total": 16,
+      "per_speaker_target_mix": [
+        "short_spontaneous",
+        "short_controlled_dialogue",
+        "long_spontaneous",
+        "long_controlled_dialogue"
+      ]
+    },
+    "clean_clip_total": 56,
+    "why": "provides 40 held learner pairs rather than the v10 minimum 30, 12 held Japanese speakers rather than the v5 minimum 10, and substantial buffer for clips that miss the intended duration bucket"
+  },
+  "development_japanese_core": {
+    "learner": {
+      "speaker_count": 4,
+      "clean_clips_per_speaker": 4,
+      "clean_clip_total": 16
+    },
+    "native": {
+      "speaker_count": 2,
+      "clean_clips_per_speaker": 4,
+      "clean_clip_total": 8
+    },
+    "clean_clip_total": 24,
+    "use": "debugging and any future threshold/model selection; never use held clips for tuning"
+  },
+  "duration_targets": {
+    "short_instruction": "answer naturally in roughly one short phrase or sentence",
+    "short_gate_definition": "actual product-condition speech_duration_sec <= 3.0",
+    "long_instruction": "answer naturally with enough detail for roughly 8-15 seconds of speech",
+    "long_gate_definition": "actual product-condition speech_duration_sec >= 8.0",
+    "middle_duration_policy": "3-8 second clips still count for overall criterion analysis but not the v10 short/long slice gates",
+    "oversampling_reason": "duration bins are determined after recording from endpointing; participants are not forced to hit an exact stopwatch duration"
+  },
+  "prompt_families": {
+    "short_spontaneous": [
+      "今日の気分を一言で教えてください。",
+      "今いちばん食べたいものは何ですか。",
+      "今日はどこから来ましたか。",
+      "最近よく使うものを一つ教えてください。"
+    ],
+    "long_spontaneous": [
+      "最近楽しかったことを、理由も含めて話してください。",
+      "好きな場所について、どんなところか説明してください。",
+      "最近困ったことと、どうしたかを話してください。",
+      "これからやってみたいことについて少し詳しく話してください。"
+    ],
+    "controlled_dialogue": [
+      {
+        "prompt_id": "dlg_request",
+        "preceding_turn": "すみません、もう少し詳しく教えてもらえますか。",
+        "instruction": "自然に返答してください。内容は自由です。"
+      },
+      {
+        "prompt_id": "dlg_confirm",
+        "preceding_turn": "それで大丈夫そうですか。",
+        "instruction": "自然に返答してください。内容は自由です。"
+      },
+      {
+        "prompt_id": "dlg_recommend",
+        "preceding_turn": "どちらがおすすめですか。理由も聞きたいです。",
+        "instruction": "自然に返答してください。内容は自由です。"
+      },
+      {
+        "prompt_id": "dlg_followup",
+        "preceding_turn": "どうしてそう思ったんですか。",
+        "instruction": "自然に返答してください。内容は自由です。"
+      }
+    ],
+    "prompt_rule": "prompt/context text may be shown for contextual intonation rating, but the participant response transcript is never shown to blinded listeners"
+  },
+  "channel_robustness": {
+    "held_clean_anchors": 12,
+    "derived_variant_count": 12,
+    "suggested_conditions": [
+      "moderate_noise",
+      "codec_or_device_change"
+    ],
+    "rule": "each variant must share source_recording_id with its clean anchor; do not re-speak the utterance"
+  },
+  "negative_controls": {
+    "held_target_total": 12,
+    "recommended_mix": {
+      "real_english_speech": 4,
+      "real_mandarin_speech": 4,
+      "non_speech_or_environmental_audio": 4
+    },
+    "development_target_total": 6,
+    "note": "historical synthetic TTS/noise controls may remain engineering controls, but a final routing check should include real non-Japanese speech rather than rely only on TTS"
+  },
+  "listener_rating": {
+    "held_clean_japanese_isolated_presentations": 56,
+    "target_ratings_per_presentation": 5,
+    "minimum_held_inclusion_ratings": 3,
+    "isolated_constructs": [
+      "clarity_comprehensibility",
+      "fluency",
+      "rhythm_naturalness",
+      "intonation_utterance_naturalness"
+    ],
+    "contextual_intonation": "collect only for controlled-dialogue clips with valid prompt/preceding-turn context; keep separate from utterance-level intonation promotion",
+    "blinding": "do not expose speaker group, L1, target transcript, machine scores, channel labels, or split"
+  },
+  "estimated_new_clean_japanese_recordings": 80,
+  "estimated_held_clean_japanese_recordings": 56,
+  "explicit_non_goal": "this plan is not a formal psychometric sample-size claim; it is a practical acquisition plan with buffer around the already frozen engineering promotion gates"
+}
