@@ -174,12 +174,16 @@ def _join_candidate(
     candidate: str,
     criterion: str,
     subset: str = "held",
+    minimum_human_rating_count: int = 1,
 ) -> list[Dict[str, Any]]:
     output: list[Dict[str, Any]] = []
     for human_row in human:
         if _text(human_row.get("criterion")) != criterion:
             continue
         if subset and _text(human_row.get("subset")) != subset:
+            continue
+        rating_count = int(_finite(human_row.get("human_rating_count")) or 0)
+        if rating_count < max(1, int(minimum_human_rating_count)):
             continue
         sample_id = _text(human_row.get("sample_id"))
         evidence = evidence_index.get((sample_id, candidate))
@@ -398,6 +402,7 @@ def analyze(
     candidate_types = dict(protocol.get("candidate_types") or {})
     construct_match = dict(protocol.get("candidate_construct_match") or {})
     direct = dict(protocol.get("direct_product_promotion_eligibility") or {})
+    minimum_human_rating_count = int(thresholds.get("human_rating_count_minimum_for_held_inclusion", 1))
 
     human = aggregate_human(human_rows)
     evidence_index = _evidence_index(evidence_rows)
@@ -414,12 +419,20 @@ def analyze(
         matched_criteria = list(construct_match.get(candidate) or [])
         criterion_reports: Dict[str, Any] = {}
         for criterion in matched_criteria:
-            joined = _join_candidate(human, evidence_index, candidate=candidate, criterion=criterion, subset="held")
+            joined = _join_candidate(
+                human,
+                evidence_index,
+                candidate=candidate,
+                criterion=criterion,
+                subset="held",
+                minimum_human_rating_count=minimum_human_rating_count,
+            )
             available_count = sum(bool(row.get("available")) for row in joined)
             availability = available_count / len(joined) if joined else None
             correlation = _spearman(joined)
             criterion_reports[criterion] = {
                 "held_pair_count": len(joined),
+                "minimum_human_rating_count_for_inclusion": minimum_human_rating_count,
                 "held_available_count": available_count,
                 "availability_rate": availability,
                 "spearman": correlation,
