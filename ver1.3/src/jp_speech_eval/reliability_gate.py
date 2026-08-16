@@ -75,7 +75,9 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     allow_pitch = policy.allow_pitch_feedback and is_fixed_reference and not policy.weak_reference and not policy.demo_only
 
     if reference_boundary_precision_limited:
-        practice = "needs_attention"
+        # This is a system/reference limitation, not evidence that the learner
+        # performed poorly. Preserve the learner practice status while limiting
+        # only the local claims that require precise reference timing.
         allow_special = False
         allow_pitch = False
         allow_detail = False
