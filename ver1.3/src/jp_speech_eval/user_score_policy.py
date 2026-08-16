@@ -326,6 +326,9 @@ def apply_user_score_policy(
             "value": _round_score(_component_value(components, key)),
             "confidence": str(components[key].get("confidence") or "unknown"),
             "evidence_tier": str(components[key].get("evidence_tier") or "unknown"),
+            "evidence_state": str(components[key].get("evidence_state") or "unknown"),
+            "precision_hint": str(components[key].get("precision_hint") or "unknown"),
+            "numeric_semantics": str(components[key].get("numeric_semantics") or ""),
             "source_field": str(components[key].get("source_field") or ""),
         }
         for key in PRODUCT_COMPONENT_WEIGHTS

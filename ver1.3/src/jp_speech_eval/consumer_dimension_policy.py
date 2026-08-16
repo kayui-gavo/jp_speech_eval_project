@@ -81,7 +81,7 @@ def _dimension(
         precision_hint = "unavailable"
     elif prior_fallback:
         evidence_state = "neutral_prior"
-        precision_hint = "reference_only"
+        precision_hint = "neutral_placeholder"
     elif confidence == "low":
         evidence_state = "broad_proxy"
         precision_hint = "rough"
