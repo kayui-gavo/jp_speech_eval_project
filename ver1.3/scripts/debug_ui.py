@@ -164,6 +164,9 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT / "debug_ui"), **kwargs)
 
     def do_GET(self) -> None:
+        if self.path == "/" and bool(getattr(self.server, "public_demo", False)):
+            self.path = "/consumer_v3.html"
+            return super().do_GET()
         if self.path in {"/consumer", "/consumer/"}:
             self.path = "/consumer_v3.html"
             return super().do_GET()
@@ -719,6 +722,7 @@ def main() -> None:
     server.available_modes = available_modes
     server.asr_confirmation_sessions = {}
     server.kanade_jobs = {}
+    server.public_demo = bool(args.public_demo)
     server.retain_uploads = not args.public_demo
     server.enable_logs = not args.public_demo
     server.server_label = "Public demo" if args.public_demo else "Local debug"
