@@ -14,12 +14,13 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping
 
+from jp_speech_eval.partial_evidence_aggregate import build_partial_evidence_aggregate_candidate
 from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_light
 from jp_speech_eval.user_score_policy import apply_user_score_policy
 from validate_free_speech_sample_manifest import validate_manifest_file
 
 
-RUN_SCHEMA = "free_speech_validation_batch_v1"
+RUN_SCHEMA = "free_speech_validation_batch_v2"
 
 
 def _text(value: Any) -> str:
@@ -107,11 +108,20 @@ def run_batch(
                     )
                 )
                 product = dict(user_policy(raw, mode="transcript_assisted_light"))
+                components = (
+                    product.get("component_scores")
+                    if isinstance(product.get("component_scores"), Mapping)
+                    else {}
+                )
+                partial_candidate = build_partial_evidence_aggregate_candidate(components)
                 payload.update(
                     {
                         "status": "ok",
                         "raw_result": raw,
                         "user_score": product,
+                        "score_candidates": {
+                            "partial_evidence_aggregate": partial_candidate,
+                        },
                     }
                 )
                 written += 1
@@ -136,6 +146,8 @@ def run_batch(
         "skipped_completed": skipped,
         "failed": failed,
         "scoring_used_gold_transcript": False,
+        "partial_evidence_candidate_user_facing": False,
+        "partial_evidence_candidate_product_score_changed": False,
         "asr_model": asr_model,
         "asr_provider": asr_provider,
     }
