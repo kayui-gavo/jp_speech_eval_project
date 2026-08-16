@@ -263,8 +263,14 @@
     if($('pitchLayer').checked&&t.pitch?.available){
       const points=t.pitch.points||[], refPoints=t.pitch.reference_points||[], all=[...points,...refPoints], values=all.map(p=>Number(p.relative_semitone)).filter(Number.isFinite), maxAbs=Math.max(3,...values.map(v=>Math.abs(v)));
       const drawSeries=(series,color,dashed)=>{let started=false;ctx.strokeStyle=color;ctx.lineWidth=dashed?1.5:2;ctx.lineJoin='round';ctx.lineCap='round';ctx.setLineDash(dashed?[6,5]:[]);ctx.beginPath();series.forEach(p=>{const v=p.relative_semitone;if(v==null||!Number.isFinite(Number(v))){started=false;return}const px=x(p.t_sec),py=h/2-(Number(v)/maxAbs)*(h*.34);if(!started){ctx.moveTo(px,py);started=true}else ctx.lineTo(px,py)});ctx.stroke();ctx.setLineDash([])};
-      drawSeries(points,getComputedStyle(document.documentElement).getPropertyValue('--rose').trim()||'#9a5c6c',false);
-      if(refPoints.length)drawSeries(refPoints,getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()||'#b18e58',true);
+      const rose=getComputedStyle(document.documentElement).getPropertyValue('--rose').trim()||'#9a5c6c', gold=getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()||'#b18e58';
+      drawSeries(points,rose,false);
+      if(refPoints.length){
+        drawSeries(refPoints,gold,true);
+        ctx.font='11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';ctx.textBaseline='middle';
+        ctx.strokeStyle=rose;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(12,16);ctx.lineTo(32,16);ctx.stroke();ctx.fillStyle=rose;ctx.fillText('あなた',38,16);
+        ctx.strokeStyle=gold;ctx.lineWidth=1.5;ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(92,16);ctx.lineTo(112,16);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=gold;ctx.fillText('お手本',118,16);
+      }
     }
     drawCursor(ctx,w,h,x($('userAudio').currentTime||0));
   }

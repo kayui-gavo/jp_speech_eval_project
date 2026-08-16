@@ -219,12 +219,14 @@ def _mora_rows(
     alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
     approximate = bool(
         alignment.get("used_equal_fallback")
+        or alignment.get("available") is False
         or alignment_mode == "equal"
         or alignment_mode.endswith("fallback_equal")
-        or (confidence is not None and confidence < 0.50)
+        or confidence is None
+        or confidence < 0.50
     )
     rows: List[Dict[str, Any]] = []
-    for raw in raw_rows:
+    for source_index, raw in enumerate(raw_rows):
         item = _mapping(raw)
         mora = str(item.get("mora") or "").strip()
         start = _original_playback_time(item.get("start_sec"), speech_start=speech_start, raw_duration=raw_duration)
@@ -233,6 +235,7 @@ def _mora_rows(
             continue
         rows.append({
             "text": mora,
+            "source_index": source_index,
             "start_sec": start,
             "end_sec": end,
             "alignment_confidence": None if confidence is None else round(_clip(confidence, 0.0, 1.0), 4),
@@ -273,11 +276,16 @@ def _mora_pitch_payload(
             "interpretation": "voice_movement_visualization_not_lexical_pitch_accent_correctness",
             "contextual_intonation_claim": False,
         }
-    user_hz = [_mapping(row).get("f0_hz") for row in raw_rows[:len(moras)]]
+    source_indices = [int(_finite(mora.get("source_index")) or 0) for mora in moras]
+    user_hz = [
+        _mapping(raw_rows[index]).get("f0_hz") if 0 <= index < len(raw_rows) else None
+        for index in source_indices
+    ]
     reference_hz_raw = details.get("reference_f0_by_mora") if isinstance(details.get("reference_f0_by_mora"), list) else []
-    reference_hz = list(reference_hz_raw[:len(moras)])
-    if len(reference_hz) < len(moras):
-        reference_hz.extend([None] * (len(moras) - len(reference_hz)))
+    reference_hz = [
+        reference_hz_raw[index] if 0 <= index < len(reference_hz_raw) else None
+        for index in source_indices
+    ]
     user_st, user_center = _relative_semitone_series(user_hz)
     reference_st, reference_center = _relative_semitone_series(reference_hz)
     user_points: List[Dict[str, Any]] = []
