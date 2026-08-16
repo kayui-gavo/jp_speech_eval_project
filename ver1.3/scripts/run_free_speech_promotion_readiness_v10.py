@@ -5,11 +5,13 @@ Stages:
 1. validate the private sample manifest;
 2. run the real product-condition v8 acceptance path (no gold transcript);
 3. export frozen v5 candidates plus v10 speech-duration metadata;
-4. build a held-only blinded listener pack when rater ids are supplied;
-5. when completed ratings are supplied, normalize them and execute v5 + v10 gates.
+4. preflight actual held learner short/long and task coverage before rating spend;
+5. build a held-only blinded listener pack when rater ids are supplied;
+6. when completed ratings are supplied, normalize them and execute v5 + v10 gates.
 
-The runner is deliberately allowed to stop at ``awaiting_human_ratings``.
-That is a valid state, not a reason to promote from machine-only evidence.
+The runner is deliberately allowed to stop at ``collection_coverage_insufficient``
+or ``awaiting_human_ratings``. Neither state is permission to promote from
+machine-only evidence.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from analyze_free_speech_promotion_v10 import analyze as analyze_v10
+from assess_free_speech_machine_coverage_v10 import assess as assess_machine_coverage
 from build_free_speech_listener_pack_v3 import build_listener_pack, _write_csv
 from export_free_speech_v10_evidence import export_file as export_v10_evidence
 from normalize_consumer_ratings_v3 import normalize_file
@@ -121,6 +124,14 @@ def run(
     evidence_csv = out_dir / "machine_evidence_v10.csv"
     evidence_export = export_v10_evidence(acceptance["batch_jsonl"], evidence_csv)
 
+    machine_coverage = assess_machine_coverage(evidence_csv, v10_protocol_json)
+    machine_coverage_json = out_dir / "machine_coverage_preflight_v10.json"
+    machine_coverage_json.write_text(
+        json.dumps(machine_coverage, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    collection_ready = bool(machine_coverage.get("collection_structure_ready_for_final_listener_pack"))
+
     listener_pack = None
     if raters:
         listener_pack = _build_held_listener_pack(
@@ -129,6 +140,8 @@ def run(
             raters=raters,
             ratings_per_presentation=ratings_per_presentation,
         )
+        listener_pack["machine_coverage_preflight"] = "ready" if collection_ready else "provisional_undercovered"
+        listener_pack["final_freeze_ready"] = collection_ready
 
     normalized_ratings_csv = None
     promotion = None
@@ -143,7 +156,18 @@ def run(
         )
         stage = "promotion_readiness_evaluated"
     else:
-        stage = "awaiting_human_ratings"
+        stage = "awaiting_human_ratings" if collection_ready else "collection_coverage_insufficient"
+
+    if promotion is not None:
+        next_action = "only pass candidates may move to a separate score-changing A/B branch"
+    elif collection_ready:
+        next_action = "collect the blinded held-set ratings, then rerun with --ratings-csv"
+    else:
+        missing = machine_coverage.get("missing_or_undercovered_structure") or []
+        next_action = (
+            "collect or replace held learner recordings until the actual endpointed coverage passes before freezing the final listener pack"
+            + (f"; undercovered: {','.join(str(item) for item in missing)}" if missing else "")
+        )
 
     report = {
         "schema": RUN_SCHEMA,
@@ -152,20 +176,16 @@ def run(
         "machine_acceptance": acceptance,
         "evidence_export": evidence_export,
         "evidence_csv": str(evidence_csv),
+        "machine_coverage_preflight": machine_coverage,
+        "machine_coverage_preflight_json": str(machine_coverage_json),
         "listener_pack": listener_pack,
         "normalized_human_ratings_csv": None if normalized_ratings_csv is None else str(normalized_ratings_csv),
         "promotion_analysis": promotion,
         "product_score_changed": False,
         "score_contract_changed": False,
         "gold_transcript_used_for_scoring": False,
-        "decision": (
-            None if promotion is None else promotion.get("overall_v10_promotion_readiness")
-        ),
-        "next_action": (
-            "collect the blinded held-set ratings, then rerun with --ratings-csv"
-            if promotion is None
-            else "only pass candidates may move to a separate score-changing A/B branch"
-        ),
+        "decision": None if promotion is None else promotion.get("overall_v10_promotion_readiness"),
+        "next_action": next_action,
     }
     summary_path = out_dir / "promotion_readiness_summary_v10.json"
     summary_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
