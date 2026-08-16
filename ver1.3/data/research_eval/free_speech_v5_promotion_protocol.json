@@ -13,7 +13,19 @@
     "intonation_utterance_naturalness": "intonation",
     "intonation_contextual_appropriateness": "intonation"
   },
-  "candidate_eligibility": {
+  "candidate_types": {
+    "clarity.asr_recoverability_index": "diagnostic_feature",
+    "clarity.word_probability_median": "diagnostic_feature",
+    "clarity.shadow_candidate_score": "score_surface",
+    "rhythm.negative_local_tempo_mad": "diagnostic_feature",
+    "rhythm.negative_local_tempo_spread": "diagnostic_feature",
+    "rhythm.shadow_candidate_score": "score_surface",
+    "fluency.current_product_proxy": "score_surface",
+    "fluency.speech_rate_mora_per_sec": "diagnostic_feature_nonmonotonic",
+    "intonation.robust_range_semitones": "diagnostic_feature_nonmonotonic",
+    "intonation.shadow_candidate_score": "score_surface"
+  },
+  "candidate_construct_match": {
     "clarity.asr_recoverability_index": ["clarity_comprehensibility"],
     "clarity.word_probability_median": ["clarity_comprehensibility"],
     "clarity.shadow_candidate_score": ["clarity_comprehensibility"],
@@ -21,8 +33,14 @@
     "rhythm.negative_local_tempo_spread": ["rhythm_naturalness"],
     "rhythm.shadow_candidate_score": ["rhythm_naturalness"],
     "fluency.current_product_proxy": ["fluency"],
-    "fluency.speech_rate_mora_per_sec": [],
-    "intonation.robust_range_semitones": [],
+    "fluency.speech_rate_mora_per_sec": ["fluency"],
+    "intonation.robust_range_semitones": ["intonation_utterance_naturalness"],
+    "intonation.shadow_candidate_score": ["intonation_utterance_naturalness"]
+  },
+  "direct_product_promotion_eligibility": {
+    "clarity.shadow_candidate_score": ["clarity_comprehensibility"],
+    "rhythm.shadow_candidate_score": ["rhythm_naturalness"],
+    "fluency.current_product_proxy": ["fluency"],
     "intonation.shadow_candidate_score": ["intonation_utterance_naturalness"]
   },
   "explicitly_forbidden_promotions": [
@@ -30,6 +48,7 @@
     "recording_quality_to_clarity_or_pronunciation_ability",
     "language_probability_to_clarity",
     "ASR_word_timing_to_phone_or_mora_correctness",
+    "raw_diagnostic_feature_directly_to_ProductScore",
     "raw_nonmonotonic_features_to_score_without_predeclared_mapping"
   ],
   "minimum_promotion_gates": {
@@ -47,11 +66,19 @@
     "held_and_development_speakers_must_be_disjoint": true,
     "f0_failure_must_not_create_low_intonation_penalty": true
   },
+  "gate_applicability": {
+    "construct_matched_pair_count": ["score_surface"],
+    "candidate_availability_rate": ["score_surface"],
+    "construct_matched_spearman_rho": ["score_surface"],
+    "candidate_component_iqr_min_points": ["score_surface"],
+    "channel_paired_score_drift": ["score_surface"],
+    "raw_feature_scale_dependent_iqr_or_point_drift": []
+  },
   "decision_semantics": {
-    "pass": "candidate is eligible for a separate product A/B branch and score-contract version bump",
-    "fail": "candidate must remain shadow and cannot affect ProductScore",
+    "pass": "score surface is eligible for a separate product A/B branch and score-contract version bump",
+    "fail": "score surface must remain shadow and cannot affect ProductScore",
     "insufficient": "data are not sufficient for a promotion decision; do not tune on held data to force a pass",
-    "diagnostic_only": "feature may be inspected but is not a predeclared promotable candidate"
+    "diagnostic_only": "feature may support model design but cannot directly enter ProductScore"
   },
   "listener_protocol": {
     "isolated_presentation_constructs": [
