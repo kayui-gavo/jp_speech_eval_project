@@ -1,0 +1,57 @@
+name: v4-one-shot-component-provenance
+
+on:
+  push:
+    branches:
+      - free-speech-four-dimension-evidence-v4
+    paths:
+      - ".github/workflows/v4-self-patch-component-provenance.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: free-speech-four-dimension-evidence-v4
+      - name: Correct component provenance without changing numeric scores
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("ver1.3/src/jp_speech_eval/consumer_dimension_policy.py")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''    fluency_value = _blend([(rate_score, 0.48), (pause_score, 0.52), (delivery_legacy, 0.0)])\n    if fluency_value is None:\n        fluency_value = delivery_legacy if delivery_legacy is not None else 70.0\n    fluency_conf = "high" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "medium"\n'''
+          new = '''    fluency_value = _blend([(rate_score, 0.48), (pause_score, 0.52), (delivery_legacy, 0.0)])\n    if fluency_value is not None:\n        fluency_source = "details.fluency.rate_score+pause_score"\n        fluency_tier = "rate_plus_pause"\n        fluency_conf = "high" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "medium"\n    elif delivery_legacy is not None:\n        fluency_value = delivery_legacy\n        fluency_source = "result.fluency_score"\n        fluency_tier = "legacy_delivery_fluency_proxy"\n        # In free/transcript-assisted speech this value depends on transcript-derived\n        # mora rate, so stable endpointing alone is not enough for high confidence.\n        fluency_conf = "medium" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "low"\n    else:\n        fluency_value = 70.0\n        fluency_source = "product_prior"\n        fluency_tier = "fluency_prior_without_rate_or_pause_evidence"\n        fluency_conf = "low"\n'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit("fluency provenance anchor not found")
+              text = text.replace(old, new, 1)
+
+          old = '''    else:\n        rhythm_value = rate_score if rate_score is not None else 70.0\n        rhythm_conf = "low"\n        rhythm_tier = "reference_independent_rate_fallback"\n        rhythm_source = "details.fluency.rate_score"\n'''
+          new = '''    else:\n        if rate_score is not None:\n            rhythm_value = rate_score\n            rhythm_tier = "reference_independent_rate_fallback"\n            rhythm_source = "details.fluency.rate_score"\n        else:\n            rhythm_value = 70.0\n            rhythm_tier = "reference_independent_rhythm_prior_without_rate_measurement"\n            rhythm_source = "product_prior"\n        rhythm_conf = "low"\n'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit("rhythm provenance anchor not found")
+              text = text.replace(old, new, 1)
+
+          old = '''            source_field="details.fluency.rate_score+pause_score",\n            construct="speed_and_breakdown_fluency",\n            confidence=fluency_conf,\n            evidence_tier="rate_plus_pause",\n'''
+          new = '''            source_field=fluency_source,\n            construct="speed_and_breakdown_fluency",\n            confidence=fluency_conf,\n            evidence_tier=fluency_tier,\n'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit("fluency dimension source anchor not found")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/src/jp_speech_eval/consumer_dimension_policy.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "product: correct free-speech component evidence provenance"
+          git push origin HEAD:free-speech-four-dimension-evidence-v4
