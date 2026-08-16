@@ -1,0 +1,73 @@
+{
+  "schema_version": "consumer_four_dimension_validation_v3",
+  "purpose": "construct-matched human criterion for the four C-end dimensions while keeping intonation sub-criteria scientifically separate",
+  "public_dimensions_remain": ["明瞭さ", "流暢さ", "リズム", "抑揚"],
+  "validation_constructs": {
+    "clarity_comprehensibility": {
+      "public_dimension": "明瞭さ",
+      "presentation_variant": "isolated",
+      "instruction_ja": "この発話は、日本語としてどの程度楽に内容を理解できますか。",
+      "excludes": ["recording_quality_as_ability", "native_likeness", "strict_phone_correctness", "seeing_target_transcript"]
+    },
+    "fluency": {
+      "public_dimension": "流暢さ",
+      "presentation_variant": "isolated",
+      "instruction_ja": "この発話は、話す速さ、間の取り方、言い直しなどを含めて、どの程度流暢に聞こえますか。"
+    },
+    "rhythm_naturalness": {
+      "public_dimension": "リズム",
+      "presentation_variant": "isolated",
+      "instruction_ja": "音や拍の長さ、局所的な速さの変化を含めて、この発話のリズムはどの程度自然ですか。",
+      "explicit_non_rule": "do_not_instruct_raters_that_all_morae_should_have_equal_duration"
+    },
+    "intonation_utterance_naturalness": {
+      "public_dimension": "抑揚",
+      "presentation_variant": "isolated",
+      "instruction_ja": "この発話単体を聞いたとき、文・発話全体の音高の動きや句末の調子はどの程度自然ですか。",
+      "eligible_machine_evidence": "target-independent acoustic/F0 evidence may be tested here",
+      "excludes": ["strict_lexical_pitch_accent_as_headline_construct", "contextual_appropriateness_claim"]
+    },
+    "intonation_contextual_appropriateness": {
+      "public_dimension": "抑揚",
+      "presentation_variant": "contextual",
+      "instruction_ja": "提示された会話・発話文脈に対して、この発話の音高の動きや句末の調子はどの程度自然で適切ですか。",
+      "eligible_machine_evidence": "only evidence that consumes equivalent dialogue/prompt context may be promoted against this criterion",
+      "excludes": ["isolated_F0_range_only_as_contextual_score"]
+    }
+  },
+  "scale": {
+    "1": "非常に不自然／理解しにくい／途切れがち",
+    "2": "不自然／理解しにくい／途切れがち",
+    "3": "やや不自然／やや理解しにくい／やや途切れがち",
+    "4": "中程度",
+    "5": "比較的自然／比較的理解しやすい／比較的流暢",
+    "6": "自然／理解しやすい／流暢",
+    "7": "非常に自然／非常に理解しやすい／非常に流暢"
+  },
+  "fields": {
+    "rater_id": "anonymized listener id",
+    "sample_id": "stable sample id",
+    "presentation_id": "unique presentation id per rater",
+    "presentation_variant": ["isolated", "contextual"],
+    "task_mode": ["spontaneous", "controlled_dialogue"],
+    "assigned_constructs": "pipe-separated validation constructs",
+    "analyzable_yes_no": ["yes", "no"],
+    "clarity_comprehensibility_1to7": "integer 1..7 or blank",
+    "fluency_1to7": "integer 1..7 or blank",
+    "rhythm_naturalness_1to7": "integer 1..7 or blank",
+    "intonation_utterance_naturalness_1to7": "integer 1..7 or blank",
+    "intonation_contextual_appropriateness_1to7": "integer 1..7 or blank",
+    "context_presented_yes_no": ["yes", "no"],
+    "timestamp": "ISO date-time"
+  },
+  "hard_rules": [
+    "unanalyzable presentations have no construct ratings",
+    "assigned constructs require a 1..7 integer rating",
+    "unassigned constructs remain blank",
+    "clarity/fluency/rhythm/intonation_utterance_naturalness use isolated presentations",
+    "intonation_contextual_appropriateness requires a contextual presentation with an actual prompt or preceding-turn payload",
+    "isolated acoustic evidence must never be promoted as contextual intonation evidence",
+    "the target response transcript must not be displayed to listeners",
+    "speaker group, native/learner status, L1, channel condition, and model scores remain blinded"
+  ]
+}
