@@ -10,6 +10,7 @@ on:
       - free-speech-promotion-gate-v5
       - karaoke-consumer-ui-v6
       - hf-space-karaoke-integration-v7
+      - scoring-integrity-v8
   pull_request:
     paths:
       - "ver1.3/src/jp_speech_eval/audio_features.py"
@@ -25,11 +26,14 @@ on:
       - "ver1.3/src/jp_speech_eval/asr.py"
       - "ver1.3/src/jp_speech_eval/asr_confirmation.py"
       - "ver1.3/src/jp_speech_eval/transcript_assisted.py"
+      - "ver1.3/src/jp_speech_eval/transcript_sanity.py"
       - "ver1.3/src/jp_speech_eval/spontaneous_fluency.py"
       - "ver1.3/src/jp_speech_eval/free_speech_evidence.py"
       - "ver1.3/src/jp_speech_eval/reliability_counterfactual.py"
       - "ver1.3/src/jp_speech_eval/native_cap_telemetry.py"
       - "ver1.3/src/jp_speech_eval/evaluator.py"
+      - "ver1.3/src/jp_speech_eval/consumer_dimension_policy.py"
+      - "ver1.3/src/jp_speech_eval/reliability_gate.py"
       - "ver1.3/src/jp_speech_eval/ssl_features.py"
       - "ver1.3/src/jp_speech_eval/ssl_reference_panel.py"
       - "ver1.3/src/jp_speech_eval/rhythm_dtw.py"
@@ -67,6 +71,7 @@ on:
       - "ver1.3/tests/test_score_contract.py"
       - "ver1.3/tests/test_conversation_mode_policy.py"
       - "ver1.3/tests/test_transcript_assisted_language_gate.py"
+      - "ver1.3/tests/test_scoring_integrity_v8.py"
       - "ver1.3/tests/test_spontaneous_fluency.py"
       - "ver1.3/tests/test_free_speech_evidence.py"
       - "ver1.3/tests/test_free_speech_v4_pipeline.py"
@@ -129,6 +134,7 @@ jobs:
             tests/test_score_contract.py \
             tests/test_conversation_mode_policy.py \
             tests/test_transcript_assisted_language_gate.py \
+            tests/test_scoring_integrity_v8.py \
             tests/test_spontaneous_fluency.py \
             tests/test_free_speech_evidence.py \
             tests/test_free_speech_v4_pipeline.py \
