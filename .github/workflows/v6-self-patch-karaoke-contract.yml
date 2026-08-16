@@ -1,0 +1,131 @@
+name: v6-one-shot-karaoke-contract
+
+on:
+  push:
+    branches:
+      - karaoke-consumer-ui-v6
+    paths:
+      - ".github/workflows/v6-self-patch-karaoke-contract.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: karaoke-consumer-ui-v6
+      - name: Integrate evidence-safe karaoke payload
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # transcript_assisted.py: reuse the already-computed F0 pass.
+          path = Path("ver1.3/src/jp_speech_eval/transcript_assisted.py")
+          text = path.read_text(encoding="utf-8")
+          old = "from .config import load_scoring_config\n"
+          new = "from .config import load_scoring_config\nfrom .app_core.karaoke_timeline import build_relative_f0_visualization\n"
+          if old not in text:
+              raise SystemExit("transcript import anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''    free_speech_dimension_evidence = build_free_speech_dimension_evidence(\n        asr_info=asr_info,\n        speech_duration_sec=speech_duration,\n        f0_times=_times,\n        f0_hz=f0_arr,\n        spontaneous_fluency=spontaneous_fluency_v2,\n    )\n\n    feedback: List[str] = [\n'''
+          new = '''    free_speech_dimension_evidence = build_free_speech_dimension_evidence(\n        asr_info=asr_info,\n        speech_duration_sec=speech_duration,\n        f0_times=_times,\n        f0_hz=f0_arr,\n        spontaneous_fluency=spontaneous_fluency_v2,\n    )\n    relative_f0_visualization = build_relative_f0_visualization(_times, f0_arr)\n\n    feedback: List[str] = [\n'''
+          if old not in text:
+              raise SystemExit("transcript F0 anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''            "score_eligible": True,\n            "asr": asr_info,\n'''
+          new = '''            "score_eligible": True,\n            "visualization_source": {\n                "schema_version": "consumer_visualization_source_v1",\n                "timebase": "speech_trim_relative",\n                "score_role": "visualization_only",\n                "product_score_changed": False,\n                "relative_f0": relative_f0_visualization,\n            },\n            "asr": asr_info,\n'''
+          if old not in text:
+              raise SystemExit("transcript details anchor missing")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          # api.py: expose a stable top-level visualization contract.
+          path = Path("ver1.3/src/jp_speech_eval/api.py")
+          text = path.read_text(encoding="utf-8")
+          old = "from .asr_confirmation import build_asr_confirmation_prompt\n"
+          new = "from .asr_confirmation import build_asr_confirmation_prompt\nfrom .app_core.karaoke_timeline import build_consumer_karaoke_timeline\n"
+          if old not in text:
+              raise SystemExit("api import anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''    user_facing: Dict[str, Any]\n    raw_result: Dict[str, Any]\n    error: Optional[str] = None\n'''
+          new = '''    user_facing: Dict[str, Any]\n    raw_result: Dict[str, Any]\n    karaoke_timeline: Dict[str, Any] = field(default_factory=dict)\n    error: Optional[str] = None\n'''
+          if old not in text:
+              raise SystemExit("api response dataclass anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''        return EvaluationResponse(\n            ok=True,\n            mode=effective_mode,\n            user_facing=user_facing,\n            raw_result=raw,\n        )\n'''
+          new = '''        return EvaluationResponse(\n            ok=True,\n            mode=effective_mode,\n            user_facing=user_facing,\n            raw_result=raw,\n            karaoke_timeline=build_consumer_karaoke_timeline(raw, user_facing),\n        )\n'''
+          if old not in text:
+              raise SystemExit("api success response anchor missing")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          # debug_ui.py: make direct broad free speech a stable consumer mode and
+          # return the same karaoke payload used by the SDK.
+          path = Path("ver1.3/scripts/debug_ui.py")
+          text = path.read_text(encoding="utf-8")
+          old = "from jp_speech_eval.feedback_renderer import render_user_facing_result\n"
+          new = "from jp_speech_eval.feedback_renderer import render_user_facing_result\nfrom jp_speech_eval.app_core.karaoke_timeline import build_consumer_karaoke_timeline\n"
+          if old not in text:
+              raise SystemExit("debug import anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''CORE_MODES = [\n    "reference",\n    "asr_pseudo_reference",\n    "kanade_asr_voice_reference",\n]\n\nPUBLIC_DEMO_MODES = [\n    "reference",\n    "asr_pseudo_reference",\n    "kanade_asr_voice_reference",\n]\n'''
+          new = '''CORE_MODES = [\n    "reference",\n    "transcript_assisted_light",\n    "asr_pseudo_reference",\n    "kanade_asr_voice_reference",\n]\n\nPUBLIC_DEMO_MODES = [\n    "reference",\n    "transcript_assisted_light",\n]\n'''
+          if old not in text:
+              raise SystemExit("debug mode anchor missing")
+          text = text.replace(old, new, 1)
+
+          # Avoid duplicate mode name now that transcript_assisted_light is stable core.
+          old = '''EXPERIMENTAL_MODES = [\n    "kanade_voice_reference",\n    "transcript_assisted_light",\n    "acoustic",\n]\n'''
+          new = '''EXPERIMENTAL_MODES = [\n    "kanade_voice_reference",\n    "acoustic",\n]\n'''
+          if old not in text:
+              raise SystemExit("debug experimental mode anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''        "transcript_assisted_light": "Free speech: transcript-assisted light diagnosis",\n'''
+          new = '''        "transcript_assisted_light": "Free speech: direct broad Japanese scoring",\n'''
+          if old not in text:
+              raise SystemExit("debug label anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''            user_facing = render_user_facing_result(result, mode=result.get("details", {}).get("mode") or mode)\n            _json_response(self, {\n'''
+          new = '''            user_facing = render_user_facing_result(result, mode=result.get("details", {}).get("mode") or mode)\n            karaoke_timeline = build_consumer_karaoke_timeline(result, user_facing)\n            _json_response(self, {\n'''
+          if old not in text:
+              raise SystemExit("debug normal render anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''                "user_facing": user_facing,\n                "realtime": realtime,\n'''
+          new = '''                "user_facing": user_facing,\n                "karaoke_timeline": karaoke_timeline,\n                "realtime": realtime,\n'''
+          if old not in text:
+              raise SystemExit("debug normal payload anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''            unified_payload = unified.to_dict()\n            unified_payload.pop("raw_metrics", None)\n            _json_response(self, {\n'''
+          new = '''            unified_payload = unified.to_dict()\n            unified_payload.pop("raw_metrics", None)\n            confirmed_user_facing = render_user_facing_result(result, mode=mode)\n            confirmed_karaoke_timeline = build_consumer_karaoke_timeline(result, confirmed_user_facing)\n            _json_response(self, {\n'''
+          # This anchor appears in confirmed path after the normal path already had
+          # a different user-facing line, so replace the first remaining exact match.
+          if old not in text:
+              raise SystemExit("debug confirmed render anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''                "user_facing": render_user_facing_result(result, mode=mode),\n            })\n'''
+          new = '''                "user_facing": confirmed_user_facing,\n                "karaoke_timeline": confirmed_karaoke_timeline,\n            })\n'''
+          if old not in text:
+              raise SystemExit("debug confirmed payload anchor missing")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/src/jp_speech_eval/transcript_assisted.py ver1.3/src/jp_speech_eval/api.py ver1.3/scripts/debug_ui.py
+          git commit -m "ui: integrate karaoke timeline into free speech API"
+          git push origin HEAD:karaoke-consumer-ui-v6
