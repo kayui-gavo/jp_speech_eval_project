@@ -12,7 +12,7 @@ from typing import Any, Dict, Mapping, Optional
 
 
 SCORE_CONTRACT_VERSION = "consumer_four_score_v2"
-EVIDENCE_SCHEMA_VERSION = "consumer_evidence_v4"
+EVIDENCE_SCHEMA_VERSION = "consumer_evidence_v5"
 SCORE_POLICY_ID = "semantic_four_component_product_heuristic_v2"
 
 PRODUCT_COMPONENT_WEIGHTS: Dict[str, float] = {

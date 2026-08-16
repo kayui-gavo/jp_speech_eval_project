@@ -166,7 +166,7 @@ def test_v4_free_speech_evidence_is_end_to_end_shadow_only(tmp_path, monkeypatch
 
     product = apply_user_score_policy(raw, mode="transcript_assisted_light")
     assert product["score_contract_version"] == "consumer_four_score_v2"
-    assert product["evidence_schema_version"] == "consumer_evidence_v4"
+    assert product["evidence_schema_version"] == "consumer_evidence_v5"
     assert product["component_scores"]["clarity"]["value"] == 70
     assert product["component_scores"]["mora_timing"]["value"] == 70
     assert product["component_scores"]["intonation"]["value"] == 70

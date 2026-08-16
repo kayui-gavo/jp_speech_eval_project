@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping, Optional
 
 from .consumer_dimension_policy import build_consumer_score_dimensions
+from .measurement_context import build_measurement_context
 from .reliability_gate import evaluate_reliability_gate
 from .scoring_policy import ScoringPolicy, policy_from_result
 from .special_mora_scorer import (
@@ -264,7 +265,14 @@ def render_user_facing_result(
         explanation=practice_score_explanation(mode_notice),
     )
 
-    return UserFacingResult(
+    score_dimensions = _score_dimensions(result, gate, user_score, mode=policy.mode)
+    measurement_context = build_measurement_context(
+        result,
+        score_dimensions,
+        reliability_gate=gate.to_dict(),
+        scoring_policy=policy.to_dict(),
+    )
+    payload = UserFacingResult(
         mode=policy.mode,
         status=status,
         reliability=gate.reliability,
@@ -284,7 +292,7 @@ def render_user_facing_result(
         confidence_label=str(user_score.get("confidence_label") or gate.reliability),
         score_policy_warnings=list(user_score.get("score_policy_warnings") or []),
         score_caps=dict(user_score.get("score_caps") or {}),
-        score_dimensions=_score_dimensions(result, gate, user_score, mode=policy.mode),
+        score_dimensions=score_dimensions,
         detail_feedback_allowed=bool(user_score.get("detail_feedback_allowed", True)),
         user_messages=messages[:2],
         focus_feedback=focus,
@@ -301,3 +309,5 @@ def render_user_facing_result(
         score_contract_version=str(user_score.get("score_contract_version") or ""),
         evidence_schema_version=str(user_score.get("evidence_schema_version") or ""),
     ).to_dict()
+    payload["measurement_context"] = measurement_context
+    return payload

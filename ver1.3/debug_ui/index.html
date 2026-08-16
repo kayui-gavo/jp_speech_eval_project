@@ -917,8 +917,8 @@
 
       <section>
         <div class="panel-head">
-          <h2 data-i18n="reliability">本次结果可信度</h2>
-          <span class="pill" id="reliabilityLevel">暂无数据</span>
+          <h2 data-consumer-copy="evidenceBasis">本次判断依据</h2>
+          <span class="pill" id="reliabilityLevel">等待结果</span>
         </div>
         <div class="panel-body">
           <div class="reliability-grid" id="reliabilityGrid"></div>
@@ -1889,6 +1889,10 @@
         modeFixed:"范例跟读", modeFree:"自由说话", fixedHint:"按目标句练习", freeHint:"自然说日语即可",
         fixedDesc:"跟着范例练习同一句话。结果会结合目标句和参考音。", freeDesc:"直接说自然日语，不要求和某个目标句一致。",
         modeGroup:"练习方式",
+        evidenceBasis:"本次判断依据", evidenceWaiting:"等待结果", recordingStatus:"录音状态", recordingGood:"良好", recordingUsable:"可用", recordingAffected:"录音条件有影响", recordingRetry:"建议重录",
+        scoreEvidence:"评分依据", evidenceBadge:"有依据 {active}/{total}", evidenceComposition:"音声确认 {measured} · 大致参考 {broad} · 参考值 {neutral} · 未测定 {unavailable}",
+        localDetail:"局部细节", detailAvailable:"可看局部细节", detailLimited:"细节判断有限", detailBroadOnly:"只做整体评价", detailUnavailable:"暂不可判断",
+        resultLimitation:"本次限制", noResultLimitation:"无额外限制", evidenceShownBelow:"判断依据见下方",
         dimensions:{delivery_fluency:"流畅度", clarity:"明瞭度", mora_timing:"节奏", intonation:"抑扬"}
       },
       "zh-TW": {
@@ -1899,6 +1903,10 @@
         modeFixed:"範例跟讀", modeFree:"自由說話", fixedHint:"依目標句練習", freeHint:"自然說日語即可",
         fixedDesc:"跟著範例練習同一句話。結果會結合目標句與參考音。", freeDesc:"直接說自然日語，不要求和某個目標句一致。",
         modeGroup:"練習方式",
+        evidenceBasis:"本次判斷依據", evidenceWaiting:"等待結果", recordingStatus:"錄音狀態", recordingGood:"良好", recordingUsable:"可用", recordingAffected:"錄音條件有影響", recordingRetry:"建議重錄",
+        scoreEvidence:"評分依據", evidenceBadge:"有依據 {active}/{total}", evidenceComposition:"音聲確認 {measured} · 大致參考 {broad} · 參考值 {neutral} · 未測定 {unavailable}",
+        localDetail:"局部細節", detailAvailable:"可看局部細節", detailLimited:"細節判斷有限", detailBroadOnly:"只做整體評價", detailUnavailable:"暫不可判斷",
+        resultLimitation:"本次限制", noResultLimitation:"無額外限制", evidenceShownBelow:"判斷依據見下方",
         dimensions:{delivery_fluency:"流暢度", clarity:"明瞭度", mora_timing:"節奏", intonation:"抑揚"}
       },
       ja: {
@@ -1909,6 +1917,10 @@
         modeFixed:"お手本練習", modeFree:"自由に話す", fixedHint:"目標文で練習", freeHint:"自然な日本語をそのまま",
         fixedDesc:"お手本と同じ文を練習します。目標文と参照音声を使って確認します。", freeDesc:"目標文に合わせず、自然な日本語をそのまま話します。",
         modeGroup:"練習方法",
+        evidenceBasis:"今回の判断根拠", evidenceWaiting:"結果待ち", recordingStatus:"録音状態", recordingGood:"良好", recordingUsable:"利用可能", recordingAffected:"録音条件の影響あり", recordingRetry:"録り直し推奨",
+        scoreEvidence:"評価の根拠", evidenceBadge:"根拠あり {active}/{total}", evidenceComposition:"音声から確認 {measured} · 大まかな目安 {broad} · 参考値 {neutral} · 未測定 {unavailable}",
+        localDetail:"細部の判定", detailAvailable:"細部も確認可能", detailLimited:"細部の判定は限定的", detailBroadOnly:"全体評価のみ", detailUnavailable:"今回は判定不可",
+        resultLimitation:"今回の制限", noResultLimitation:"追加の制限なし", evidenceShownBelow:"判断根拠は下に表示",
         dimensions:{delivery_fluency:"流暢さ", clarity:"明瞭さ", mora_timing:"リズム", intonation:"抑揚"}
       },
       en: {
@@ -1919,6 +1931,10 @@
         modeFixed:"Model practice", modeFree:"Free speaking", fixedHint:"Practice the target sentence", freeHint:"Speak natural Japanese",
         fixedDesc:"Practice the same sentence as the model. The target and reference audio are used for feedback.", freeDesc:"Speak natural Japanese without matching a fixed target sentence.",
         modeGroup:"Practice mode",
+        evidenceBasis:"Evidence used this time", evidenceWaiting:"Waiting for result", recordingStatus:"Recording status", recordingGood:"Good", recordingUsable:"Usable", recordingAffected:"Recording conditions affected analysis", recordingRetry:"Record again",
+        scoreEvidence:"Score evidence", evidenceBadge:"Evidence {active}/{total}", evidenceComposition:"Audio evidence {measured} · Broad estimate {broad} · Reference value {neutral} · Unavailable {unavailable}",
+        localDetail:"Local detail", detailAvailable:"Local detail available", detailLimited:"Local detail is limited", detailBroadOnly:"Overall evaluation only", detailUnavailable:"Unavailable this time",
+        resultLimitation:"Current limitation", noResultLimitation:"No additional limitation", evidenceShownBelow:"Evidence details shown below",
         dimensions:{delivery_fluency:"Fluency", clarity:"Clarity", mora_timing:"Rhythm", intonation:"Intonation"}
       }
     };
@@ -1926,6 +1942,10 @@
     function cc(key) {
       const pack = consumerCopy[state.locale] || consumerCopy["zh-CN"];
       return pack[key] ?? consumerCopy["zh-CN"][key] ?? key;
+    }
+
+    function ccf(key, vars = {}) {
+      return String(cc(key)).replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
     }
 
     function ccDimension(key, fallback="") {
@@ -2779,7 +2799,7 @@
           const label = ccDimension(item.key, item.label || item.key);
           return `<div class="score"><span>${escapeHtml(label)}</span><strong>${Number.isFinite(value) ? Math.round(value) : "--"}</strong><span>${Number.isFinite(value) ? "/ 100" : t("notStrictScore")}</span><span class="score-evidence ${evidenceClass}">${escapeHtml(evidenceText)}</span></div>`;
         }));
-        cards.push(`<div class="score"><span>${t("practiceResult")}</span><strong>${practiceResultLabel(status)}</strong><span>${t("reliabilitySimple")}：${reliabilityDisplay(reliability)}</span></div>`);
+        cards.push(`<div class="score"><span>${t("practiceResult")}</span><strong>${practiceResultLabel(status)}</strong><span>${cc("evidenceShownBelow")}</span></div>`);
       } else {
         const keys = scoreKeys;
         cards.push(...keys.map((key) => {
@@ -2935,39 +2955,71 @@
 
     function renderReliability(result, userFacing = null) {
       const reliability = result.details?.reliability || {};
-      const content = result.details?.content_match || {};
       const recording = result.details?.recording_quality || {};
-      const evidence = result.details?.mora_evidence_summary || {};
       const mode = result.details?.mode || state.lastPayload?.mode || "reference";
       const gate = userFacing?.debug?.reliability_gate || {};
       const policy = userFacing?.debug?.scoring_policy || {};
-      const level = userFacing?.reliability || gate.reliability || reliability.level || "unknown";
-      const levelText = reliabilityDisplay(level);
-      $("reliabilityLevel").textContent = `${levelText} ${(Number(reliability.overall || 0) * 100).toFixed(0)}%`;
-      $("reliabilityLevel").className = level === "high" ? "pill good" : level === "medium" ? "pill warn" : "pill bad";
+      const context = userFacing?.measurement_context || {};
+      const dimensions = Array.isArray(userFacing?.score_dimensions) ? userFacing.score_dimensions : [];
 
-      const reliable = [];
-      if ((recording.score ?? reliability.recording_quality ?? 0) >= 0.75) reliable.push(t("recordingClear"));
-      if (content.status === "pass" || mode !== "reference") reliable.push(t("contentUsable"));
-      if ((reliability.mora_evidence ?? 0) >= 0.65 || (evidence.judgement_available_count || 0) >= 3) reliable.push(t("timingEvidenceUsable"));
+      const fallbackCounts = { measured_proxy:0, broad_proxy:0, neutral_prior:0, unavailable:0 };
+      dimensions.forEach((item) => {
+        const stateName = Object.prototype.hasOwnProperty.call(fallbackCounts, item.evidence_state) ? item.evidence_state : "unavailable";
+        fallbackCounts[stateName] += 1;
+      });
+      const evidence = context.dimension_evidence || {
+        dimension_count: dimensions.length,
+        evidence_backed_count: fallbackCounts.measured_proxy + fallbackCounts.broad_proxy,
+        measured_proxy_count: fallbackCounts.measured_proxy,
+        broad_proxy_count: fallbackCounts.broad_proxy,
+        neutral_prior_count: fallbackCounts.neutral_prior,
+        unavailable_count: fallbackCounts.unavailable
+      };
+      const total = Number(evidence.dimension_count || dimensions.length || 4);
+      const active = Number(evidence.evidence_backed_count || 0);
+      $("reliabilityLevel").textContent = ccf("evidenceBadge", { active, total });
+      $("reliabilityLevel").className = active >= total && total > 0 ? "pill good" : active > 0 ? "pill warn" : "pill";
 
-      const blocked = gate.blocked_categories || [];
-      const caution = [];
-      if (blocked.includes("pitch") || (reliability.f0_coverage ?? 1) < 0.5) caution.push(t("pitchLimited"));
-      if (blocked.includes("pronunciation") || blocked.includes("special_mora")) caution.push(t("moraDetailLimited"));
-      if (policy.weak_reference) caution.push(t("weakReferenceNote"));
+      let recordingState = context.recording_state;
+      if (!recordingState) {
+        const recordingScore = Number(recording.score ?? reliability.recording_quality ?? 1);
+        recordingState = recordingScore < .20 ? "retry" : recordingScore < .55 ? "affected" : recordingScore < .75 ? "usable" : "good";
+      }
+      const recordingText = ({
+        good: cc("recordingGood"), usable: cc("recordingUsable"),
+        affected: cc("recordingAffected"), retry: cc("recordingRetry")
+      })[recordingState] || cc("recordingUsable");
 
-      const mainIssue = (gate.messages || [])[0] || (caution[0] || t("noMajorLimit"));
+      const evidenceText = ccf("evidenceComposition", {
+        measured: Number(evidence.measured_proxy_count || 0),
+        broad: Number(evidence.broad_proxy_count || 0),
+        neutral: Number(evidence.neutral_prior_count || 0),
+        unavailable: Number(evidence.unavailable_count || 0)
+      });
+
+      let detailState = context.local_detail_state;
+      if (!detailState) {
+        const blocked = new Set(gate.blocked_categories || []);
+        const localBlocked = ["pitch", "special_mora", "pronunciation", "pronunciation_detail"].some((key) => blocked.has(key));
+        detailState = policy.broad_mode || policy.weak_reference ? "broad_only" : localBlocked ? "limited" : "available";
+      }
+      const detailText = ({
+        available: cc("detailAvailable"), limited: cc("detailLimited"),
+        broad_only: cc("detailBroadOnly"), unavailable: cc("detailUnavailable")
+      })[detailState] || cc("detailLimited");
+
+      const limitation = context.primary_limitation || (gate.messages || [])[0] || cc("noResultLimitation");
       const rows = [
-        [t("reliableParts"), reliable.length ? reliable.join(" / ") : t("noData")],
-        [t("cautionParts"), caution.length ? caution.join(" / ") : t("noMajorLimit")],
-        [t("mainIssue"), mainIssue],
-        [tGroup("reliabilityLabels", "evalMode"), tMode(mode)]
+        [cc("recordingStatus"), recordingText],
+        [cc("scoreEvidence"), evidenceText],
+        [cc("localDetail"), detailText],
+        [cc("resultLimitation"), limitation]
       ];
       $("reliabilityGrid").innerHTML = rows
-        .map(([label, value]) => `<div class="reliability-item"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`)
+        .map(([label, value]) => `<div class="reliability-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
         .join("");
 
+      const content = result.details?.content_match || {};
       const contentWarnings = [];
       if (content.transcript) {
         contentWarnings.unshift(`${t("asrPrefix")}：${content.transcript} / ${content.transcript_kana || ""}`);
