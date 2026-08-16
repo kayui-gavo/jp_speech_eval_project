@@ -7,6 +7,7 @@ on:
       - score-contract-evolution-v2
       - fluency-reliability-evolution-v3
       - free-speech-four-dimension-evidence-v4
+      - free-speech-promotion-gate-v5
   pull_request:
     paths:
       - "ver1.3/src/jp_speech_eval/audio_features.py"
@@ -39,9 +40,19 @@ on:
       - "ver1.3/scripts/normalize_consumer_ratings.py"
       - "ver1.3/scripts/analyze_research_evidence.py"
       - "ver1.3/scripts/export_free_speech_v4_evidence.py"
+      - "ver1.3/scripts/validate_free_speech_sample_manifest.py"
+      - "ver1.3/scripts/build_free_speech_listener_pack_v3.py"
+      - "ver1.3/scripts/validate_consumer_ratings_v3.py"
+      - "ver1.3/scripts/normalize_consumer_ratings_v3.py"
+      - "ver1.3/scripts/run_free_speech_validation_batch.py"
+      - "ver1.3/scripts/export_free_speech_v5_evidence.py"
+      - "ver1.3/scripts/analyze_free_speech_promotion_v5.py"
       - "ver1.3/scripts/run_reliability_cap_ab.py"
       - "ver1.3/data/research_eval/**"
       - "ver1.3/data/human_eval/consumer_rating_schema_v2.json"
+      - "ver1.3/data/human_eval/consumer_rating_schema_v3.json"
+      - "ver1.3/data/human_eval/free_speech_sample_manifest_schema_v1.json"
+      - "ver1.3/data/human_eval/free_speech_sample_manifest_template_v1.csv"
       - "ver1.3/tests/test_audio_input_domains.py"
       - "ver1.3/tests/test_reference_boundary_provenance.py"
       - "ver1.3/tests/test_reference_boundary_audit.py"
@@ -52,6 +63,10 @@ on:
       - "ver1.3/tests/test_spontaneous_fluency.py"
       - "ver1.3/tests/test_free_speech_evidence.py"
       - "ver1.3/tests/test_free_speech_v4_pipeline.py"
+      - "ver1.3/tests/test_free_speech_sample_manifest_v5.py"
+      - "ver1.3/tests/test_consumer_ratings_v3.py"
+      - "ver1.3/tests/test_free_speech_validation_batch_v5.py"
+      - "ver1.3/tests/test_free_speech_promotion_v5.py"
       - "ver1.3/tests/test_reliability_counterfactual.py"
       - "ver1.3/tests/test_native_cap_telemetry.py"
       - "ver1.3/tests/test_rhythm_dtw.py"
@@ -106,6 +121,10 @@ jobs:
             tests/test_spontaneous_fluency.py \
             tests/test_free_speech_evidence.py \
             tests/test_free_speech_v4_pipeline.py \
+            tests/test_free_speech_sample_manifest_v5.py \
+            tests/test_consumer_ratings_v3.py \
+            tests/test_free_speech_validation_batch_v5.py \
+            tests/test_free_speech_promotion_v5.py \
             tests/test_reliability_counterfactual.py \
             tests/test_native_cap_telemetry.py \
             tests/test_rhythm_dtw.py \
