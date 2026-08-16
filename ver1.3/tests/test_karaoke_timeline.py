@@ -110,6 +110,39 @@ def _result(with_words: bool = True):
     }
 
 
+def _fixed_result(*, approximate: bool = False):
+    return {
+        "target_text": "おはようございます",
+        "duration_sec": 1.4,
+        "alignment_mode": "cached_dtw_fallback_equal" if approximate else "cached_dtw",
+        "endpointing": {
+            "raw_duration": 2.0,
+            "speech_start": 0.30,
+            "speech_end": 1.70,
+            "speech_duration": 1.4,
+            "detected": True,
+        },
+        "pause_info": {"pause_segments": []},
+        "mora_table": [
+            {"mora": "オ", "start_sec": 0.00, "end_sec": 0.25, "f0_hz": 185.0},
+            {"mora": "ハ", "start_sec": 0.25, "end_sec": 0.50, "f0_hz": 205.0},
+            {"mora": "ヨ", "start_sec": 0.50, "end_sec": 0.75, "f0_hz": 220.0},
+            {"mora": "ー", "start_sec": 0.75, "end_sec": 1.00, "f0_hz": 210.0},
+            {"mora": "ゴ", "start_sec": 1.00, "end_sec": 1.20, "f0_hz": 195.0},
+            {"mora": "ザ", "start_sec": 1.20, "end_sec": 1.40, "f0_hz": 180.0},
+        ],
+        "details": {
+            "alignment": {
+                "confidence": 0.35 if approximate else 0.88,
+                "used_equal_fallback": approximate,
+                "mode": "cached_dtw_fallback_equal" if approximate else "cached_dtw",
+            },
+            "reference_f0_by_mora": [160.0, 180.0, 195.0, 190.0, 175.0, 155.0],
+            "recording_quality": {"score": 0.95},
+        },
+    }
+
+
 def test_relative_f0_visualization_is_speaker_relative_and_keeps_gaps():
     times = [i * 0.01 for i in range(30)]
     f0 = [200.0 + 10.0 * math.sin(i / 5.0) for i in range(30)]
@@ -147,6 +180,7 @@ def test_karaoke_timeline_offsets_trim_relative_evidence_to_original_playback():
     pitch = timeline["pitch"]
     assert pitch["available"] is True
     assert pitch["points"][0]["t_sec"] == 0.5
+    assert pitch["reference_points"] == []
     assert pitch["contextual_intonation_claim"] is False
 
 
@@ -155,7 +189,38 @@ def test_missing_word_timestamps_never_fabricates_character_timing():
     assert timeline["transcript"] == "今日はいい天気ですね"
     assert timeline["sync_mode"] == "sentence_progress_only"
     assert timeline["words"] == []
-    assert "実時間スタンプがない" in timeline["sync_note"]
+    assert timeline["moras"] == []
+    assert "単語・モーラ境界がない" in timeline["sync_note"]
+
+
+def test_fixed_practice_uses_user_mora_boundaries_for_karaoke_sync():
+    timeline = build_consumer_karaoke_timeline(_fixed_result(), _user_facing())
+    assert timeline["sync_mode"] == "mora_alignment"
+    assert timeline["words"] == []
+    assert [item["text"] for item in timeline["moras"]] == ["オ", "ハ", "ヨ", "ー", "ゴ", "ザ"]
+    assert timeline["moras"][0]["start_sec"] == 0.3
+    assert timeline["moras"][0]["end_sec"] == 0.55
+    assert timeline["moras"][0]["approximate"] is False
+    assert timeline["moras"][0]["interpretation"] == "mora_playback_alignment_not_phone_correctness"
+
+
+def test_fixed_practice_marks_equal_fallback_mora_sync_as_approximate():
+    timeline = build_consumer_karaoke_timeline(_fixed_result(approximate=True), _user_facing())
+    assert timeline["sync_mode"] == "mora_alignment_approximate"
+    assert all(item["approximate"] for item in timeline["moras"])
+    assert "概算" in timeline["sync_note"]
+
+
+def test_fixed_pitch_overlay_normalizes_user_and_reference_independently():
+    timeline = build_consumer_karaoke_timeline(_fixed_result(), _user_facing())
+    pitch = timeline["pitch"]
+    assert pitch["available"] is True
+    assert pitch["reference_available"] is True
+    assert pitch["vertical_unit"] == "semitone_relative_to_each_speaker_median"
+    assert len(pitch["points"]) == len(pitch["reference_points"]) == 6
+    assert pitch["user_median_f0_hz"] != pitch["reference_median_f0_hz"]
+    assert pitch["reference_time_mapping"] == "reference_mora_shape_mapped_to_user_mora_midpoints"
+    assert "not_strict_pitch_accent_correctness" in pitch["interpretation"]
 
 
 def test_dimension_contract_uses_exact_four_product_semantics_and_evidence_states():
@@ -176,6 +241,7 @@ def test_guardrails_explicitly_reject_fake_karaoke_correctness_claims():
     assert timeline["product_score_changed"] is False
     assert timeline["guardrails"] == {
         "word_timestamps_are_phone_correctness": False,
+        "mora_alignment_is_phone_correctness": False,
         "pitch_curve_is_lexical_pitch_accent_correctness": False,
         "pause_is_automatically_an_error": False,
         "recording_quality_is_a_speaking_dimension": False,
