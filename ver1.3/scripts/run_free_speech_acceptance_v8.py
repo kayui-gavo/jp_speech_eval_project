@@ -53,8 +53,10 @@ def _routing_summary(batch_jsonl: Path) -> Dict[str, Any]:
         expected = str(meta.get("expected_language") or "").strip().lower()
         if expected == "ja":
             return "expected_japanese"
-        if expected:
-            return "expected_non_japanese"
+        if expected in {"en", "zh", "other"}:
+            return "expected_non_japanese_speech"
+        if expected == "non_speech":
+            return "expected_nonspeech_control"
         return "expected_language_unknown"
 
     for row in rows:
@@ -92,15 +94,17 @@ def _routing_summary(batch_jsonl: Path) -> Dict[str, Any]:
         stats["candidate_available_rate"] = round(stats["candidate_available"] / n, 6)
 
     japanese = groups.get("expected_japanese") or {}
-    non_japanese = groups.get("expected_non_japanese") or {}
+    non_japanese = groups.get("expected_non_japanese_speech") or {}
+    nonspeech = groups.get("expected_nonspeech_control") or {}
     return {
         "latest_sample_count": len(rows),
         "groups": groups,
         "valid_japanese_false_no_score_count": int(japanese.get("product_no_score", 0) or 0),
-        "non_japanese_normal_score_count": int(non_japanese.get("product_score_available", 0) or 0),
+        "non_japanese_speech_normal_score_count": int(non_japanese.get("product_score_available", 0) or 0),
+        "nonspeech_control_normal_score_count": int(nonspeech.get("product_score_available", 0) or 0),
         "interpretation": (
-            "routing counts only; nonsense/silence/noise controls should be represented explicitly in the manifest "
-            "and inspected separately from language identity"
+            "language-routing and nonspeech-control failures are counted separately; nonsense/noise subtypes should "
+            "remain identifiable in sample/source metadata rather than being pooled into a language error rate"
         ),
     }
 
