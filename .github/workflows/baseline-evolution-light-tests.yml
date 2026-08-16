@@ -29,6 +29,7 @@ on:
       - "ver1.3/src/jp_speech_eval/transcript_sanity.py"
       - "ver1.3/src/jp_speech_eval/spontaneous_fluency.py"
       - "ver1.3/src/jp_speech_eval/free_speech_evidence.py"
+      - "ver1.3/src/jp_speech_eval/partial_evidence_aggregate.py"
       - "ver1.3/src/jp_speech_eval/reliability_counterfactual.py"
       - "ver1.3/src/jp_speech_eval/native_cap_telemetry.py"
       - "ver1.3/src/jp_speech_eval/evaluator.py"
@@ -58,6 +59,7 @@ on:
       - "ver1.3/scripts/run_free_speech_validation_batch.py"
       - "ver1.3/scripts/export_free_speech_v5_evidence.py"
       - "ver1.3/scripts/analyze_free_speech_promotion_v5.py"
+      - "ver1.3/scripts/analyze_partial_evidence_aggregate.py"
       - "ver1.3/scripts/run_reliability_cap_ab.py"
       - "ver1.3/data/research_eval/**"
       - "ver1.3/data/human_eval/consumer_rating_schema_v2.json"
@@ -72,6 +74,8 @@ on:
       - "ver1.3/tests/test_conversation_mode_policy.py"
       - "ver1.3/tests/test_transcript_assisted_language_gate.py"
       - "ver1.3/tests/test_scoring_integrity_v8.py"
+      - "ver1.3/tests/test_partial_evidence_aggregate.py"
+      - "ver1.3/tests/test_partial_evidence_analysis.py"
       - "ver1.3/tests/test_spontaneous_fluency.py"
       - "ver1.3/tests/test_free_speech_evidence.py"
       - "ver1.3/tests/test_free_speech_v4_pipeline.py"
@@ -135,6 +139,8 @@ jobs:
             tests/test_conversation_mode_policy.py \
             tests/test_transcript_assisted_language_gate.py \
             tests/test_scoring_integrity_v8.py \
+            tests/test_partial_evidence_aggregate.py \
+            tests/test_partial_evidence_analysis.py \
             tests/test_spontaneous_fluency.py \
             tests/test_free_speech_evidence.py \
             tests/test_free_speech_v4_pipeline.py \
