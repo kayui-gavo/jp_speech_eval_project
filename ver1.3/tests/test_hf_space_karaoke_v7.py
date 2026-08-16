@@ -82,12 +82,26 @@ def test_karaoke_replay_follows_recording_clock_and_has_pause_pitch_layers():
     assert 'timeline.pitch.reference_points' in text
 
 
+def test_uploaded_audio_and_sample_audio_can_drive_the_same_replay_surface():
+    text = HTML.read_text(encoding="utf-8")
+    assert 'state.lastRecordingUrl = URL.createObjectURL(file)' in text
+    assert '$("lastRecordingAudio").src = state.lastRecordingUrl' in text
+    assert '$("lastRecordingAudio").src = $("sampleAudio").src' in text
+    assert 'if ($("lastRecordingAudio").src) $("lastRecordingAudio").play()' in text
+
+
+def test_microphone_capture_requests_rawish_audio_for_measurement_consistency():
+    text = HTML.read_text(encoding="utf-8")
+    assert 'channelCount: 1' in text
+    assert 'echoCancellation: false' in text
+    assert 'noiseSuppression: false' in text
+    assert 'autoGainControl: false' in text
+
+
 def test_public_pitch_view_does_not_present_hl_match_as_red_green_correctness():
     text = HTML.read_text(encoding="utf-8")
     assert 'const showLexicalDebug = !isPublicDemo();' in text
     assert 'if (showLexicalDebug)' in text
-    # The legacy red/green H/L diagnostic may remain for local debug, but it
-    # must sit inside the public-mode gate rather than being unconditional.
     gate = text.index('if (showLexicalDebug)')
     legacy_color = text.index('obs === targetPitch[i] ? "#047857" : "#b42318"')
     assert legacy_color > gate
