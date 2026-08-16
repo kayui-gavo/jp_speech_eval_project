@@ -1,0 +1,65 @@
+name: v5-one-shot-human-count-gate
+
+on:
+  push:
+    branches:
+      - free-speech-promotion-gate-v5
+    paths:
+      - ".github/workflows/v5-self-patch-human-count-gate.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: free-speech-promotion-gate-v5
+      - name: Enforce minimum listener count in held promotion analysis
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("ver1.3/scripts/analyze_free_speech_promotion_v5.py")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''    criterion: str,\n    subset: str = "held",\n) -> list[Dict[str, Any]]:\n'''
+          new = '''    criterion: str,\n    subset: str = "held",\n    minimum_human_rating_count: int = 1,\n) -> list[Dict[str, Any]]:\n'''
+          if old not in text:
+              raise SystemExit("join signature anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''        if subset and _text(human_row.get("subset")) != subset:\n            continue\n        sample_id = _text(human_row.get("sample_id"))\n'''
+          new = '''        if subset and _text(human_row.get("subset")) != subset:\n            continue\n        rating_count = int(_finite(human_row.get("human_rating_count")) or 0)\n        if rating_count < max(1, int(minimum_human_rating_count)):\n            continue\n        sample_id = _text(human_row.get("sample_id"))\n'''
+          if old not in text:
+              raise SystemExit("join body anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    direct = dict(protocol.get("direct_product_promotion_eligibility") or {})\n\n    human = aggregate_human(human_rows)\n'''
+          new = '''    direct = dict(protocol.get("direct_product_promotion_eligibility") or {})\n    minimum_human_rating_count = int(thresholds.get("human_rating_count_minimum_for_held_inclusion", 1))\n\n    human = aggregate_human(human_rows)\n'''
+          if old not in text:
+              raise SystemExit("threshold anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''            joined = _join_candidate(human, evidence_index, candidate=candidate, criterion=criterion, subset="held")\n'''
+          new = '''            joined = _join_candidate(\n                human,\n                evidence_index,\n                candidate=candidate,\n                criterion=criterion,\n                subset="held",\n                minimum_human_rating_count=minimum_human_rating_count,\n            )\n'''
+          if old not in text:
+              raise SystemExit("join call anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''                "held_pair_count": len(joined),\n                "held_available_count": available_count,\n'''
+          new = '''                "held_pair_count": len(joined),\n                "minimum_human_rating_count_for_inclusion": minimum_human_rating_count,\n                "held_available_count": available_count,\n'''
+          if old not in text:
+              raise SystemExit("criterion report anchor not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/scripts/analyze_free_speech_promotion_v5.py
+          git commit -m "research: enforce minimum human ratings per held criterion"
+          git push origin HEAD:free-speech-promotion-gate-v5
