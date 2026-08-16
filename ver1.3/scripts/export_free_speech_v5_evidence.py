@@ -5,6 +5,12 @@ Unlike the v4 flattener, this exporter preserves speaker/task/split/channel
 metadata from the real-product batch runner and explicit eligibility outcomes.
 Batch JSONL may contain multiple attempts for a failed sample; analysis uses the
 latest attempt per sample while preserving the raw attempt history on disk.
+
+A shadow surface can deliberately contain a neutral numeric placeholder even
+when its source evidence is unavailable.  Such placeholders are exported in
+``fallback_numeric_value`` but never in ``evidence_value`` and never count as
+available criterion evidence.
+
 This script performs no score promotion or fitting.
 """
 
@@ -32,6 +38,11 @@ CANDIDATES = (
     ("intonation.robust_range_semitones", "intonation_utterance_naturalness", "nonmonotonic_diagnostic_only"),
     ("intonation.shadow_candidate_score", "intonation_utterance_naturalness", "higher_better_hypothesis"),
 )
+SHADOW_AVAILABILITY_KEYS = {
+    "clarity.shadow_candidate_score": "clarity",
+    "rhythm.shadow_candidate_score": "mora_timing",
+    "intonation.shadow_candidate_score": "intonation",
+}
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -70,11 +81,7 @@ def _read_jsonl(path: str | Path) -> Iterable[Mapping[str, Any]]:
 
 
 def _latest_attempts(path: str | Path) -> tuple[list[Mapping[str, Any]], int, int]:
-    """Return the last JSONL row for each sample id, preserving final order.
-
-    A retry appends rather than mutates the raw run log.  The analysis view is
-    deterministic: latest attempt wins.  Rows without sample ids are ignored.
-    """
+    """Return the last JSONL row for each sample id, preserving final order."""
     latest: OrderedDict[str, Mapping[str, Any]] = OrderedDict()
     attempt_count = 0
     for row in _read_jsonl(path):
@@ -115,6 +122,22 @@ def _candidate_values(batch_row: Mapping[str, Any]) -> Dict[str, Any]:
         "intonation.robust_range_semitones": intonation.get("robust_range_semitones_p90_p10"),
         "intonation.shadow_candidate_score": components.get("intonation"),
     }
+
+
+def _candidate_available(
+    candidate: str,
+    *,
+    numeric_value: Optional[float],
+    batch_ok: bool,
+    surface: Mapping[str, Any],
+) -> bool:
+    if not batch_ok or numeric_value is None:
+        return False
+    source_key = SHADOW_AVAILABILITY_KEYS.get(candidate)
+    if source_key is None:
+        return True
+    flags = _mapping(surface.get("available_evidence"))
+    return flags.get(source_key) is True
 
 
 def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, Any]]:
@@ -166,20 +189,24 @@ def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, 
     rows: list[Dict[str, Any]] = []
     for candidate, construct, direction in CANDIDATES:
         value = _finite(values.get(candidate)) if batch_ok else None
+        available = _candidate_available(candidate, numeric_value=value, batch_ok=batch_ok, surface=surface)
+        is_shadow_surface = "shadow_candidate_score" in candidate
         if not batch_ok:
             failure_reason = "batch_error:" + (_text(batch_row.get("error_type")) or "unknown")
         elif value is None:
             failure_reason = "evidence_unavailable"
+        elif not available:
+            failure_reason = "neutral_placeholder_without_source_evidence"
         else:
             failure_reason = ""
-        is_shadow_surface = "shadow_candidate_score" in candidate
         rows.append(
             {
                 **common,
                 "candidate": candidate,
                 "candidate_construct": construct,
-                "evidence_value": "" if value is None else value,
-                "available": "true" if value is not None else "false",
+                "evidence_value": value if available else "",
+                "fallback_numeric_value": value if is_shadow_surface and value is not None else "",
+                "available": "true" if available else "false",
                 "failure_reason": failure_reason,
                 "evidence_direction": direction,
                 "model_id": "free_speech_candidate_surface" if is_shadow_surface else asr_model_id,
@@ -201,7 +228,7 @@ def export_file(input_jsonl: str | Path, output_csv: str | Path) -> Dict[str, An
     fields = [
         "sample_id", "speaker_id", "speaker_group", "l1", "task", "prompt_id", "subset",
         "expected_language", "condition", "channel_pair_id", "source_recording_id", "context_type", "context_id",
-        "candidate", "candidate_construct", "evidence_value", "available", "failure_reason",
+        "candidate", "candidate_construct", "evidence_value", "fallback_numeric_value", "available", "failure_reason",
         "evidence_direction", "model_id", "model_version", "batch_status", "product_score_available",
         "language_gate_eligible", "language_gate_reason", "recording_quality_score",
         "scoring_used_gold_transcript", "score_contract_version", "evidence_schema_version",
@@ -222,7 +249,7 @@ def export_file(input_jsonl: str | Path, output_csv: str | Path) -> Dict[str, An
         "evidence_row_count": len(rows),
         "candidate_count": len(CANDIDATES),
         "contextual_intonation_candidate_count": 0,
-        "note": "latest attempt per sample is exported; isolated acoustic/F0 evidence is intentionally not exported as contextual intonation evidence",
+        "note": "latest attempt per sample is exported; neutral numeric placeholders do not count as available evidence; isolated acoustic/F0 evidence is not exported as contextual intonation evidence",
     }
 
 
