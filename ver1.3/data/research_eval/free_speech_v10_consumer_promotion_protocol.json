@@ -1,0 +1,37 @@
+{
+  "schema_version": "free_speech_v10_consumer_promotion_protocol_v1",
+  "status": "frozen_before_v10_criterion_results",
+  "inherits": "free_speech_v5_promotion_protocol_v1",
+  "scope": "C-end discrimination and utterance-length readiness gates layered on top of the frozen v5 scientific promotion protocol",
+  "base_protocol_path": "ver1.3/data/research_eval/free_speech_v5_promotion_protocol.json",
+  "direct_product_candidates": {
+    "clarity.shadow_candidate_score": "clarity_comprehensibility",
+    "rhythm.shadow_candidate_score": "rhythm_naturalness",
+    "fluency.current_product_proxy": "fluency",
+    "intonation.shadow_candidate_score": "intonation_utterance_naturalness"
+  },
+  "consumer_discrimination_gates": {
+    "held_learner_construct_matched_pair_count": 30,
+    "held_learner_spearman_rho": 0.25,
+    "held_learner_candidate_iqr_min_points": 6.0,
+    "short_utterance_max_speech_sec": 3.0,
+    "long_utterance_min_speech_sec": 8.0,
+    "held_short_construct_matched_pair_count": 8,
+    "held_long_construct_matched_pair_count": 8,
+    "short_and_long_associations_must_keep_positive_direction": true,
+    "native_vs_learner_group_direction_min_human_gap_1to7": 0.25,
+    "machine_group_direction_must_match_human_direction": true
+  },
+  "decision_semantics": {
+    "pass": "v5 scientific gates and v10 C-end discrimination gates pass; candidate may enter a separate score-changing A/B branch with a new ScoreContract",
+    "fail": "candidate must remain shadow; do not rescue by tuning on held data",
+    "insufficient": "collect more held learner/native/short/long criterion data before any score-changing branch",
+    "diagnostic_only": "not a direct ProductScore candidate"
+  },
+  "rationale": {
+    "learner_only": "overall native-plus-learner correlation can look good even when learner scores collapse into a narrow band",
+    "length_coverage": "a C-end free-speaking score must remain useful for both short conversational turns and longer utterances",
+    "group_direction": "native controls are a safety check, but the machine is required to follow the human criterion direction rather than assume native-likeness is the construct",
+    "no_new_score_mapping": "these gates validate candidate behavior only; they do not alter ProductScore or fit a new mapping"
+  }
+}
