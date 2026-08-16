@@ -6,6 +6,7 @@ on:
       - baseline-evolution-v1
       - score-contract-evolution-v2
       - fluency-reliability-evolution-v3
+      - free-speech-four-dimension-evidence-v4
   pull_request:
     paths:
       - "ver1.3/src/jp_speech_eval/audio_features.py"
@@ -17,9 +18,11 @@ on:
       - "ver1.3/src/jp_speech_eval/user_facing_policy.py"
       - "ver1.3/src/jp_speech_eval/feedback_renderer.py"
       - "ver1.3/src/jp_speech_eval/conversation_mode_policy.py"
+      - "ver1.3/src/jp_speech_eval/asr.py"
       - "ver1.3/src/jp_speech_eval/asr_confirmation.py"
       - "ver1.3/src/jp_speech_eval/transcript_assisted.py"
       - "ver1.3/src/jp_speech_eval/spontaneous_fluency.py"
+      - "ver1.3/src/jp_speech_eval/free_speech_evidence.py"
       - "ver1.3/src/jp_speech_eval/reliability_counterfactual.py"
       - "ver1.3/src/jp_speech_eval/native_cap_telemetry.py"
       - "ver1.3/src/jp_speech_eval/evaluator.py"
@@ -33,7 +36,9 @@ on:
       - "ver1.3/scripts/validate_research_manifest.py"
       - "ver1.3/scripts/build_research_splits.py"
       - "ver1.3/scripts/validate_consumer_ratings.py"
+      - "ver1.3/scripts/normalize_consumer_ratings.py"
       - "ver1.3/scripts/analyze_research_evidence.py"
+      - "ver1.3/scripts/export_free_speech_v4_evidence.py"
       - "ver1.3/scripts/run_reliability_cap_ab.py"
       - "ver1.3/data/research_eval/**"
       - "ver1.3/data/human_eval/consumer_rating_schema_v2.json"
@@ -45,6 +50,8 @@ on:
       - "ver1.3/tests/test_conversation_mode_policy.py"
       - "ver1.3/tests/test_transcript_assisted_language_gate.py"
       - "ver1.3/tests/test_spontaneous_fluency.py"
+      - "ver1.3/tests/test_free_speech_evidence.py"
+      - "ver1.3/tests/test_free_speech_v4_pipeline.py"
       - "ver1.3/tests/test_reliability_counterfactual.py"
       - "ver1.3/tests/test_native_cap_telemetry.py"
       - "ver1.3/tests/test_rhythm_dtw.py"
@@ -97,6 +104,8 @@ jobs:
             tests/test_conversation_mode_policy.py \
             tests/test_transcript_assisted_language_gate.py \
             tests/test_spontaneous_fluency.py \
+            tests/test_free_speech_evidence.py \
+            tests/test_free_speech_v4_pipeline.py \
             tests/test_reliability_counterfactual.py \
             tests/test_native_cap_telemetry.py \
             tests/test_rhythm_dtw.py \

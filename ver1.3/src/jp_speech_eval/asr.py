@@ -25,6 +25,7 @@ class AsrTranscript:
     note: str
     language_probability: Optional[float] = None
     words: Optional[List[Dict[str, Any]]] = None
+    segments: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -154,6 +155,29 @@ def _try_faster_whisper(
             )
             segments = list(segment_iter)
             text = "".join(seg.text for seg in segments).strip()
+            segment_metrics: List[Dict[str, Any]] = []
+            for segment in segments:
+                segment_metrics.append(
+                    {
+                        "start_sec": round(float(getattr(segment, "start", 0.0) or 0.0), 6),
+                        "end_sec": round(float(getattr(segment, "end", 0.0) or 0.0), 6),
+                        "avg_logprob": (
+                            None
+                            if getattr(segment, "avg_logprob", None) is None
+                            else round(float(getattr(segment, "avg_logprob")), 6)
+                        ),
+                        "no_speech_prob": (
+                            None
+                            if getattr(segment, "no_speech_prob", None) is None
+                            else round(float(getattr(segment, "no_speech_prob")), 6)
+                        ),
+                        "compression_ratio": (
+                            None
+                            if getattr(segment, "compression_ratio", None) is None
+                            else round(float(getattr(segment, "compression_ratio")), 6)
+                        ),
+                    }
+                )
             words: List[Dict[str, Any]] | None = None
             if word_timestamps:
                 words = []
@@ -185,6 +209,7 @@ def _try_faster_whisper(
             "ok",
             probability,
             words,
+            segment_metrics,
         )
     except Exception as exc:
         return AsrTranscript(False, "faster-whisper", model_name, "", language or "", _error_note(exc))
@@ -218,6 +243,19 @@ def _try_openai_whisper(
             fp16=False,
             condition_on_previous_text=False,
         )
+        segment_metrics: List[Dict[str, Any]] = []
+        for raw_segment in result.get("segments", []) or []:
+            if not isinstance(raw_segment, dict):
+                continue
+            segment_metrics.append(
+                {
+                    "start_sec": raw_segment.get("start"),
+                    "end_sec": raw_segment.get("end"),
+                    "avg_logprob": raw_segment.get("avg_logprob"),
+                    "no_speech_prob": raw_segment.get("no_speech_prob"),
+                    "compression_ratio": raw_segment.get("compression_ratio"),
+                }
+            )
         return AsrTranscript(
             True,
             "openai-whisper",
@@ -225,6 +263,9 @@ def _try_openai_whisper(
             str(result.get("text", "")).strip(),
             str(result.get("language", language or "") or ""),
             "ok",
+            None,
+            None,
+            segment_metrics,
         )
     except Exception as exc:
         return AsrTranscript(False, "openai-whisper", model_name, "", language or "", _error_note(exc))

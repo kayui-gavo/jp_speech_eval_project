@@ -75,6 +75,19 @@ def _dimension(
     note: str = "",
 ) -> Dict[str, Any]:
     score = _score(value) if available else None
+    prior_fallback = source_field == "product_prior" or "prior" in str(evidence_tier).lower()
+    if score is None:
+        evidence_state = "unavailable"
+        precision_hint = "unavailable"
+    elif prior_fallback:
+        evidence_state = "neutral_prior"
+        precision_hint = "neutral_placeholder"
+    elif confidence == "low":
+        evidence_state = "broad_proxy"
+        precision_hint = "rough"
+    else:
+        evidence_state = "measured_proxy"
+        precision_hint = "normal"
     return {
         "key": key,
         "label": label,
@@ -84,6 +97,13 @@ def _dimension(
         "construct": construct,
         "confidence": confidence,
         "evidence_tier": evidence_tier,
+        "evidence_state": evidence_state,
+        "precision_hint": precision_hint,
+        "numeric_semantics": (
+            "neutral_anchor_not_direct_measurement"
+            if evidence_state == "neutral_prior"
+            else "practice_proxy_not_formal_measurement"
+        ),
         "product_calibrated": False,
         "note": note,
     }
@@ -405,9 +425,22 @@ def build_consumer_score_components(
     pause_score = _number(fluency.get("pause_score"))
     delivery_legacy = _number(fluency.get("delivery_fluency_score", result.get("fluency_score")))
     fluency_value = _blend([(rate_score, 0.48), (pause_score, 0.52), (delivery_legacy, 0.0)])
-    if fluency_value is None:
-        fluency_value = delivery_legacy if delivery_legacy is not None else 70.0
-    fluency_conf = "high" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "medium"
+    if fluency_value is not None:
+        fluency_source = "details.fluency.rate_score+pause_score"
+        fluency_tier = "rate_plus_pause"
+        fluency_conf = "high" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "medium"
+    elif delivery_legacy is not None:
+        fluency_value = delivery_legacy
+        fluency_source = "result.fluency_score"
+        fluency_tier = "legacy_delivery_fluency_proxy"
+        # In free/transcript-assisted speech this value depends on transcript-derived
+        # mora rate, so stable endpointing alone is not enough for high confidence.
+        fluency_conf = "medium" if _clip01(reliability.get("endpointing"), 1.0) >= 0.75 else "low"
+    else:
+        fluency_value = 70.0
+        fluency_source = "product_prior"
+        fluency_tier = "fluency_prior_without_rate_or_pause_evidence"
+        fluency_conf = "low"
 
     clarity_value, clarity_source, clarity_construct, clarity_conf, clarity_tier = _clarity_proxy(
         result,
@@ -435,10 +468,15 @@ def build_consumer_score_components(
         rhythm_tier = "alignment_fallback_broad_timing" if alignment_fallback else "broad_timing_fallback"
         rhythm_source = "rate_score+duration_ratio_to_reference"
     else:
-        rhythm_value = rate_score if rate_score is not None else 70.0
+        if rate_score is not None:
+            rhythm_value = rate_score
+            rhythm_tier = "reference_independent_rate_fallback"
+            rhythm_source = "details.fluency.rate_score"
+        else:
+            rhythm_value = 70.0
+            rhythm_tier = "reference_independent_rhythm_prior_without_rate_measurement"
+            rhythm_source = "product_prior"
         rhythm_conf = "low"
-        rhythm_tier = "reference_independent_rate_fallback"
-        rhythm_source = "details.fluency.rate_score"
 
     intonation_value, intonation_source, intonation_construct, intonation_conf, intonation_tier = _intonation_proxy(
         result,
@@ -455,10 +493,10 @@ def build_consumer_score_components(
             "流暢さ",
             fluency_value,
             available=True,
-            source_field="details.fluency.rate_score+pause_score",
+            source_field=fluency_source,
             construct="speed_and_breakdown_fluency",
             confidence=fluency_conf,
-            evidence_tier="rate_plus_pause",
+            evidence_tier=fluency_tier,
             note="speed and breakdown fluency are combined; repair fluency is not yet modeled",
         ),
         _dimension(
