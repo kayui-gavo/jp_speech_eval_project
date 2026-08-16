@@ -52,6 +52,8 @@
     "raw_nonmonotonic_features_to_score_without_predeclared_mapping"
   ],
   "minimum_promotion_gates": {
+    "human_rating_count_minimum_for_held_inclusion": 3,
+    "human_rating_count_target_per_sample_criterion": 5,
     "held_construct_matched_pair_count": 50,
     "candidate_availability_rate": 0.8,
     "construct_matched_spearman_rho": 0.35,
@@ -68,6 +70,7 @@
     "f0_failure_intonation_candidate_min_points": 65.0
   },
   "gate_applicability": {
+    "human_rating_count_minimum_for_held_inclusion": ["score_surface"],
     "construct_matched_pair_count": ["score_surface"],
     "candidate_availability_rate": ["score_surface"],
     "construct_matched_spearman_rho": ["score_surface"],
