@@ -38,9 +38,38 @@ Useful fields include:
 
 Do not infer or fabricate these fields when they are unknown.
 
-## 3. Record WAV files at the generated relative paths
+## 3. Record the assigned WAV files
 
-For example:
+The recommended path is the local browser collector:
+
+```bash
+python scripts/free_speech_collection_server_v10.py \
+  outputs/free_speech_v10_collection/assignments.csv \
+  --audio-root /path/to/free_speech_audio
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+The participant enters only the pseudonymous speaker id such as `HL01`. The page then walks through that speaker's pending prompts and writes mono PCM WAV files directly to the assignment paths.
+
+The collector deliberately does not show:
+
+- held/development split;
+- learner/native analysis label;
+- L1 or proficiency metadata;
+- machine scores;
+- filesystem paths;
+- target-response transcripts.
+
+The browser requests raw-ish mono capture with echo cancellation, noise suppression, and automatic gain control disabled when the browser/device honors those constraints. It encodes PCM WAV in the browser instead of relying on browser-specific MediaRecorder codecs.
+
+The server binds to `127.0.0.1` by default, only accepts predeclared sample ids and `.wav` paths, rejects path traversal, and refuses silent overwrite of an existing recording. It is a local research utility and must not be deployed as the public Hugging Face Space.
+
+If recording is performed with another tool, preserve the generated relative paths exactly, for example:
 
 ```text
 held/learner/HL01/HL01_01.wav
