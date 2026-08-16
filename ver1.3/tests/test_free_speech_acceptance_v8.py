@@ -37,6 +37,22 @@ def _write_manifest(path: Path, rows) -> None:
         writer.writerows(rows)
 
 
+def _product_payload(*, score_available: bool, evidence_available: bool = True):
+    return {
+        "score_available": score_available,
+        "display_score": 74 if score_available else None,
+        "component_scores": {
+            "clarity": {"value": 70, "evidence_state": "neutral_prior"},
+            "mora_timing": {"value": 70, "evidence_state": "neutral_prior"},
+            "delivery_fluency": {
+                "value": 82 if evidence_available else None,
+                "evidence_state": "broad_proxy" if evidence_available else "unavailable",
+            },
+            "intonation": {"value": 70, "evidence_state": "neutral_prior"},
+        },
+    }
+
+
 def test_acceptance_runs_product_batch_analysis_and_routing_summary(tmp_path) -> None:
     manifest = tmp_path / "manifest.csv"
     out_dir = tmp_path / "out"
@@ -67,17 +83,10 @@ def test_acceptance_runs_product_batch_analysis_and_routing_summary(tmp_path) ->
         # Make one Japanese row a deliberate no-score acceptance case by
         # observing the call order through a tiny mutable counter.
         fake_policy.calls += 1
-        score_available = eligible and fake_policy.calls == 1
-        return {
-            "score_available": score_available,
-            "display_score": 74 if score_available else None,
-            "component_scores": {
-                "clarity": {"value": 70, "evidence_state": "neutral_prior"},
-                "mora_timing": {"value": 70, "evidence_state": "neutral_prior"},
-                "delivery_fluency": {"value": 82 if eligible else None, "evidence_state": "broad_proxy" if eligible else "unavailable"},
-                "intonation": {"value": 70, "evidence_state": "neutral_prior"},
-            },
-        }
+        return _product_payload(
+            score_available=eligible and fake_policy.calls == 1,
+            evidence_available=eligible,
+        )
 
     fake_policy.calls = 0
     report = run_acceptance(
@@ -99,7 +108,9 @@ def test_acceptance_runs_product_batch_analysis_and_routing_summary(tmp_path) ->
     routing = report["routing"]
     assert routing["groups"]["expected_japanese"]["n"] == 2
     assert routing["groups"]["expected_non_japanese_speech"]["n"] == 1
-    assert routing["valid_japanese_false_no_score_count"] == 1
+    assert routing["valid_japanese_no_normal_score_count"] == 1
+    assert routing["valid_japanese_product_no_score_count"] == 1
+    assert routing["valid_japanese_evaluation_error_count"] == 0
     assert routing["non_japanese_speech_normal_score_count"] == 0
     assert routing["nonspeech_control_normal_score_count"] == 0
 
@@ -119,24 +130,12 @@ def test_acceptance_keeps_nonspeech_controls_separate_and_candidate_unavailable(
     def fake_evaluator(wav_path, transcript=None, **kwargs):
         return {"details": {"mode": "transcript_assisted_light", "language_gate": {"eligible": False}, "recording_quality": {}, "shadow": {}}, "fluency_score": None}
 
-    def fake_policy(raw, mode="transcript_assisted_light"):
-        return {
-            "score_available": False,
-            "display_score": None,
-            "component_scores": {
-                "clarity": {"value": 70, "evidence_state": "neutral_prior"},
-                "mora_timing": {"value": 70, "evidence_state": "neutral_prior"},
-                "delivery_fluency": {"value": None, "evidence_state": "unavailable"},
-                "intonation": {"value": 70, "evidence_state": "neutral_prior"},
-            },
-        }
-
     report = run_acceptance(
         manifest,
         out_dir,
         audio_root=tmp_path,
         evaluator=fake_evaluator,
-        user_policy=fake_policy,
+        user_policy=lambda raw, mode="transcript_assisted_light": _product_payload(score_available=False, evidence_available=False),
         resume=False,
     )
     analysis = report["partial_evidence_analysis"]
@@ -146,3 +145,29 @@ def test_acceptance_keeps_nonspeech_controls_separate_and_candidate_unavailable(
     assert routing["groups"]["expected_nonspeech_control"]["product_score_available"] == 0
     assert routing["nonspeech_control_normal_score_count"] == 0
     assert "expected_non_japanese_speech" not in routing["groups"]
+
+
+def test_japanese_evaluation_error_counts_as_no_normal_score(tmp_path) -> None:
+    manifest = tmp_path / "manifest.csv"
+    out_dir = tmp_path / "out"
+    _write_manifest(manifest, [_row("ja_ok", "ja"), _row("ja_crash", "ja")])
+
+    def fake_evaluator(wav_path, transcript=None, **kwargs):
+        if Path(wav_path).stem == "ja_crash":
+            raise RuntimeError("decode failed")
+        return {"details": {"mode": "transcript_assisted_light", "language_gate": {"eligible": True}, "recording_quality": {}, "shadow": {}}, "fluency_score": 80}
+
+    report = run_acceptance(
+        manifest,
+        out_dir,
+        audio_root=tmp_path,
+        evaluator=fake_evaluator,
+        user_policy=lambda raw, mode="transcript_assisted_light": _product_payload(score_available=True),
+        resume=False,
+    )
+    routing = report["routing"]
+    assert report["batch"]["failed"] == 1
+    assert routing["groups"]["expected_japanese"]["evaluation_error"] == 1
+    assert routing["valid_japanese_no_normal_score_count"] == 1
+    assert routing["valid_japanese_product_no_score_count"] == 0
+    assert routing["valid_japanese_evaluation_error_count"] == 1
