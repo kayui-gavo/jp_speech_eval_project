@@ -1,0 +1,102 @@
+{
+  "schema_version": "free_speech_v4_promotion_protocol_v1",
+  "status": "frozen_before_criterion_results",
+  "scope": "C-end Japanese spontaneous/general-Japanese four-dimension evidence promotion",
+  "product_score_contract_under_test": "consumer_four_score_v2",
+  "candidate_evidence_schema": "consumer_evidence_v3",
+  "candidate_shadow_policy": "free_speech_candidate_surface_v1_shadow",
+  "principles": [
+    "plausible analyzable Japanese normally receives a score; non-Japanese and unusable audio are eligibility/retry cases",
+    "recording quality is reliability/analyzability, not learner ability",
+    "ASR recoverability is not assumed to equal human comprehensibility",
+    "ASR word timing is not assumed to be true mora alignment or proof of mora isochrony",
+    "target-independent F0 movement is not strict lexical pitch-accent correctness",
+    "F0 extraction failure is missing evidence, not flat intonation",
+    "no shadow candidate may affect ProductScore before this protocol passes"
+  ],
+  "human_criteria": {
+    "clarity": "clarity_comprehensibility",
+    "fluency": "fluency",
+    "rhythm": "rhythm_naturalness",
+    "intonation": "intonation_naturalness"
+  },
+  "task_modes": [
+    "spontaneous",
+    "controlled_dialogue"
+  ],
+  "intended_sample_design": {
+    "held_clip_minimum": 60,
+    "speaker_minimum": 10,
+    "learner_speaker_minimum": 6,
+    "native_speaker_minimum": 4,
+    "ratings_per_analyzable_clip_target": 5,
+    "speaker_disjoint_development_and_held_sets": true,
+    "include_short_and_long_turns": true,
+    "include_multiple_lexical_topics": true,
+    "include_natural_fillers_and_repairs": true,
+    "include_channel_paired_controls": true,
+    "channel_pair_types": [
+      "clean_vs_low_level",
+      "clean_vs_moderate_noise",
+      "clean_vs_codec_or_device_change"
+    ],
+    "negative_controls": [
+      "English_human_speech",
+      "Mandarin_human_speech",
+      "silence",
+      "non_speech_noise"
+    ],
+    "negative_control_role": "eligibility_and_failure_behavior_only_not_Japanese_ability_calibration"
+  },
+  "analysis": {
+    "primary": [
+      "availability_rate_by_construct_and_group",
+      "Spearman_association_with_construct_matched_human_rating",
+      "speaker_disjoint_stability",
+      "task_mode_stability",
+      "score_or_evidence_dispersion",
+      "channel_paired_sensitivity"
+    ],
+    "secondary": [
+      "within_speaker_association_where_sample_count_allows",
+      "cross_construct_association_for_leakage_diagnosis",
+      "failure_reason_distribution"
+    ],
+    "do_not_interpret_nonmonotonic_raw_features_with_simple_Spearman_as_a_promotion_metric": [
+      "fluency.speech_rate_mora_per_sec",
+      "intonation.robust_range_semitones"
+    ]
+  },
+  "minimum_promotion_gates": {
+    "held_construct_matched_pair_count": 50,
+    "candidate_availability_rate": 0.8,
+    "construct_matched_spearman_rho": 0.35,
+    "construct_matched_direction_must_be_correct": true,
+    "no_single_speaker_or_task_mode_may_explain_the_full_effect": true,
+    "channel_paired_median_absolute_candidate_score_drift_max_points": 8.0,
+    "candidate_component_iqr_min_points": 8.0,
+    "negative_controls_must_route_to_no_score_or_retry_when_confidently_non_japanese_or_unusable": true,
+    "f0_unavailable_cases_must_not_receive_a_low_intonation_label_only_because_F0_failed": true,
+    "human_criterion_required": true
+  },
+  "promotion_decisions": {
+    "pass": "candidate may enter a separate product A/B branch with explicit score-contract version bump",
+    "partial": "retain evidence or candidate as shadow; improve construct evidence and rerun held evaluation on a new held set",
+    "fail": "do not map candidate into ProductScore"
+  },
+  "anti_leakage_rules": [
+    "do_not_tune_thresholds_or_shrinkage_on_the_held_set",
+    "do_not_choose_a_candidate_because_it_only_separates_native_vs_learner_labels",
+    "do_not_count_channel_quality_as_clarity_or_pronunciation_ability",
+    "do_not_use_language_probability_as_a_clarity_score",
+    "do_not_copy_pronunciation_accuracy_ratings_into_clarity_comprehensibility",
+    "do_not_average_the_four_human_constructs_before_candidate_validation"
+  ],
+  "product_ux_gate": {
+    "neutral_prior_must_be_identifiable_in_API_metadata": true,
+    "low_confidence_proxy_must_be_identifiable_in_API_metadata": true,
+    "detail_feedback_must_abstain_when_local_evidence_is_missing": true,
+    "candidate_must_improve_useful_score_discrimination_without_creating_large_false_penalties_for_plausible_Japanese": true,
+    "promotion_requires_new_score_contract_version": true
+  }
+}
