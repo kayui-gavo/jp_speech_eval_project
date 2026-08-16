@@ -33,5 +33,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add ver1.3/debug_ui/index.html
-          git commit -m 'ui: integrate evidence-safe karaoke into existing HF Space'
+          git commit -m 'ui: polish HF Space replay audio path'
           git push origin HEAD:hf-space-karaoke-integration-v7
