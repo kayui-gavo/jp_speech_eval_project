@@ -29,6 +29,7 @@ REQUIRED_COLUMNS = (
     "expected_language",
     "channel_condition",
     "channel_pair_id",
+    "source_recording_id",
     "context_type",
     "context_id",
     "context_text",
@@ -77,6 +78,7 @@ def validate_manifest_rows(rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
         language = _text(row.get("expected_language"))
         channel = _text(row.get("channel_condition"))
         pair_id = _text(row.get("channel_pair_id"))
+        source_recording_id = _text(row.get("source_recording_id"))
         context_type = _text(row.get("context_type"))
         context_text = _text(row.get("context_text"))
         context_audio = _text(row.get("context_audio_path"))
@@ -86,6 +88,7 @@ def validate_manifest_rows(rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
             ("audio_path", audio_path),
             ("speaker_id", speaker_id),
             ("prompt_id", prompt_id),
+            ("source_recording_id", source_recording_id),
         ):
             if not value:
                 errors.append(f"{prefix}:empty_{name}")
@@ -137,7 +140,14 @@ def validate_manifest_rows(rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
     for pair_id, pair_rows in sorted(channel_pairs.items()):
         values = {
             key: {_text(row.get(key)) for row in pair_rows}
-            for key in ("speaker_id", "prompt_id", "task_mode", "split", "expected_language")
+            for key in (
+                "speaker_id",
+                "prompt_id",
+                "task_mode",
+                "split",
+                "expected_language",
+                "source_recording_id",
+            )
         }
         channels = {_text(row.get("channel_condition")) for row in pair_rows}
         pair_errors: list[str] = []
@@ -149,12 +159,14 @@ def validate_manifest_rows(rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
         if len(channels) < 2:
             pair_errors.append("fewer_than_2_channel_conditions")
         if "clean" not in channels:
-            warnings.append(f"channel_pair_without_clean_anchor:{pair_id}")
+            pair_errors.append("missing_clean_anchor")
         if pair_errors:
             errors.extend(f"channel_pair:{pair_id}:{item}" for item in pair_errors)
         pair_reports[pair_id] = {
             "sample_count": len(pair_rows),
             "channels": sorted(channels),
+            "source_recording_ids": sorted(values["source_recording_id"]),
+            "same_source_recording": len(values["source_recording_id"]) == 1,
             "errors": pair_errors,
         }
 
@@ -163,6 +175,7 @@ def validate_manifest_rows(rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
         "ok": not errors,
         "row_count": len(rows),
         "speaker_count": len({_text(row.get("speaker_id")) for row in rows if _text(row.get("speaker_id"))}),
+        "source_recording_count": len({_text(row.get("source_recording_id")) for row in rows if _text(row.get("source_recording_id"))}),
         "channel_pair_count": len(channel_pairs),
         "counts": dict(sorted(counts.items())),
         "channel_pairs": pair_reports,
