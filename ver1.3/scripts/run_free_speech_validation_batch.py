@@ -89,8 +89,8 @@ def run_batch(
                     key: _text(row.get(key))
                     for key in (
                         "speaker_id", "speaker_group", "l1", "task_mode", "prompt_id", "split",
-                        "expected_language", "channel_condition", "channel_pair_id", "context_type",
-                        "context_id", "source_note",
+                        "expected_language", "channel_condition", "channel_pair_id", "source_recording_id",
+                        "context_type", "context_id", "source_note",
                     )
                 },
                 "audio_path": _text(row.get("audio_path")),
