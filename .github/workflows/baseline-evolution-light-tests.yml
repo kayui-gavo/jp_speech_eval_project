@@ -66,6 +66,7 @@ on:
       - "ver1.3/tests/test_free_speech_sample_manifest_v5.py"
       - "ver1.3/tests/test_consumer_ratings_v3.py"
       - "ver1.3/tests/test_free_speech_validation_batch_v5.py"
+      - "ver1.3/tests/test_free_speech_v5_evidence_export.py"
       - "ver1.3/tests/test_free_speech_promotion_v5.py"
       - "ver1.3/tests/test_reliability_counterfactual.py"
       - "ver1.3/tests/test_native_cap_telemetry.py"
@@ -124,6 +125,7 @@ jobs:
             tests/test_free_speech_sample_manifest_v5.py \
             tests/test_consumer_ratings_v3.py \
             tests/test_free_speech_validation_batch_v5.py \
+            tests/test_free_speech_v5_evidence_export.py \
             tests/test_free_speech_promotion_v5.py \
             tests/test_reliability_counterfactual.py \
             tests/test_native_cap_telemetry.py \
