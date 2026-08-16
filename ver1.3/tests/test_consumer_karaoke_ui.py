@@ -1,10 +1,26 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML = ROOT / "debug_ui" / "consumer_v3.html"
+
+
+class _IdCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.ids: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        for key, value in attrs:
+            if key == "id" and value:
+                self.ids.append(value)
 
 
 def test_consumer_v3_uses_exact_four_dimension_language():
@@ -65,3 +81,27 @@ def test_playback_visual_uses_audio_clock_and_exposes_layer_controls():
     assert "pauseLayer" in text
     assert "声の動き" in text
     assert ">間<" in text
+
+
+def test_consumer_v3_has_no_duplicate_dom_ids():
+    parser = _IdCollector()
+    parser.feed(HTML.read_text(encoding="utf-8"))
+    assert len(parser.ids) == len(set(parser.ids))
+
+
+def test_consumer_v3_inline_javascript_parses_when_node_is_available():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed in this environment")
+    text = HTML.read_text(encoding="utf-8")
+    scripts = text.split("<script>")
+    assert len(scripts) == 2
+    script = scripts[1].split("</script>", 1)[0]
+    completed = subprocess.run(
+        [node, "--check", "-"],
+        input=script,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
