@@ -240,7 +240,7 @@ Static UI tests additionally prohibit regression back to the old top-level `ç™ºé
 
 The v6 lightweight regression suite has passed on the karaoke implementation with:
 
-- 147 tests passed;
+- 148 tests passed;
 - 3 dependency deprecation warnings from the audio compatibility stack;
 - the existing historical reliability-cap audit unchanged.
 
