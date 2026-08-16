@@ -1,0 +1,60 @@
+{
+  "schema_version": "free_speech_sample_manifest_v1",
+  "purpose": "metadata spine for C-end free-speech criterion validation; never shown wholesale to blinded listeners",
+  "required_fields": [
+    "sample_id",
+    "audio_path",
+    "speaker_id",
+    "speaker_group",
+    "task_mode",
+    "prompt_id",
+    "split",
+    "expected_language",
+    "channel_condition",
+    "context_type"
+  ],
+  "fields": {
+    "sample_id": "stable unique clip identifier",
+    "audio_path": "local path relative to a separately supplied audio root when possible; audio is not committed by this schema",
+    "speaker_id": "pseudonymous stable speaker identifier",
+    "speaker_group": ["learner", "native", "negative_control"],
+    "l1": "analysis-only metadata; never shown to listeners",
+    "task_mode": ["spontaneous", "controlled_dialogue"],
+    "prompt_id": "stable elicitation/dialogue prompt identifier",
+    "split": ["development", "held"],
+    "expected_language": ["ja", "en", "zh", "non_speech", "other"],
+    "channel_condition": ["clean", "low_level", "moderate_noise", "codec_or_device_change", "other"],
+    "channel_pair_id": "optional paired-channel identifier; paired variants should differ in channel condition rather than learner ability",
+    "context_type": ["none", "prompt", "preceding_turn"],
+    "context_id": "optional stable context identifier",
+    "context_text": "optional prompt or preceding-turn text; must never contain a transcript of the target response",
+    "context_audio_path": "optional preceding-turn audio for contextual intonation rating",
+    "source_note": "analysis-only provenance note"
+  },
+  "hard_rules": [
+    "sample_id must be unique",
+    "learner/native speaker_id must not appear in both development and held splits",
+    "expected_language=ja is required for learner/native samples",
+    "negative controls must use speaker_group=negative_control and expected_language other than ja unless explicitly testing Japanese nonspeech edge cases",
+    "channel-paired samples must share speaker_id, prompt_id, task_mode, split, and expected_language",
+    "channel-paired samples must contain at least two distinct channel conditions",
+    "context_text must describe the elicitation context only and must not transcribe the target response",
+    "the batch evaluator must not use a gold/manual transcript from this manifest for scoring"
+  ],
+  "listener_blinding": {
+    "never_expose": [
+      "speaker_id",
+      "speaker_group",
+      "l1",
+      "split",
+      "expected_language",
+      "channel_condition",
+      "channel_pair_id",
+      "source_note"
+    ],
+    "contextual_intonation_may_expose": [
+      "context_text",
+      "context_audio_path"
+    ]
+  }
+}
