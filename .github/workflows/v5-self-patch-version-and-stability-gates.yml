@@ -1,0 +1,95 @@
+name: v5-one-shot-version-and-stability-gates
+
+on:
+  push:
+    branches:
+      - free-speech-promotion-gate-v5
+    paths:
+      - ".github/workflows/v5-self-patch-version-and-stability-gates.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: free-speech-promotion-gate-v5
+      - name: Add version, same-source, task, and speaker stability gates
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("ver1.3/scripts/analyze_free_speech_promotion_v5.py")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''        "speaker_id", "speaker_group", "l1", "task", "prompt_id", "subset",\n        "expected_language", "condition", "channel_pair_id", "context_type",\n        "context_id", "batch_status", "product_score_available", "language_gate_eligible",\n        "language_gate_reason", "scoring_used_gold_transcript",\n'''
+          new = '''        "speaker_id", "speaker_group", "l1", "task", "prompt_id", "subset",\n        "expected_language", "condition", "channel_pair_id", "source_recording_id", "context_type",\n        "context_id", "batch_status", "product_score_available", "language_gate_eligible",\n        "language_gate_reason", "scoring_used_gold_transcript", "score_contract_version",\n        "evidence_schema_version", "candidate_surface_policy_id",\n'''
+          if old not in text:
+              raise SystemExit("sample metadata fields anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    reports = {task: _spearman(group_rows) for task, group_rows in sorted(grouped.items())}\n    usable_groups = sum(report.get("rho") is not None for report in reports.values())\n    return {"groups": reports, "usable_group_count": usable_groups}\n'''
+          new = '''    reports = {task: _spearman(group_rows) for task, group_rows in sorted(grouped.items())}\n    usable_rhos = [float(report["rho"]) for report in reports.values() if report.get("rho") is not None]\n    return {\n        "groups": reports,\n        "usable_group_count": len(usable_rhos),\n        "all_usable_groups_positive_direction": bool(usable_rhos) and all(value > 0 for value in usable_rhos),\n    }\n'''
+          if old not in text:
+              raise SystemExit("task report anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    for pair_id, pair_rows in sorted(grouped.items()):\n        clean = [float(row["evidence_value"]) for row in pair_rows if _text(row.get("condition")) == "clean"]\n        variants = [float(row["evidence_value"]) for row in pair_rows if _text(row.get("condition")) != "clean"]\n        if not clean or not variants:\n            pair_report[pair_id] = {"usable": False, "reason": "missing_clean_or_variant"}\n            continue\n'''
+          new = '''    for pair_id, pair_rows in sorted(grouped.items()):\n        source_ids = {_text(row.get("source_recording_id")) for row in pair_rows if _text(row.get("source_recording_id"))}\n        if len(source_ids) != 1:\n            pair_report[pair_id] = {\n                "usable": False,\n                "reason": "missing_or_conflicting_source_recording_id",\n                "source_recording_ids": sorted(source_ids),\n            }\n            continue\n        clean = [float(row["evidence_value"]) for row in pair_rows if _text(row.get("condition")) == "clean"]\n        variants = [float(row["evidence_value"]) for row in pair_rows if _text(row.get("condition")) != "clean"]\n        if not clean or not variants:\n            pair_report[pair_id] = {"usable": False, "reason": "missing_clean_or_variant", "source_recording_ids": sorted(source_ids)}\n            continue\n'''
+          if old not in text:
+              raise SystemExit("channel pair anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''            "usable": True,\n            "clean_anchor": clean_anchor,\n'''
+          new = '''            "usable": True,\n            "source_recording_id": next(iter(source_ids)),\n            "clean_anchor": clean_anchor,\n'''
+          if old not in text:
+              raise SystemExit("channel report anchor not found")
+          text = text.replace(old, new, 1)
+
+          anchor = '''def _global_dataset_report(sample_meta: Mapping[str, Mapping[str, Any]]) -> Dict[str, Any]:\n'''
+          helper = '''def _candidate_version_report(\n    evidence_rows: Sequence[Mapping[str, Any]],\n    *,\n    candidate: str,\n    protocol: Mapping[str, Any],\n    subset: str = "held",\n) -> Dict[str, Any]:\n    rows = [\n        row\n        for row in evidence_rows\n        if _text(row.get("candidate")) == candidate\n        and (not subset or _text(row.get("subset")) == subset)\n        and _text(row.get("expected_language")) == "ja"\n    ]\n    score_contracts = sorted({_text(row.get("score_contract_version")) for row in rows if _text(row.get("score_contract_version"))})\n    evidence_schemas = sorted({_text(row.get("evidence_schema_version")) for row in rows if _text(row.get("evidence_schema_version"))})\n    surface_policies = sorted({_text(row.get("candidate_surface_policy_id")) for row in rows if _text(row.get("candidate_surface_policy_id"))})\n    expected_contract = _text(protocol.get("product_score_contract_under_test"))\n    expected_evidence = _text(protocol.get("candidate_evidence_schema"))\n    expected_surface = _text(protocol.get("candidate_surface_policy_under_test"))\n    is_shadow_surface = "shadow_candidate_score" in candidate\n    return {\n        "row_count": len(rows),\n        "score_contract_versions": score_contracts,\n        "evidence_schema_versions": evidence_schemas,\n        "candidate_surface_policy_ids": surface_policies,\n        "expected_score_contract": expected_contract,\n        "expected_evidence_schema": expected_evidence,\n        "expected_candidate_surface_policy": expected_surface if is_shadow_surface else None,\n        "score_contract_match": bool(rows) and score_contracts == [expected_contract],\n        "evidence_schema_match": bool(rows) and evidence_schemas == [expected_evidence],\n        "candidate_surface_policy_match": (\n            bool(rows) and surface_policies == [expected_surface]\n            if is_shadow_surface\n            else True\n        ),\n    }\n\n\n'''
+          if anchor not in text:
+              raise SystemExit("global report anchor not found")
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old = '''        ({"sample_id", "candidate", "candidate_construct", "evidence_value", "subset", "speaker_id", "condition"}, set(evidence_fields), "evidence"),\n'''
+          new = '''        ({\n            "sample_id", "candidate", "candidate_construct", "evidence_value", "subset", "speaker_id",\n            "condition", "channel_pair_id", "source_recording_id", "expected_language",\n            "score_contract_version", "evidence_schema_version", "candidate_surface_policy_id",\n        }, set(evidence_fields), "evidence"),\n'''
+          if old not in text:
+              raise SystemExit("required evidence columns anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''        drift = _channel_drift(evidence_rows, candidate=candidate, subset="held")\n        task_usable = ((stats.get("task_stability") or {}).get("usable_group_count"))\n        rho = ((stats.get("spearman") or {}).get("rho"))\n'''
+          new = '''        drift = _channel_drift(evidence_rows, candidate=candidate, subset="held")\n        version_report = _candidate_version_report(\n            evidence_rows, candidate=candidate, protocol=protocol, subset="held"\n        )\n        task_stats = stats.get("task_stability") or {}\n        task_usable = task_stats.get("usable_group_count")\n        loo_stats = stats.get("leave_one_speaker_out") or {}\n        loo_usable = loo_stats.get("usable_leave_one_out_count")\n        rho = ((stats.get("spearman") or {}).get("rho"))\n'''
+          if old not in text:
+              raise SystemExit("direct stats anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''            "task_group_coverage": _gate(_finite(task_usable), float(thresholds["minimum_task_groups_with_usable_pairs"]), op="min"),\n            "held_speaker_count": _gate(_finite(global_report.get("held_speaker_count")), float(thresholds["minimum_speakers"]), op="min"),\n'''
+          new = '''            "task_group_coverage": _gate(_finite(task_usable), float(thresholds["minimum_task_groups_with_usable_pairs"]), op="min"),\n            "task_direction_stability": (\n                "pass" if task_stats.get("all_usable_groups_positive_direction") and int(task_usable or 0) >= int(thresholds["minimum_task_groups_with_usable_pairs"])\n                else "fail" if int(task_usable or 0) >= int(thresholds["minimum_task_groups_with_usable_pairs"])\n                else "insufficient"\n            ),\n            "leave_one_speaker_out_coverage": _gate(\n                _finite(loo_usable), float(thresholds["minimum_leave_one_speaker_out_usable"]), op="min"\n            ),\n            "leave_one_speaker_out_direction_stability": (\n                "pass" if loo_stats.get("all_same_positive_direction") and int(loo_usable or 0) >= int(thresholds["minimum_leave_one_speaker_out_usable"])\n                else "fail" if int(loo_usable or 0) >= int(thresholds["minimum_leave_one_speaker_out_usable"])\n                else "insufficient"\n            ),\n            "held_speaker_count": _gate(_finite(global_report.get("held_speaker_count")), float(thresholds["minimum_speakers"]), op="min"),\n'''
+          if old not in text:
+              raise SystemExit("task gate anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''            "gold_transcript_not_used": "pass" if global_report.get("gold_transcript_scoring_usage_count") == 0 else "fail",\n        }\n'''
+          new = '''            "gold_transcript_not_used": "pass" if global_report.get("gold_transcript_scoring_usage_count") == 0 else "fail",\n            "score_contract_version_match": "pass" if version_report.get("score_contract_match") else "fail",\n            "evidence_schema_version_match": "pass" if version_report.get("evidence_schema_match") else "fail",\n            "candidate_surface_policy_match": (\n                "pass" if version_report.get("candidate_surface_policy_match") else "fail"\n            ),\n        }\n'''
+          if old not in text:
+              raise SystemExit("version gate anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''                "channel_drift": drift,\n                "gate_states": gate_states,\n'''
+          new = '''                "channel_drift": drift,\n                "version_consistency": version_report,\n                "gate_states": gate_states,\n'''
+          if old not in text:
+              raise SystemExit("report update anchor not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ver1.3/scripts/analyze_free_speech_promotion_v5.py
+          git commit -m "research: enforce version and stability promotion gates"
+          git push origin HEAD:free-speech-promotion-gate-v5
