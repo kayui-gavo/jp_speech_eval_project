@@ -26,6 +26,7 @@ jobs:
         run: |
           python scripts/apply_v8_patch_bootstrap.py
           python scripts/apply_v8_patch_corrections.py
+          python scripts/apply_v8_patch_corrections_v2.py
       - name: Install lightweight runtime
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -47,7 +48,11 @@ jobs:
             tests/test_transcript_assisted_language_gate.py \
             tests/test_consumer_dimension_policy.py \
             tests/test_karaoke_timeline.py \
-            tests/test_reference_boundary_provenance.py
+            tests/test_reference_boundary_provenance.py \
+            tests/test_product_guardrails.py \
+            tests/test_language_safe_asr_confirmation.py \
+            tests/test_package_and_ui_contract.py \
+            tests/test_shadow_assessment.py
       - name: Run full lightweight suite
         run: |
           cd ver1.3
