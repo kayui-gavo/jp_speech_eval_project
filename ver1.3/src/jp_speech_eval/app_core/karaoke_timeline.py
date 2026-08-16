@@ -206,6 +206,109 @@ def _pause_rows(
     return rows
 
 
+def _mora_rows(
+    result: Mapping[str, Any],
+    details: Mapping[str, Any],
+    *,
+    speech_start: float,
+    raw_duration: float,
+) -> List[Dict[str, Any]]:
+    raw_rows = result.get("mora_table") if isinstance(result.get("mora_table"), list) else []
+    alignment = _mapping(details.get("alignment"))
+    confidence = _finite(alignment.get("confidence"))
+    alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
+    approximate = bool(
+        alignment.get("used_equal_fallback")
+        or alignment_mode == "equal"
+        or alignment_mode.endswith("fallback_equal")
+        or (confidence is not None and confidence < 0.50)
+    )
+    rows: List[Dict[str, Any]] = []
+    for raw in raw_rows:
+        item = _mapping(raw)
+        mora = str(item.get("mora") or "").strip()
+        start = _original_playback_time(item.get("start_sec"), speech_start=speech_start, raw_duration=raw_duration)
+        end = _original_playback_time(item.get("end_sec"), speech_start=speech_start, raw_duration=raw_duration)
+        if not mora or start is None or end is None or end <= start:
+            continue
+        rows.append({
+            "text": mora,
+            "start_sec": start,
+            "end_sec": end,
+            "alignment_confidence": None if confidence is None else round(_clip(confidence, 0.0, 1.0), 4),
+            "approximate": approximate,
+            "source": "user_mora_alignment",
+            "interpretation": "mora_playback_alignment_not_phone_correctness",
+        })
+    return rows
+
+
+def _relative_semitone_series(values: Sequence[Any]) -> tuple[List[Optional[float]], Optional[float]]:
+    finite = [value for value in (_finite(raw) for raw in values) if value is not None and value > 0]
+    if len(finite) < 2:
+        return [None for _ in values], None
+    center = float(median(finite))
+    output: List[Optional[float]] = []
+    for raw in values:
+        value = _finite(raw)
+        if value is None or value <= 0:
+            output.append(None)
+            continue
+        semitone = 12.0 * math.log2(value / center)
+        output.append(round(_clip(semitone, -12.0, 12.0), 4))
+    return output, center
+
+
+def _mora_pitch_payload(
+    result: Mapping[str, Any],
+    details: Mapping[str, Any],
+    moras: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    raw_rows = result.get("mora_table") if isinstance(result.get("mora_table"), list) else []
+    if not moras or not raw_rows:
+        return {
+            "available": False, "points": [], "reference_points": [],
+            "vertical_unit": "semitone_relative_to_each_speaker_median",
+            "source": "unavailable",
+            "interpretation": "voice_movement_visualization_not_lexical_pitch_accent_correctness",
+            "contextual_intonation_claim": False,
+        }
+    user_hz = [_mapping(row).get("f0_hz") for row in raw_rows[:len(moras)]]
+    reference_hz_raw = details.get("reference_f0_by_mora") if isinstance(details.get("reference_f0_by_mora"), list) else []
+    reference_hz = list(reference_hz_raw[:len(moras)])
+    if len(reference_hz) < len(moras):
+        reference_hz.extend([None] * (len(moras) - len(reference_hz)))
+    user_st, user_center = _relative_semitone_series(user_hz)
+    reference_st, reference_center = _relative_semitone_series(reference_hz)
+    user_points: List[Dict[str, Any]] = []
+    reference_points: List[Dict[str, Any]] = []
+    for index, mora in enumerate(moras):
+        start = _finite(mora.get("start_sec"))
+        end = _finite(mora.get("end_sec"))
+        if start is None or end is None or end <= start:
+            continue
+        midpoint = round((start + end) / 2.0, 4)
+        user_value = user_st[index] if index < len(user_st) else None
+        reference_value = reference_st[index] if index < len(reference_st) else None
+        user_points.append({"t_sec": midpoint, "relative_semitone": user_value})
+        reference_points.append({"t_sec": midpoint, "relative_semitone": reference_value})
+    user_available = sum(point["relative_semitone"] is not None for point in user_points) >= 2
+    reference_available = sum(point["relative_semitone"] is not None for point in reference_points) >= 2
+    return {
+        "available": user_available,
+        "points": user_points,
+        "reference_points": reference_points if reference_available else [],
+        "reference_available": reference_available,
+        "vertical_unit": "semitone_relative_to_each_speaker_median",
+        "source": "mora_median_f0_alignment" if user_available else "unavailable",
+        "user_median_f0_hz": None if user_center is None else round(user_center, 3),
+        "reference_median_f0_hz": None if reference_center is None else round(reference_center, 3),
+        "reference_time_mapping": "reference_mora_shape_mapped_to_user_mora_midpoints",
+        "interpretation": "mora_aligned_voice_movement_shape_not_strict_pitch_accent_correctness",
+        "contextual_intonation_claim": False,
+    }
+
+
 def _pitch_payload(
     details: Mapping[str, Any],
     *,
@@ -232,6 +335,8 @@ def _pitch_payload(
     return {
         "available": bool(points and any(point["relative_semitone"] is not None for point in points)),
         "points": points,
+        "reference_points": [],
+        "reference_available": False,
         "vertical_unit": "semitone_relative_to_speaker_median",
         "source": "same_pass_f0_visualization" if points else "unavailable",
         "interpretation": "voice_movement_visualization_not_lexical_pitch_accent_correctness",
@@ -288,19 +393,30 @@ def build_consumer_karaoke_timeline(
     speech_end = _clip(speech_end, speech_start, max(raw_duration, speech_start))
 
     words = _word_rows(asr, speech_start=speech_start, raw_duration=raw_duration)
+    moras = _mora_rows(result, details, speech_start=speech_start, raw_duration=raw_duration)
     transcript = str(asr.get("text") or result.get("target_text") or "").strip()
     if words:
         sync_mode = "word_timestamps"
         sync_note = "ASRの実時間スタンプに合わせて字幕を表示します。単語の正誤判定ではありません。"
+    elif moras:
+        approximate = any(bool(item.get("approximate")) for item in moras)
+        sync_mode = "mora_alignment_approximate" if approximate else "mora_alignment"
+        sync_note = (
+            "ユーザー音声へのモーラ境界を概算して同期します。発音の正誤を色分けする表示ではありません。"
+            if approximate
+            else "ユーザー音声へのモーラ境界に合わせて拍ごとに表示します。発音の正誤を色分けする表示ではありません。"
+        )
     elif transcript:
         sync_mode = "sentence_progress_only"
-        sync_note = "単語ごとの実時間スタンプがないため、字幕は同期せず全文表示します。"
+        sync_note = "実時間の単語・モーラ境界がないため、字幕は同期せず全文表示します。"
     else:
         sync_mode = "unavailable"
         sync_note = "同期表示に使える文字情報がありません。"
 
     pauses = _pause_rows(result, speech_start=speech_start, raw_duration=raw_duration)
     pitch = _pitch_payload(details, speech_start=speech_start, raw_duration=raw_duration)
+    if not pitch.get("available") and moras:
+        pitch = _mora_pitch_payload(result, details, moras)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -317,6 +433,7 @@ def build_consumer_karaoke_timeline(
         "sync_mode": sync_mode,
         "sync_note": sync_note,
         "words": words,
+        "moras": moras,
         "pauses": pauses,
         "pitch": pitch,
         "dimensions": _dimension_rows(user_facing),
@@ -327,6 +444,7 @@ def build_consumer_karaoke_timeline(
         },
         "guardrails": {
             "word_timestamps_are_phone_correctness": False,
+            "mora_alignment_is_phone_correctness": False,
             "pitch_curve_is_lexical_pitch_accent_correctness": False,
             "pause_is_automatically_an_error": False,
             "recording_quality_is_a_speaking_dimension": False,

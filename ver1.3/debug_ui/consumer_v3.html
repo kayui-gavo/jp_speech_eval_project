@@ -96,7 +96,7 @@
               <div class="lyrics" id="lyrics">ここに、あなたが話した内容が表示されます。</div>
               <div class="visual"><canvas id="timelineCanvas"></canvas><div class="visual-empty" id="visualEmpty">声の動きを表示できる十分な F0 情報がありません。これは低い抑揚スコアを意味しません。</div></div>
               <div class="player"><button class="play" id="playBtn" type="button" aria-label="再生・一時停止"></button><input class="scrub" id="scrub" type="range" min="0" max="1" step="0.01" value="0" aria-label="再生位置"><span class="time" id="timeText">0:00 / 0:00</span></div>
-              <div class="layers"><label><input id="pitchLayer" type="checkbox" checked>声の動き</label><label><input id="pauseLayer" type="checkbox" checked>間</label></div>
+              <div class="layers"><label><input id="pitchLayer" type="checkbox" checked><span id="pitchLayerLabel">声の動き</span></label><label><input id="pauseLayer" type="checkbox" checked>間</label></div>
             </section>
 
             <div class="dimensions" id="dimensions"></div>
@@ -221,7 +221,7 @@
     $('scoreValue').textContent=score==null?'—':Math.round(score);$('confidenceText').textContent=confidenceJa(u.confidence||u.reliability);
     $('summary').textContent=u.summary_text||'今回の話し方を確認しました。';$('modeNotice').textContent=u.mode_notice||'';
     renderLyrics(t);renderDimensions(t.dimensions||u.score_dimensions||[]);renderFocus(u);
-    $('factSync').textContent=t.sync_mode==='word_timestamps'?'単語ごとに同期':t.sync_mode==='sentence_progress_only'?'全文のみ':'利用できません';
+    $('factSync').textContent=t.sync_mode==='word_timestamps'?'単語ごとに同期':t.sync_mode==='mora_alignment'?'拍ごとに同期':t.sync_mode==='mora_alignment_approximate'?'拍ごと・概算':t.sync_mode==='sentence_progress_only'?'全文のみ':'利用できません';
     const rq=t.recording?.analyzability; $('factRecording').textContent=rq==null?'参考情報なし':`${Math.round(Number(rq)*100)} / 100（採点項目ではありません）`;
     $('factMode').textContent=mode==='transcript_assisted_light'?'自由発話・広義日本語':'お手本練習';
     $('results').classList.add('show');setTimeout(()=>{$('results').scrollIntoView({behavior:'smooth',block:'start'});drawTimeline()},80);
@@ -230,14 +230,19 @@
   function renderLyrics(t){
     const box=$('lyrics');box.innerHTML='';box.classList.remove('static');
     $('syncNote').textContent=t.sync_note||'録音を再生して確認します。';
-    const words=Array.isArray(t.words)?t.words:[];
+    const words=Array.isArray(t.words)?t.words:[], moras=Array.isArray(t.moras)?t.moras:[];
     if(words.length){
       $('syncBadge').textContent='字幕同期 ON';
       words.forEach((w,i)=>{const b=document.createElement('button');b.type='button';b.className='lyric-word'+(w.asr_confidence==='low'?' low-asr':'');b.textContent=w.text;b.dataset.start=w.start_sec;b.dataset.end=w.end_sec;b.dataset.index=i;b.title='字幕位置はASRの時間情報です。発音の正誤判定ではありません。';b.addEventListener('click',()=>{if($('userAudio').src){$('userAudio').currentTime=Number(w.start_sec)||0;updatePlaybackVisual()}});box.appendChild(b)});
+    }else if(moras.length){
+      const approximate=t.sync_mode==='mora_alignment_approximate';
+      $('syncBadge').textContent=approximate?'拍同期・概算':'拍同期 ON';
+      moras.forEach((m,i)=>{const b=document.createElement('button');b.type='button';b.className='lyric-word';b.textContent=m.text;b.dataset.start=m.start_sec;b.dataset.end=m.end_sec;b.dataset.index=i;b.title=approximate?'モーラ境界は概算です。発音の正誤判定ではありません。':'ユーザー音声へのモーラ境界です。発音の正誤判定ではありません。';b.addEventListener('click',()=>{if($('userAudio').src){$('userAudio').currentTime=Number(m.start_sec)||0;updatePlaybackVisual()}});box.appendChild(b)});
     }else{
       $('syncBadge').textContent=t.sync_mode==='sentence_progress_only'?'全文表示':'同期なし';box.classList.add('static');box.textContent=t.transcript||'字幕として表示できる文字情報がありません。';
     }
     $('visualEmpty').classList.toggle('show',!(t.pitch&&t.pitch.available));
+    $('pitchLayerLabel').textContent=t.pitch?.reference_available?'声の動き（あなた＋お手本）':'声の動き';
   }
 
   function renderDimensions(dimensions){
@@ -256,8 +261,10 @@
     ctx.strokeStyle='rgba(28,42,69,.08)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
     if($('pauseLayer').checked){ctx.fillStyle='rgba(177,142,88,.10)';(t.pauses||[]).forEach(p=>{ctx.fillRect(x(p.start_sec),0,Math.max(2,x(p.end_sec)-x(p.start_sec)),h)})}
     if($('pitchLayer').checked&&t.pitch?.available){
-      const points=t.pitch.points||[], values=points.map(p=>Number(p.relative_semitone)).filter(Number.isFinite), maxAbs=Math.max(3,...values.map(v=>Math.abs(v)));let started=false;ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--rose').trim()||'#9a5c6c';ctx.lineWidth=2;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();
-      points.forEach(p=>{const v=p.relative_semitone;if(v==null||!Number.isFinite(Number(v))){started=false;return}const px=x(p.t_sec),py=h/2-(Number(v)/maxAbs)*(h*.34);if(!started){ctx.moveTo(px,py);started=true}else ctx.lineTo(px,py)});ctx.stroke();
+      const points=t.pitch.points||[], refPoints=t.pitch.reference_points||[], all=[...points,...refPoints], values=all.map(p=>Number(p.relative_semitone)).filter(Number.isFinite), maxAbs=Math.max(3,...values.map(v=>Math.abs(v)));
+      const drawSeries=(series,color,dashed)=>{let started=false;ctx.strokeStyle=color;ctx.lineWidth=dashed?1.5:2;ctx.lineJoin='round';ctx.lineCap='round';ctx.setLineDash(dashed?[6,5]:[]);ctx.beginPath();series.forEach(p=>{const v=p.relative_semitone;if(v==null||!Number.isFinite(Number(v))){started=false;return}const px=x(p.t_sec),py=h/2-(Number(v)/maxAbs)*(h*.34);if(!started){ctx.moveTo(px,py);started=true}else ctx.lineTo(px,py)});ctx.stroke();ctx.setLineDash([])};
+      drawSeries(points,getComputedStyle(document.documentElement).getPropertyValue('--rose').trim()||'#9a5c6c',false);
+      if(refPoints.length)drawSeries(refPoints,getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()||'#b18e58',true);
     }
     drawCursor(ctx,w,h,x($('userAudio').currentTime||0));
   }
