@@ -5,6 +5,7 @@
   "scope": "C-end Japanese free-speech candidate promotion with executable metadata and listener-context controls",
   "product_score_contract_under_test": "consumer_four_score_v2",
   "candidate_evidence_schema": "consumer_evidence_v3",
+  "candidate_surface_policy_under_test": "free_speech_candidate_surface_v1_shadow",
   "public_dimensions": ["clarity", "fluency", "rhythm", "intonation"],
   "validation_constructs": {
     "clarity_comprehensibility": "clarity",
@@ -49,7 +50,8 @@
     "language_probability_to_clarity",
     "ASR_word_timing_to_phone_or_mora_correctness",
     "raw_diagnostic_feature_directly_to_ProductScore",
-    "raw_nonmonotonic_features_to_score_without_predeclared_mapping"
+    "raw_nonmonotonic_features_to_score_without_predeclared_mapping",
+    "mixing_multiple_score_contract_or_evidence_or_candidate_policy_versions_in_one_promotion_analysis"
   ],
   "minimum_promotion_gates": {
     "human_rating_count_minimum_for_held_inclusion": 3,
@@ -67,7 +69,10 @@
     "gold_transcript_scoring_usage_must_be_zero": true,
     "held_and_development_speakers_must_be_disjoint": true,
     "f0_failure_must_not_create_low_intonation_penalty": true,
-    "f0_failure_intonation_candidate_min_points": 65.0
+    "f0_failure_intonation_candidate_min_points": 65.0,
+    "score_contract_version_must_match_protocol": true,
+    "evidence_schema_version_must_match_protocol": true,
+    "candidate_surface_policy_must_match_protocol": true
   },
   "gate_applicability": {
     "human_rating_count_minimum_for_held_inclusion": ["score_surface"],
@@ -76,6 +81,7 @@
     "construct_matched_spearman_rho": ["score_surface"],
     "candidate_component_iqr_min_points": ["score_surface"],
     "channel_paired_score_drift": ["score_surface"],
+    "version_consistency": ["score_surface"],
     "raw_feature_scale_dependent_iqr_or_point_drift": []
   },
   "decision_semantics": {
