@@ -1,0 +1,54 @@
+{
+  "schema_version": "free_speech_v11_data_quality_protocol_v1",
+  "status": "frozen_before_v11_real_collection_audit",
+  "scope": "corpus-level response-audio integrity and collection-confound review before machine acceptance or human criterion analysis",
+  "product_score_changed": false,
+  "score_contract_changed": false,
+  "automatic_sample_exclusion_allowed": false,
+  "hard_blockers": {
+    "manifest_validation_failure": "existing free_speech_sample_manifest_v1 contract must pass",
+    "missing_response_audio": "manifest response audio does not exist",
+    "undecodable_response_audio": "response audio cannot be opened/decoded by the supported audio stack",
+    "empty_response_audio": "decoded response has zero frames or non-positive duration",
+    "development_held_exact_audio_hash_overlap": "the same response-audio bytes appear in both development and held",
+    "development_held_source_recording_overlap": "the same source_recording_id appears in both development and held",
+    "speaker_split_leakage": "the same learner/native speaker identity appears in development and held",
+    "undeclared_exact_duplicate_response": "different sample ids contain byte-identical response audio without declaring the same source_recording_id/channel relationship"
+  },
+  "review_thresholds": {
+    "clipping_absolute_amplitude": 0.999,
+    "clipping_fraction_review": 0.001,
+    "low_rms_review": 0.003,
+    "very_short_duration_sec_review": 0.35,
+    "very_long_duration_sec_review": 45.0,
+    "non_mono_review": true,
+    "mixed_sample_rate_review": true,
+    "mixed_audio_subtype_review": true,
+    "device_metadata_min_coverage_for_confound_review": 0.8,
+    "device_group_min_speakers_for_confound_review": 3,
+    "device_group_disjoint_sets_review": true
+  },
+  "review_only_principles": {
+    "signal_quality": "clipping, low level, duration, stereo, sample-rate and subtype findings are review signals; they do not automatically make a learner response invalid",
+    "device_metadata": "device imbalance/confounding is reported at speaker level and never used to infer learner ability",
+    "mixed_formats": "mixed formats may be acceptable when intentional and must not be silently normalized into a scientific quality label",
+    "same_split_duplicates": "exact duplicates inside one split are blocked only when they are presented as independent samples without an explicit shared-source relationship"
+  },
+  "response_vs_context_boundary": {
+    "hash_response_audio_only": true,
+    "context_audio_hash_overlap_is_not_response_leakage": true,
+    "reason": "the same prompt/preceding-turn context may legitimately be reused across multiple response samples and splits"
+  },
+  "decision_semantics": {
+    "collection_blocked": "one or more hard blockers exist; do not freeze machine acceptance or criterion analysis until resolved",
+    "collection_ready_with_review": "no hard blocker exists, but review-only findings should be inspected and documented",
+    "collection_ready": "no hard blocker and no review-only findings were detected"
+  },
+  "explicit_non_claims": [
+    "this audit is not a pronunciation score",
+    "this audit is not a recording-quality ability score",
+    "this audit does not prove construct validity",
+    "this audit does not authorize automatic deletion of difficult or accented learner speech",
+    "this audit does not change ProductScore"
+  ]
+}
