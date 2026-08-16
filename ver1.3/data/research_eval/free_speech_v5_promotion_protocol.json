@@ -51,7 +51,8 @@
     "ASR_word_timing_to_phone_or_mora_correctness",
     "raw_diagnostic_feature_directly_to_ProductScore",
     "raw_nonmonotonic_features_to_score_without_predeclared_mapping",
-    "mixing_multiple_score_contract_or_evidence_or_candidate_policy_versions_in_one_promotion_analysis"
+    "mixing_multiple_score_contract_or_evidence_or_candidate_policy_versions_in_one_promotion_analysis",
+    "claiming_stability_when_the_effect_disappears_or_reverses_in_one_task_mode_or_after_leaving_out_one_speaker"
   ],
   "minimum_promotion_gates": {
     "human_rating_count_minimum_for_held_inclusion": 3,
@@ -62,6 +63,9 @@
     "candidate_component_iqr_min_points": 8.0,
     "channel_paired_median_absolute_candidate_score_drift_max_points": 8.0,
     "minimum_task_groups_with_usable_pairs": 2,
+    "task_group_associations_must_keep_positive_direction": true,
+    "minimum_leave_one_speaker_out_usable": 5,
+    "leave_one_speaker_out_associations_must_keep_positive_direction": true,
     "minimum_speakers": 10,
     "minimum_learner_speakers": 6,
     "minimum_native_speakers": 4,
@@ -80,6 +84,8 @@
     "candidate_availability_rate": ["score_surface"],
     "construct_matched_spearman_rho": ["score_surface"],
     "candidate_component_iqr_min_points": ["score_surface"],
+    "task_direction_stability": ["score_surface"],
+    "leave_one_speaker_out_direction_stability": ["score_surface"],
     "channel_paired_score_drift": ["score_surface"],
     "version_consistency": ["score_surface"],
     "raw_feature_scale_dependent_iqr_or_point_drift": []
