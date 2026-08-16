@@ -20,6 +20,7 @@ def _row(sample_id: str = "s1", **overrides):
         "expected_language": "ja",
         "channel_condition": "clean",
         "channel_pair_id": "",
+        "source_recording_id": sample_id,
         "context_type": "preceding_turn",
         "context_id": "ctx1",
         "context_text": "昨日はどこへ行きましたか。",
@@ -49,12 +50,38 @@ def test_manifest_rejects_speaker_split_leakage():
 
 def test_channel_pairs_must_hold_learner_content_constant():
     rows = [
-        _row("s1", channel_pair_id="pair1", channel_condition="clean"),
-        _row("s2", channel_pair_id="pair1", channel_condition="moderate_noise", prompt_id="different"),
+        _row("s1", channel_pair_id="pair1", source_recording_id="source1", channel_condition="clean"),
+        _row(
+            "s2",
+            channel_pair_id="pair1",
+            source_recording_id="source1",
+            channel_condition="moderate_noise",
+            prompt_id="different",
+        ),
     ]
     report = validate_manifest_rows(rows, list(REQUIRED_COLUMNS))
     assert report["ok"] is False
     assert "channel_pair:pair1:conflicting_prompt_id" in report["errors"]
+
+
+def test_channel_pairs_must_be_derived_from_same_source_recording():
+    rows = [
+        _row("s1", channel_pair_id="pair1", source_recording_id="take1", channel_condition="clean"),
+        _row("s2", channel_pair_id="pair1", source_recording_id="take2", channel_condition="low_level"),
+    ]
+    report = validate_manifest_rows(rows, list(REQUIRED_COLUMNS))
+    assert report["ok"] is False
+    assert "channel_pair:pair1:conflicting_source_recording_id" in report["errors"]
+
+
+def test_channel_pair_requires_clean_anchor():
+    rows = [
+        _row("s1", channel_pair_id="pair1", source_recording_id="take1", channel_condition="low_level"),
+        _row("s2", channel_pair_id="pair1", source_recording_id="take1", channel_condition="moderate_noise"),
+    ]
+    report = validate_manifest_rows(rows, list(REQUIRED_COLUMNS))
+    assert report["ok"] is False
+    assert "channel_pair:pair1:missing_clean_anchor" in report["errors"]
 
 
 def test_listener_pack_separates_isolated_and_contextual_ratings_and_blinds_metadata(tmp_path):
@@ -80,6 +107,7 @@ def test_listener_pack_separates_isolated_and_contextual_ratings_and_blinds_meta
         assert "speaker_group" not in row
         assert "l1" not in row
         assert "channel_condition" not in row
+        assert "source_recording_id" not in row
         assert "source_note" not in row
         assert "source_audio_path" not in row
     assert asset_rows[0]["private_only"] == "true"
