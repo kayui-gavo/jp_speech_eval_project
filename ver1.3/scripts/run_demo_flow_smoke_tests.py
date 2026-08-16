@@ -102,7 +102,7 @@ def _scenario_rows() -> List[Dict[str, Any]]:
         {"name": "fixed_normal_pass", "result": base, "kwargs": {}, "expect": {"status": "pass"}},
         {"name": "fixed_poor_recording_retry", "result": _with(base, details={"recording_quality": {"score": 0.1}}), "kwargs": {}, "expect": {"status": "retry"}},
         {"name": "fixed_near_boundary_special_mora_accepted", "result": near, "kwargs": {"special_mora_threshold_profile": "v2_limited_candidate", "enable_user_facing_calibrated_special_mora": True}, "expect": {"no_special_feedback": True}},
-        {"name": "fixed_clear_long_vowel_default_gentle", "result": clear_short, "kwargs": {"special_mora_threshold_profile": "v2_limited_candidate"}, "expect": {"status": "practice_suggestion", "suggestion_type": "special_mora"}},
+        {"name": "fixed_clear_long_vowel_default_shadow_only", "result": clear_short, "kwargs": {"special_mora_threshold_profile": "v2_limited_candidate"}, "expect": {"no_special_feedback": True}},
         {"name": "fixed_clear_long_vowel_explicit_gentle", "result": clear_short, "kwargs": {"special_mora_threshold_profile": "v2_limited_candidate", "enable_user_facing_calibrated_special_mora": True}, "expect": {"status": "practice_suggestion", "suggestion_type": "special_mora"}},
         {"name": "weak_asr_unconfirmed", "result": _with(base, details={"mode": "asr_pseudo_reference", "weak_reference": True}), "kwargs": {"mode": "asr_pseudo_reference"}, "expect": {"weak_reference": True}},
         {"name": "weak_asr_confirmed", "result": _with(base, details={"mode": "asr_confirmed_weak_reference", "weak_reference": True}), "kwargs": {"mode": "asr_confirmed_weak_reference"}, "expect": {"weak_reference": True}},

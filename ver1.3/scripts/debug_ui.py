@@ -385,7 +385,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 if not self.server.latest_reference_wav.exists():  # type: ignore[attr-defined]
                     self.server.latest_reference_wav = self.server.sample_wav  # type: ignore[attr-defined]
                 reference_audio_url = "/api/reference.wav"
-                realtime = _realtime_rows(
+                realtime = [] if self.server.public_demo else _realtime_rows(  # type: ignore[attr-defined]
                     wav_path=wav_path,
                     cache_prefix=self.server.cache_prefix,  # type: ignore[attr-defined]
                     config_path=self.server.config_path,  # type: ignore[attr-defined]

@@ -46,6 +46,20 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     content_status = str(content.get("status") or "unknown")
     alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
     is_fixed_reference = policy.fixed_reference
+    reference_boundary_tier = str(alignment.get("reference_boundary_tier") or "").strip().lower()
+    reference_boundary_confidence_raw = alignment.get("reference_boundary_confidence")
+    reference_boundary_confidence = (
+        None
+        if reference_boundary_confidence_raw is None
+        else _clip01(reference_boundary_confidence_raw, default=0.0)
+    )
+    reference_boundary_precision_limited = bool(
+        is_fixed_reference
+        and (
+            reference_boundary_tier in {"equal_fallback", "unknown_alignment"}
+            or (reference_boundary_confidence is not None and reference_boundary_confidence < 0.45)
+        )
+    )
 
     if is_fixed_reference:
         core_reliability = 0.30 * endpoint_score + 0.35 * alignment_score + 0.20 * recording_score + 0.15 * evidence_score
@@ -59,6 +73,15 @@ def evaluate_reliability_gate(result: Mapping[str, Any], policy: ScoringPolicy) 
     allow_detail = is_fixed_reference and not policy.weak_reference and not policy.demo_only
     allow_special = policy.allow_special_mora_feedback
     allow_pitch = policy.allow_pitch_feedback and is_fixed_reference and not policy.weak_reference and not policy.demo_only
+
+    if reference_boundary_precision_limited:
+        practice = "needs_attention"
+        allow_special = False
+        allow_pitch = False
+        allow_detail = False
+        blocked.extend(["special_mora", "pitch", "pronunciation_detail"])
+        reasons.append("reference_boundary_precision_low_broad_only")
+        messages.append("参照音声の細かい拍位置が概算のため、今回は全体的な話し方を中心に表示します。")
 
     if not is_fixed_reference:
         reasons.append("pitch_not_fixed_reference")

@@ -119,17 +119,24 @@ def _alignment_state(
     result: Mapping[str, Any],
     details: Mapping[str, Any],
 ) -> tuple[bool, bool, str]:
-    """Resolve alignment availability from both legacy and current fields.
+    """Resolve whether target-local alignment is precise enough to consume.
 
-    Some evaluators historically wrote the fallback state only to the top-level
-    ``alignment_mode`` while ``details.alignment`` still looked nominal. A C-end
-    dimension must not treat equal-segmentation fallback as trustworthy local
-    alignment merely because the nested legacy object is stale.
+    A good DTW path cannot manufacture precise mora boundaries when the
+    reference boundaries it maps from were themselves equal-time placeholders.
+    Reference provenance therefore limits *local* timing/F0 evidence while
+    leaving broad/global speaking scores available.
     """
     alignment = details.get("alignment") if isinstance(details.get("alignment"), Mapping) else {}
     mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
     mode_lower = mode.lower()
-    fallback = bool(alignment.get("used_equal_fallback")) or "fallback" in mode_lower
+    path_fallback = bool(alignment.get("used_equal_fallback")) or "fallback" in mode_lower
+    ref_tier = str(alignment.get("reference_boundary_tier") or "").strip().lower()
+    ref_confidence = _number(alignment.get("reference_boundary_confidence"))
+    reference_precision_limited = (
+        ref_tier in {"equal_fallback", "unknown_alignment"}
+        or (ref_confidence is not None and ref_confidence < 0.45)
+    )
+    fallback = bool(path_fallback or reference_precision_limited)
     available = bool(alignment.get("available", True)) and not fallback
     return available, fallback, mode
 
@@ -486,7 +493,7 @@ def build_consumer_score_components(
     )
 
     mismatch_note = " target-relative evidence disabled because the spoken Japanese did not match the fixed target." if not target_relative else ""
-    alignment_note = " local alignment fell back, so target-local timing/F0 evidence was not used as if it were precise." if alignment_fallback else ""
+    alignment_note = " local alignment fell back or reference timing is approximate, so target-local timing/F0 evidence was not used as if it were precise." if alignment_fallback else ""
     return [
         _dimension(
             "delivery_fluency",

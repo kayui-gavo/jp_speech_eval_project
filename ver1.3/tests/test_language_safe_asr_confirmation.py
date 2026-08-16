@@ -14,7 +14,7 @@ class LanguageSafeAsrConfirmationTest(unittest.TestCase):
     def test_language_aware_faster_whisper_does_not_force_japanese(self) -> None:
         observed = {}
 
-        def fake_try(y, sr, model_name, language="ja"):
+        def fake_try(y, sr, model_name, language="ja", *, word_timestamps=False):
             observed["language"] = language
             return AsrTranscript(True, "faster-whisper", model_name, "hello", "en", "ok", 0.98)
 

@@ -174,7 +174,7 @@ def render_user_facing_result(
     *,
     mode: str | None = None,
     enable_runtime_special_mora_shadow: bool = True,
-    enable_user_facing_calibrated_special_mora: bool = True,
+    enable_user_facing_calibrated_special_mora: bool = False,
     special_mora_threshold_profile: str | None = "v2_limited_candidate",
     enable_weak_reference_special_mora_hint: bool = False,
 ) -> Dict[str, Any]:

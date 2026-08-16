@@ -24,7 +24,7 @@ from .structure_features import (
     mora_structure_features,
 )
 from .text_frontend import build_text_info
-from .transcript_sanity import check_asr_transcript_sanity
+from .transcript_sanity import check_free_speech_transcript_sanity
 from .vad import trim_to_speech
 
 
@@ -180,7 +180,7 @@ def evaluate_transcript_assisted_light(
         language_eligible, language_reason = free_speech_language_eligibility(asr)
         transcript = asr.text if asr.available else ""
 
-    sanity = check_asr_transcript_sanity(transcript or "")
+    sanity = check_free_speech_transcript_sanity(transcript or "")
     sanity_payload = sanity.to_dict()
     if external_transcript:
         language_eligible = bool(sanity.ok)

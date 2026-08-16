@@ -92,7 +92,7 @@ class ProductGuardrailsTest(unittest.TestCase):
             {"mora": "ダ", "start_sec": 1.03, "end_sec": 1.23},
             {"mora": "サ", "start_sec": 1.23, "end_sec": 1.43},
             {"mora": "イ", "start_sec": 1.43, "end_sec": 1.63},
-        ]))
+        ]), enable_user_facing_calibrated_special_mora=True)
         self.assertFalse(rendered["display_total_score"])
         self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
         self.assertIn("全体としては問題ありません", rendered["focus_feedback"]["message"])
@@ -345,7 +345,7 @@ class ProductGuardrailsTest(unittest.TestCase):
             self.assertIsNone(rendered["focus_feedback"])
             self.assertFalse(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
 
-    def test_v2_limited_candidate_emits_allowed_types_by_default(self) -> None:
+    def test_v2_limited_candidate_emits_allowed_types_when_explicitly_enabled(self) -> None:
         result = _result(mora_table=[
             {"mora": "ラ", "start_sec": 0.0, "end_sec": 0.2},
             {"mora": "ー", "start_sec": 0.2, "end_sec": 0.235},
@@ -357,7 +357,11 @@ class ProductGuardrailsTest(unittest.TestCase):
             {"mora": "サ", "start_sec": 1.235, "end_sec": 1.435},
             {"mora": "イ", "start_sec": 1.435, "end_sec": 1.635},
         ])
-        rendered = render_user_facing_result(result, special_mora_threshold_profile="v2_limited_candidate")
+        rendered = render_user_facing_result(
+            result,
+            special_mora_threshold_profile="v2_limited_candidate",
+            enable_user_facing_calibrated_special_mora=True,
+        )
         self.assertTrue(any(item["user_feedback_allowed"] for item in rendered["debug"]["special_mora_decisions"]))
         self.assertEqual(rendered["focus_feedback"]["category"], "special_mora")
         self.assertEqual(rendered["focus_feedback"]["type"], "long_vowel")

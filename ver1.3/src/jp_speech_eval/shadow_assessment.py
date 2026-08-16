@@ -149,34 +149,46 @@ def run_assessment_shadows(
                 reference_frame_counts.append(int(alignment["reference_frame_count"]))
                 path_lengths.append(int(alignment["path_length"]))
                 cumulative_distances.append(float(alignment["cumulative_distance"]))
-                rhythm = tempo_irregularity_from_dtw_path(
-                    path,
-                    reference_frame_count=int(alignment["reference_frame_count"]),
-                    smoothing_frames=5,
-                )
-                reference_rhythm.append(
-                    {
-                        "reference_id": reference_row["reference_id"],
-                        "tempo_irregularity_rad": float(rhythm["tempo_irregularity_rad"]),
-                        "global_frame_duration_ratio": (
-                            float(alignment["user_frame_count"])
-                            / max(float(alignment["reference_frame_count"]), 1.0)
-                        ),
-                        "angle_count": int(rhythm["angle_count"]),
-                    }
-                )
+                try:
+                    rhythm = tempo_irregularity_from_dtw_path(
+                        path,
+                        reference_frame_count=int(alignment["reference_frame_count"]),
+                        smoothing_frames=5,
+                    )
+                except (ValueError, FloatingPointError):
+                    rhythm = None
+                if rhythm is not None:
+                    reference_rhythm.append(
+                        {
+                            "reference_id": reference_row["reference_id"],
+                            "tempo_irregularity_rad": float(rhythm["tempo_irregularity_rad"]),
+                            "global_frame_duration_ratio": (
+                                float(alignment["user_frame_count"])
+                                / max(float(alignment["reference_frame_count"]), 1.0)
+                            ),
+                            "angle_count": int(rhythm["angle_count"]),
+                        }
+                    )
 
             aggregate_distance = aggregate_reference_distances(
                 [item["distance"] for item in reference_distances],
                 strategy=ssl_reference_aggregation,
             )
-            aggregate_irregularity = aggregate_reference_distances(
-                [item["tempo_irregularity_rad"] for item in reference_rhythm],
-                strategy=ssl_reference_aggregation,
+            aggregate_irregularity = (
+                aggregate_reference_distances(
+                    [item["tempo_irregularity_rad"] for item in reference_rhythm],
+                    strategy=ssl_reference_aggregation,
+                )
+                if reference_rhythm
+                else None
             )
-            aggregate_duration_ratio = aggregate_reference_distances(
-                [item["global_frame_duration_ratio"] for item in reference_rhythm],
-                strategy=ssl_reference_aggregation,
+            aggregate_duration_ratio = (
+                aggregate_reference_distances(
+                    [item["global_frame_duration_ratio"] for item in reference_rhythm],
+                    strategy=ssl_reference_aggregation,
+                )
+                if reference_rhythm
+                else None
             )
             elapsed = time.perf_counter() - started
             if elapsed > ssl_timeout_sec:
@@ -209,25 +221,41 @@ def run_assessment_shadows(
                 "product_calibrated": False,
                 "user_facing": False,
             }
-            shadow["rhythm_dtw_v1"] = {
-                "available": True,
-                "backend": "wavlm_cosine_dtw_warp_path",
-                "model_id": ssl_model_id,
-                "layer": ssl_layer,
-                "reference_id": reference_identity,
-                "reference_panel": panel_meta,
-                "reference_count": len(reference_rhythm),
-                "aggregate_strategy": ssl_reference_aggregation,
-                "tempo_irregularity_rad": float(aggregate_irregularity),
-                "tempo_irregularity_deg": float(np.degrees(aggregate_irregularity)),
-                "global_frame_duration_ratio": float(aggregate_duration_ratio),
-                "reference_rhythm": reference_rhythm,
-                "interpretation": "lower_is_more_locally_uniform_relative_tempo_shadow_only",
-                "score_mapped": False,
-                "product_calibrated": False,
-                "user_facing": False,
-                "latency_ms": round(elapsed * 1000.0, 3),
-            }
+            if reference_rhythm:
+                shadow["rhythm_dtw_v1"] = {
+                    "available": True,
+                    "backend": "wavlm_cosine_dtw_warp_path",
+                    "model_id": ssl_model_id,
+                    "layer": ssl_layer,
+                    "reference_id": reference_identity,
+                    "reference_panel": panel_meta,
+                    "reference_count": len(reference_rhythm),
+                    "aggregate_strategy": ssl_reference_aggregation,
+                    "tempo_irregularity_rad": float(aggregate_irregularity),
+                    "tempo_irregularity_deg": float(np.degrees(aggregate_irregularity)),
+                    "global_frame_duration_ratio": float(aggregate_duration_ratio),
+                    "reference_rhythm": reference_rhythm,
+                    "interpretation": "lower_is_more_locally_uniform_relative_tempo_shadow_only",
+                    "score_mapped": False,
+                    "product_calibrated": False,
+                    "user_facing": False,
+                    "latency_ms": round(elapsed * 1000.0, 3),
+                }
+            else:
+                shadow["rhythm_dtw_v1"] = {
+                    "available": False,
+                    "backend": "wavlm_cosine_dtw_warp_path",
+                    "model_id": ssl_model_id,
+                    "layer": ssl_layer,
+                    "reference_id": reference_identity,
+                    "reference_panel": panel_meta,
+                    "reference_count": 0,
+                    "reason": "insufficient_dtw_frames_for_rhythm_metric",
+                    "score_mapped": False,
+                    "product_calibrated": False,
+                    "user_facing": False,
+                    "latency_ms": round(elapsed * 1000.0, 3),
+                }
         except Exception as exc:
             failure = _failure("huggingface_ssl_cosine_dtw", exc, time.perf_counter() - started)
             shadow["ssl_pronunciation"] = failure
