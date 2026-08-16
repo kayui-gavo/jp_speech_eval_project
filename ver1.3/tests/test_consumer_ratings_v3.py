@@ -34,10 +34,10 @@ def _rating_row(**overrides):
     return row
 
 
-def _manifest_row():
-    return {
-        "sample_id": "s1",
-        "audio_path": "s1.wav",
+def _manifest_row(sample_id: str = "s1", **overrides):
+    row = {
+        "sample_id": sample_id,
+        "audio_path": f"{sample_id}.wav",
         "speaker_id": "spk_hidden",
         "speaker_group": "learner",
         "l1": "zh",
@@ -53,6 +53,8 @@ def _manifest_row():
         "context_audio_path": "",
         "source_note": "private",
     }
+    row.update(overrides)
+    return row
 
 
 def _write(path: Path, fields, rows):
@@ -98,7 +100,17 @@ def test_normalizer_reattaches_private_metadata_only_after_collection(tmp_path):
     manifest = tmp_path / "manifest.csv"
     output = tmp_path / "long.csv"
     _write(ratings, REQUIRED_COLUMNS, [_rating_row()])
-    _write(manifest, MANIFEST_COLUMNS, [_manifest_row()])
+    # A channel-pair id represents an actual same-content channel control.  The
+    # manifest therefore contains both the clean anchor and one channel variant,
+    # even though only s1 is rated in this unit test.
+    _write(
+        manifest,
+        MANIFEST_COLUMNS,
+        [
+            _manifest_row("s1", channel_condition="clean"),
+            _manifest_row("s2", channel_condition="low_level"),
+        ],
+    )
     report = normalize_file(ratings, manifest, output)
     assert report["normalized_rating_count"] == 4
     with output.open("r", encoding="utf-8", newline="") as handle:
