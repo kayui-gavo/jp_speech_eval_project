@@ -91,20 +91,26 @@ def _routing_summary(batch_jsonl: Path) -> Dict[str, Any]:
         n = max(int(stats["n"]), 1)
         stats["product_score_available_rate"] = round(stats["product_score_available"] / n, 6)
         stats["product_no_score_rate"] = round(stats["product_no_score"] / n, 6)
+        stats["evaluation_error_rate"] = round(stats["evaluation_error"] / n, 6)
         stats["candidate_available_rate"] = round(stats["candidate_available"] / n, 6)
 
     japanese = groups.get("expected_japanese") or {}
     non_japanese = groups.get("expected_non_japanese_speech") or {}
     nonspeech = groups.get("expected_nonspeech_control") or {}
+    japanese_n = int(japanese.get("n", 0) or 0)
+    japanese_score_available = int(japanese.get("product_score_available", 0) or 0)
     return {
         "latest_sample_count": len(rows),
         "groups": groups,
-        "valid_japanese_false_no_score_count": int(japanese.get("product_no_score", 0) or 0),
+        "valid_japanese_no_normal_score_count": max(0, japanese_n - japanese_score_available),
+        "valid_japanese_product_no_score_count": int(japanese.get("product_no_score", 0) or 0),
+        "valid_japanese_evaluation_error_count": int(japanese.get("evaluation_error", 0) or 0),
         "non_japanese_speech_normal_score_count": int(non_japanese.get("product_score_available", 0) or 0),
         "nonspeech_control_normal_score_count": int(nonspeech.get("product_score_available", 0) or 0),
         "interpretation": (
-            "language-routing and nonspeech-control failures are counted separately; nonsense/noise subtypes should "
-            "remain identifiable in sample/source metadata rather than being pooled into a language error rate"
+            "Japanese availability counts evaluation errors as failures to return a normal score. Language-routing "
+            "and nonspeech-control failures remain separate; nonsense/noise subtypes should stay identifiable in "
+            "sample/source metadata rather than being pooled into one error rate."
         ),
     }
 
