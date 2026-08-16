@@ -51,7 +51,6 @@ def test_karaoke_sync_requires_real_timestamp_or_mora_alignment_payload():
     assert "mora_alignment" in text
     assert "mora_alignment_approximate" in text
     assert "sentence_progress_only" in text
-    # The UI must not fabricate token timing from text length.
     assert "transcript.length" not in text
     assert "text.length" not in text
     assert "/ words.length" not in text
@@ -107,18 +106,13 @@ def test_upload_control_avoids_nested_interactive_label_markup():
     assert '<label class="upload">' not in text
 
 
-def test_debug_server_exposes_stable_consumer_route():
+def test_debug_server_exposes_experimental_consumer_route_without_replacing_space_root():
     text = DEBUG_SERVER.read_text(encoding="utf-8")
     assert 'self.path in {"/consumer", "/consumer/"}' in text
     assert 'self.path = "/consumer_v3.html"' in text
     assert 'Consumer: http://{args.host}:{args.port}/consumer' in text
-
-
-def test_public_demo_root_uses_consumer_ui_without_replacing_local_debug_root():
-    text = DEBUG_SERVER.read_text(encoding="utf-8")
-    assert 'self.path == "/" and bool(getattr(self.server, "public_demo", False))' in text
-    assert "server.public_demo = bool(args.public_demo)" in text
-    assert 'server.server_label = "Public demo" if args.public_demo else "Local debug"' in text
+    assert 'self.path == "/" and bool(getattr(self.server, "public_demo", False))' not in text
+    assert "Keep the established Hugging Face Space / debug root on index.html" in text
 
 
 def test_consumer_v3_has_no_duplicate_dom_ids():
