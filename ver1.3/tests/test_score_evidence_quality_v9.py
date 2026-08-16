@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from jp_speech_eval.feedback_renderer import render_user_facing_result
 from jp_speech_eval.score_evidence_quality import build_score_evidence_quality
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_clean_recording_can_still_have_low_score_evidence() -> None:
@@ -100,3 +105,18 @@ def test_user_facing_contract_exposes_clean_recording_but_weak_score_evidence() 
     assert user["score_evidence"]["level"] == "low"
     assert user["score_evidence"]["neutral_prior_dimension_count"] == 3
     assert user["score_evidence"]["interpretation"] == "evidence_coverage_not_probability_score_is_correct"
+
+
+def test_established_space_uses_separate_recording_and_score_evidence_states() -> None:
+    html = (ROOT / "debug_ui" / "index.html").read_text(encoding="utf-8")
+
+    assert "userFacing?.recording_analyzability" in html
+    assert "userFacing?.score_evidence" in html
+    assert 'cc("recordingStatus")' in html
+    assert 'cc("scoreEvidence")' in html
+    # A reliability scalar may remain in local/debug diagnostics, but the public
+    # result header must not format it as a pseudo-probability percentage.
+    render_start = html.index("function renderReliability(result, userFacing = null)")
+    render_end = html.index("function renderEndpointing", render_start)
+    public_renderer = html[render_start:render_end]
+    assert "* 100).toFixed(0)}%" not in public_renderer
