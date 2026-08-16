@@ -114,6 +114,13 @@ def test_debug_server_exposes_stable_consumer_route():
     assert 'Consumer: http://{args.host}:{args.port}/consumer' in text
 
 
+def test_public_demo_root_uses_consumer_ui_without_replacing_local_debug_root():
+    text = DEBUG_SERVER.read_text(encoding="utf-8")
+    assert 'self.path == "/" and bool(getattr(self.server, "public_demo", False))' in text
+    assert "server.public_demo = bool(args.public_demo)" in text
+    assert 'server.server_label = "Public demo" if args.public_demo else "Local debug"' in text
+
+
 def test_consumer_v3_has_no_duplicate_dom_ids():
     parser = _IdCollector()
     parser.feed(HTML.read_text(encoding="utf-8"))
