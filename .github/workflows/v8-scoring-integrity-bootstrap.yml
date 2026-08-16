@@ -61,6 +61,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ver1.3 .github/workflows/baseline-evolution-light-tests.yml
+          git add ver1.3
           git commit -m "fix: enforce scoring evidence integrity v8"
           git push origin HEAD:scoring-integrity-v8
