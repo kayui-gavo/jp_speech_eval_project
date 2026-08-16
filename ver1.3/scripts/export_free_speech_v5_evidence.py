@@ -3,7 +3,9 @@
 
 Unlike the v4 flattener, this exporter preserves speaker/task/split/channel
 metadata from the real-product batch runner and explicit eligibility outcomes.
-It still performs no score promotion or fitting.
+Batch JSONL may contain multiple attempts for a failed sample; analysis uses the
+latest attempt per sample while preserving the raw attempt history on disk.
+This script performs no score promotion or fitting.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import argparse
 import csv
 import json
 import math
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 
@@ -66,6 +69,26 @@ def _read_jsonl(path: str | Path) -> Iterable[Mapping[str, Any]]:
                 yield value
 
 
+def _latest_attempts(path: str | Path) -> tuple[list[Mapping[str, Any]], int, int]:
+    """Return the last JSONL row for each sample id, preserving final order.
+
+    A retry appends rather than mutates the raw run log.  The analysis view is
+    deterministic: latest attempt wins.  Rows without sample ids are ignored.
+    """
+    latest: OrderedDict[str, Mapping[str, Any]] = OrderedDict()
+    attempt_count = 0
+    for row in _read_jsonl(path):
+        sample_id = _text(row.get("sample_id"))
+        if not sample_id:
+            continue
+        attempt_count += 1
+        if sample_id in latest:
+            del latest[sample_id]
+        latest[sample_id] = row
+    unique_count = len(latest)
+    return list(latest.values()), attempt_count, attempt_count - unique_count
+
+
 def _candidate_values(batch_row: Mapping[str, Any]) -> Dict[str, Any]:
     raw = _mapping(batch_row.get("raw_result"))
     details = _mapping(raw.get("details"))
@@ -99,14 +122,20 @@ def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, 
     meta = _mapping(batch_row.get("metadata"))
     raw = _mapping(batch_row.get("raw_result"))
     details = _mapping(raw.get("details"))
+    shadow = _mapping(details.get("shadow"))
+    surface = _mapping(shadow.get("free_speech_candidate_surface"))
+    evidence = _mapping(shadow.get("free_speech_dimension_evidence"))
     asr = _mapping(details.get("asr"))
     language_gate = _mapping(details.get("language_gate"))
     recording = _mapping(details.get("recording_quality"))
     product = _mapping(batch_row.get("user_score"))
     batch_ok = _text(batch_row.get("status")) == "ok"
     values = _candidate_values(batch_row) if batch_ok else {}
-    model_id = _text(asr.get("provider")) or "free_speech_v5"
-    model_version = _text(asr.get("model")) or "unknown"
+    asr_model_id = _text(asr.get("provider")) or "free_speech_v5"
+    asr_model_version = _text(asr.get("model")) or "unknown"
+    evidence_schema = _text(product.get("evidence_schema_version")) or _text(evidence.get("schema_version"))
+    score_contract = _text(product.get("score_contract_version"))
+    surface_policy_id = _text(surface.get("policy_id")) or "unknown_shadow_policy"
 
     common = {
         "sample_id": sample_id,
@@ -119,6 +148,7 @@ def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, 
         "expected_language": _text(meta.get("expected_language")),
         "condition": _text(meta.get("channel_condition")),
         "channel_pair_id": _text(meta.get("channel_pair_id")),
+        "source_recording_id": _text(meta.get("source_recording_id")),
         "context_type": _text(meta.get("context_type")),
         "context_id": _text(meta.get("context_id")),
         "batch_status": _text(batch_row.get("status")),
@@ -127,6 +157,9 @@ def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, 
         "language_gate_reason": _text(language_gate.get("reason")),
         "recording_quality_score": "" if _finite(recording.get("score")) is None else _finite(recording.get("score")),
         "scoring_used_gold_transcript": _bool_text(batch_row.get("scoring_used_gold_transcript")),
+        "score_contract_version": score_contract,
+        "evidence_schema_version": evidence_schema,
+        "candidate_surface_policy_id": surface_policy_id,
         "export_schema": EXPORT_SCHEMA,
     }
 
@@ -139,6 +172,7 @@ def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, 
             failure_reason = "evidence_unavailable"
         else:
             failure_reason = ""
+        is_shadow_surface = "shadow_candidate_score" in candidate
         rows.append(
             {
                 **common,
@@ -148,8 +182,8 @@ def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, 
                 "available": "true" if value is not None else "false",
                 "failure_reason": failure_reason,
                 "evidence_direction": direction,
-                "model_id": model_id if "shadow_candidate_score" not in candidate else "free_speech_candidate_surface",
-                "model_version": model_version,
+                "model_id": "free_speech_candidate_surface" if is_shadow_surface else asr_model_id,
+                "model_version": surface_policy_id if is_shadow_surface else asr_model_version,
             }
         )
     return rows
@@ -157,21 +191,21 @@ def evidence_rows_for_batch_row(batch_row: Mapping[str, Any]) -> list[Dict[str, 
 
 def export_file(input_jsonl: str | Path, output_csv: str | Path) -> Dict[str, Any]:
     rows: list[Dict[str, Any]] = []
-    sample_count = 0
+    latest, attempt_count, superseded_attempt_count = _latest_attempts(input_jsonl)
     error_sample_count = 0
-    for batch_row in _read_jsonl(input_jsonl):
-        sample_count += 1
+    for batch_row in latest:
         if _text(batch_row.get("status")) != "ok":
             error_sample_count += 1
         rows.extend(evidence_rows_for_batch_row(batch_row))
 
     fields = [
         "sample_id", "speaker_id", "speaker_group", "l1", "task", "prompt_id", "subset",
-        "expected_language", "condition", "channel_pair_id", "context_type", "context_id",
+        "expected_language", "condition", "channel_pair_id", "source_recording_id", "context_type", "context_id",
         "candidate", "candidate_construct", "evidence_value", "available", "failure_reason",
         "evidence_direction", "model_id", "model_version", "batch_status", "product_score_available",
         "language_gate_eligible", "language_gate_reason", "recording_quality_score",
-        "scoring_used_gold_transcript", "export_schema",
+        "scoring_used_gold_transcript", "score_contract_version", "evidence_schema_version",
+        "candidate_surface_policy_id", "export_schema",
     ]
     output = Path(output_csv)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -181,12 +215,14 @@ def export_file(input_jsonl: str | Path, output_csv: str | Path) -> Dict[str, An
         writer.writerows(rows)
     return {
         "schema": EXPORT_SCHEMA,
-        "sample_count": sample_count,
+        "attempt_count": attempt_count,
+        "sample_count": len(latest),
+        "superseded_attempt_count": superseded_attempt_count,
         "error_sample_count": error_sample_count,
         "evidence_row_count": len(rows),
         "candidate_count": len(CANDIDATES),
         "contextual_intonation_candidate_count": 0,
-        "note": "isolated acoustic/F0 evidence is intentionally not exported as contextual intonation evidence",
+        "note": "latest attempt per sample is exported; isolated acoustic/F0 evidence is intentionally not exported as contextual intonation evidence",
     }
 
 
