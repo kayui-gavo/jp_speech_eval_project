@@ -8,11 +8,11 @@ Base: `free-speech-four-dimension-evidence-v4`
 
 ## 1. Why this round exists
 
-v4 made free-speech evidence observable without silently replacing neutral product priors.  A second audit found that the v4 promotion protocol promised more than the analysis pipeline could actually execute.
+v4 made free-speech evidence observable without silently replacing neutral product priors. A second audit found that the v4 promotion protocol promised more than the analysis pipeline could actually execute.
 
-The v4 evidence CSV did not preserve all metadata required for speaker-disjoint, task-mode, or channel-paired analysis.  The human intonation rubric also mixed two different questions: whether the pitch movement of an isolated utterance sounds natural, and whether it is appropriate in the actual dialogue context.
+The v4 evidence CSV did not preserve all metadata required for speaker-disjoint, task-mode, or channel-paired analysis. The human intonation rubric also mixed two different questions: whether the pitch movement of an isolated utterance sounds natural, and whether it is appropriate in the actual dialogue context.
 
-For a C-end product these are not minor research bookkeeping issues.  They can create false confidence that a candidate is robust enough for users when it has only been checked on pooled clean recordings or against a construct the model did not observe.
+For a C-end product these are not minor research bookkeeping issues. They can create false confidence that a candidate is robust enough for users when it has only been checked on pooled clean recordings or against a construct the model did not observe.
 
 v5 therefore changes the validation infrastructure, not the user-facing score.
 
@@ -66,9 +66,9 @@ Development and held Japanese learner/native speakers must be disjoint.
 
 ### Same-source channel controls
 
-A channel pair is not merely two recordings from the same speaker reading/responding to the same prompt.  Re-speaking introduces real production variation and cannot identify microphone/noise/codec sensitivity.
+A channel pair is not merely two recordings from the same speaker reading/responding to the same prompt. Re-speaking introduces real production variation and cannot identify microphone/noise/codec sensitivity.
 
-v5 therefore requires every channel-paired variant to share one non-empty `source_recording_id`.  Clean, low-level, noisy, or codec/device variants are expected to be derived from the same underlying source utterance.  A clean anchor is mandatory.
+v5 therefore requires every channel-paired variant to share one non-empty `source_recording_id`. Clean, low-level, noisy, or codec/device variants are expected to be derived from the same underlying source utterance. A clean anchor is mandatory.
 
 This makes the C-end channel-drift gate interpretable as recording/channel sensitivity rather than learner-performance variation.
 
@@ -86,7 +86,7 @@ The public intonation dimension remains one product dimension, but human validat
 - `intonation_utterance_naturalness`: isolated target utterance;
 - `intonation_contextual_appropriateness`: target utterance judged with its real prompt or preceding-turn context.
 
-Current target-independent F0 evidence is eligible only for the first construct.  No current v5 candidate is declared eligible for contextual intonation.
+Current target-independent F0 evidence is eligible only for the first construct. No current v5 candidate is declared eligible for contextual intonation.
 
 ### Two presentation variants
 
@@ -101,7 +101,7 @@ Current target-independent F0 evidence is eligible only for the first construct.
 
 - contextual intonation appropriateness
 
-This prevents the context needed for an intonation judgement from priming the listener's clarity judgement.  The target response transcript is not displayed.
+This prevents the context needed for an intonation judgement from priming the listener's clarity judgement. The target response transcript is not displayed.
 
 ### Listener blinding
 
@@ -144,9 +144,9 @@ The most important rule is hard-coded:
 
 `transcript=None`
 
-The validation run never substitutes a manually corrected or gold transcript for the product ASR transcript.  `scoring_used_gold_transcript=false` is persisted and later checked by the promotion analyzer.
+The validation run never substitutes a manually corrected or gold transcript for the product ASR transcript. `scoring_used_gold_transcript=false` is persisted and later checked by the promotion analyzer.
 
-The runner is resumable.  A per-sample failure is recorded rather than aborting the full batch.  Previously successful samples are skipped; failed samples can be retried.
+The runner is resumable. A per-sample failure is recorded rather than aborting the full batch. Previously successful samples are skipped; failed samples can be retried.
 
 ## 7. Retry-safe and provenance-complete evidence export
 
@@ -154,7 +154,7 @@ Added:
 
 - `scripts/export_free_speech_v5_evidence.py`
 
-A resumable JSONL may contain an old error attempt followed by a successful retry.  The raw attempt history remains append-only, but the analysis export uses only the latest attempt per `sample_id` and reports how many attempts were superseded.
+A resumable JSONL may contain an old error attempt followed by a successful retry. The raw attempt history remains append-only, but the analysis export uses only the latest attempt per `sample_id` and reports how many attempts were superseded.
 
 The export retains:
 
@@ -170,7 +170,7 @@ The export retains:
 
 This round found an especially important semantic edge case.
 
-The v4 shadow surface intentionally returns a neutral numeric value such as 70 when source evidence is unavailable.  This is useful for safe product fallback, but the same number must not enter criterion correlation as if the model measured a 70.
+The v4 shadow surface intentionally returns a neutral numeric value such as 70 when source evidence is unavailable. This is useful for safe product fallback, but the same number must not enter criterion correlation as if the model measured a 70.
 
 v5 therefore separates:
 
@@ -186,11 +186,11 @@ Example:
 - exported `fallback_numeric_value=70`;
 - failure reason is `neutral_placeholder_without_source_evidence`.
 
-The candidate loses availability coverage instead of receiving a fake measured observation.  Separately, the F0-missingness safety check verifies that the neutral fallback did not turn model failure into a low intonation penalty.
+The candidate loses availability coverage instead of receiving a fake measured observation. Separately, the F0-missingness safety check verifies that the neutral fallback did not turn model failure into a low intonation penalty.
 
 ## 9. Raw diagnostic features and 0–100 score surfaces are not the same object
 
-v4's protocol used gates such as score IQR in points and channel drift in points.  Applying those thresholds to a 0–1 ASR probability or a log-duration MAD would be dimensionally invalid.
+v4's protocol used gates such as score IQR in points and channel drift in points. Applying those thresholds to a 0–1 ASR probability or a log-duration MAD would be dimensionally invalid.
 
 v5 classifies candidates as:
 
@@ -216,7 +216,7 @@ Added:
 - `data/research_eval/free_speech_v5_promotion_protocol.json`
 - `scripts/analyze_free_speech_promotion_v5.py`
 
-The analyzer does not fit thresholds, tune shrinkage, remap scores, or promote candidates.  It executes the predeclared gates and returns one of:
+The analyzer does not fit thresholds, tune shrinkage, remap scores, or promote candidates. It executes the predeclared gates and returns one of:
 
 - `pass`
 - `fail`
@@ -246,7 +246,7 @@ Mixed score-contract/evidence/candidate-policy versions fail closed instead of b
 
 ## 11. C-end interpretation
 
-The purpose of these gates is not to make a research table look stricter.  They target concrete product failure modes:
+The purpose of these gates is not to make a research table look stricter. They target concrete product failure modes:
 
 - a score that changes because the microphone changes;
 - a score that looks valid only because native and learner labels are separable;
@@ -261,7 +261,9 @@ For this product, these errors are more damaging than failing to squeeze a few e
 
 ## 12. Validation
 
-The final v5 branch light CI at head `566f81cfeadba2ebec261f6420964c47004c5861` completed successfully:
+The v5 light regression suite has completed successfully on the completed functional head for this round, and the later documentation-only head is rechecked by CI rather than being described as a permanently fixed “final head”.
+
+Observed functional regression result:
 
 - 128 tests passed;
 - 3 dependency deprecation warnings;
@@ -289,7 +291,7 @@ The v5 regression set includes explicit guards for:
 
 The next high-value step is no longer another heuristic formula.
 
-The infrastructure is now ready for a real speaker-diverse Japanese validation collection under the frozen v5 protocol.  Once that evidence exists, each dimension can fail independently:
+The infrastructure is now ready for a real speaker-diverse Japanese validation collection under the frozen v5 protocol. Once that evidence exists, each dimension can fail independently:
 
 - if clarity fails, investigate stronger target-independent human-intelligibility/comprehensibility evidence;
 - if rhythm fails, replace weak ASR-word timing evidence rather than adjusting arbitrary score thresholds;
