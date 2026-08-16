@@ -116,3 +116,74 @@ def check_asr_transcript_sanity(text: str, *, min_chars: int = 3, max_chars: int
         normalized_text=normalized,
         metrics=metrics,
     )
+
+
+
+def check_free_speech_transcript_sanity(text: str) -> TranscriptSanityResult:
+    """Gate transcript usability for direct free-speech scoring.
+
+    Unlike :func:`check_asr_transcript_sanity`, this function does not impose
+    pseudo-reference synthesis limits such as 3--80 content characters. Short
+    conversational turns (for example ``はい`` or ``え？``) and longer natural
+    answers remain score-eligible when the language gate says Japanese.
+
+    This gate only rejects missing text, clearly non-Japanese script mixtures,
+    and obvious repetition/noise-like ASR hallucinations. Utterance duration
+    and per-dimension evidence sufficiency are handled later as reliability,
+    not as language eligibility.
+    """
+
+    normalized = re.sub(r"\s+", "", str(text or "").strip())
+    content_chars = _CONTENT_CHAR_RE.findall(normalized)
+    ja_chars = _JA_CHAR_RE.findall(normalized)
+    content_len = len(content_chars)
+    ja_ratio = len(ja_chars) / max(content_len, 1)
+    punct_ratio = len(_PUNCT_SPACE_RE.findall(normalized)) / max(len(normalized), 1)
+    run_ratio = _longest_run_ratio(normalized)
+    uniq_ratio = _unique_ratio(normalized)
+
+    metrics: Dict[str, float | int | str] = {
+        "char_count": len(normalized),
+        "content_char_count": content_len,
+        "ja_ratio": round(float(ja_ratio), 4),
+        "punct_ratio": round(float(punct_ratio), 4),
+        "longest_run_ratio": round(float(run_ratio), 4),
+        "unique_content_ratio": round(float(uniq_ratio), 4),
+        "purpose": "direct_free_speech_scoreability",
+    }
+
+    reason = "ok"
+    score = 1.0
+    ok = True
+    if content_len <= 0:
+        ok = False
+        reason = "empty_or_no_content_transcript"
+        score = 0.05
+    elif ja_ratio < 0.55:
+        ok = False
+        reason = "not_enough_japanese_content"
+        score = 0.20
+    elif content_len >= 8 and run_ratio >= 0.45:
+        ok = False
+        reason = "repetitive_or_shouted_transcript"
+        score = 0.20
+    elif content_len >= 8 and uniq_ratio < 0.18:
+        ok = False
+        reason = "low_information_repetition"
+        score = 0.25
+    elif content_len >= 4 and punct_ratio > 0.60:
+        ok = False
+        reason = "mostly_punctuation_or_fillers"
+        score = 0.20
+    elif _contains_any(normalized.lower(), {"www", "ahaha", "哈哈", "呵呵"}):
+        ok = False
+        reason = "laughter_or_noise_like_transcript"
+        score = 0.20
+
+    return TranscriptSanityResult(
+        ok=ok,
+        score=round(float(score), 4),
+        reason=reason,
+        normalized_text=normalized,
+        metrics=metrics,
+    )

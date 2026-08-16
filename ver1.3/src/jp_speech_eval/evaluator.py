@@ -687,6 +687,13 @@ def evaluate_utterance(
                 "max_mora_duration_sec": round(float(boundary_health["max_duration"]), 4),
                 "mode": alignment_mode,
                 "requested_mode": requested_alignment_mode,
+                "reference_boundary_method": cache.meta.ref_boundary_method if cache else None,
+                "reference_boundary_confidence": (
+                    round(float(cache.meta.ref_boundary_confidence), 4) if cache else None
+                ),
+                "reference_boundary_tier": cache.meta.ref_boundary_tier if cache else None,
+                "reference_boundary_source": cache.meta.ref_boundary_source if cache else None,
+                "local_boundary_precision_role": "limits_target_local_evidence_not_global_performance",
             },
             "pronunciation": pron_details,
             "prosody": prosody_details,

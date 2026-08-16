@@ -10,6 +10,7 @@ on:
       - free-speech-promotion-gate-v5
       - karaoke-consumer-ui-v6
       - hf-space-karaoke-integration-v7
+      - scoring-integrity-v8
   pull_request:
     paths:
       - "ver1.3/src/jp_speech_eval/audio_features.py"
@@ -25,11 +26,15 @@ on:
       - "ver1.3/src/jp_speech_eval/asr.py"
       - "ver1.3/src/jp_speech_eval/asr_confirmation.py"
       - "ver1.3/src/jp_speech_eval/transcript_assisted.py"
+      - "ver1.3/src/jp_speech_eval/transcript_sanity.py"
       - "ver1.3/src/jp_speech_eval/spontaneous_fluency.py"
       - "ver1.3/src/jp_speech_eval/free_speech_evidence.py"
+      - "ver1.3/src/jp_speech_eval/partial_evidence_aggregate.py"
       - "ver1.3/src/jp_speech_eval/reliability_counterfactual.py"
       - "ver1.3/src/jp_speech_eval/native_cap_telemetry.py"
       - "ver1.3/src/jp_speech_eval/evaluator.py"
+      - "ver1.3/src/jp_speech_eval/consumer_dimension_policy.py"
+      - "ver1.3/src/jp_speech_eval/reliability_gate.py"
       - "ver1.3/src/jp_speech_eval/ssl_features.py"
       - "ver1.3/src/jp_speech_eval/ssl_reference_panel.py"
       - "ver1.3/src/jp_speech_eval/rhythm_dtw.py"
@@ -52,8 +57,10 @@ on:
       - "ver1.3/scripts/validate_consumer_ratings_v3.py"
       - "ver1.3/scripts/normalize_consumer_ratings_v3.py"
       - "ver1.3/scripts/run_free_speech_validation_batch.py"
+      - "ver1.3/scripts/run_free_speech_acceptance_v8.py"
       - "ver1.3/scripts/export_free_speech_v5_evidence.py"
       - "ver1.3/scripts/analyze_free_speech_promotion_v5.py"
+      - "ver1.3/scripts/analyze_partial_evidence_aggregate.py"
       - "ver1.3/scripts/run_reliability_cap_ab.py"
       - "ver1.3/data/research_eval/**"
       - "ver1.3/data/human_eval/consumer_rating_schema_v2.json"
@@ -67,12 +74,16 @@ on:
       - "ver1.3/tests/test_score_contract.py"
       - "ver1.3/tests/test_conversation_mode_policy.py"
       - "ver1.3/tests/test_transcript_assisted_language_gate.py"
+      - "ver1.3/tests/test_scoring_integrity_v8.py"
+      - "ver1.3/tests/test_partial_evidence_aggregate.py"
+      - "ver1.3/tests/test_partial_evidence_analysis.py"
       - "ver1.3/tests/test_spontaneous_fluency.py"
       - "ver1.3/tests/test_free_speech_evidence.py"
       - "ver1.3/tests/test_free_speech_v4_pipeline.py"
       - "ver1.3/tests/test_free_speech_sample_manifest_v5.py"
       - "ver1.3/tests/test_consumer_ratings_v3.py"
       - "ver1.3/tests/test_free_speech_validation_batch_v5.py"
+      - "ver1.3/tests/test_free_speech_acceptance_v8.py"
       - "ver1.3/tests/test_free_speech_v5_evidence_export.py"
       - "ver1.3/tests/test_free_speech_promotion_v5.py"
       - "ver1.3/tests/test_karaoke_timeline.py"
@@ -129,12 +140,16 @@ jobs:
             tests/test_score_contract.py \
             tests/test_conversation_mode_policy.py \
             tests/test_transcript_assisted_language_gate.py \
+            tests/test_scoring_integrity_v8.py \
+            tests/test_partial_evidence_aggregate.py \
+            tests/test_partial_evidence_analysis.py \
             tests/test_spontaneous_fluency.py \
             tests/test_free_speech_evidence.py \
             tests/test_free_speech_v4_pipeline.py \
             tests/test_free_speech_sample_manifest_v5.py \
             tests/test_consumer_ratings_v3.py \
             tests/test_free_speech_validation_batch_v5.py \
+            tests/test_free_speech_acceptance_v8.py \
             tests/test_free_speech_v5_evidence_export.py \
             tests/test_free_speech_promotion_v5.py \
             tests/test_karaoke_timeline.py \

@@ -155,6 +155,8 @@ def test_ssl_shadow_can_reuse_preserved_fixed_reference_after_broad_fallback(tmp
             ssl_extractor=Extractor(),
         )
     assert result["details"]["shadow"]["ssl_pronunciation"]["available"] is True
+    assert result["details"]["shadow"]["rhythm_dtw_v1"]["available"] is False
+    assert result["details"]["shadow"]["rhythm_dtw_v1"]["reason"] == "insufficient_dtw_frames_for_rhythm_metric"
 
 
 def test_unified_result_preserves_zero_values():

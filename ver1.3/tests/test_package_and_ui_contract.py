@@ -111,10 +111,15 @@ class PackageAndUiContractTest(unittest.TestCase):
     def test_demo_ui_default_modes_hide_diagnostic_tools(self) -> None:
         import scripts.debug_ui as debug_ui
 
-        self.assertEqual(debug_ui.CORE_MODES, ["reference", "asr_pseudo_reference", "kanade_asr_voice_reference"])
-        self.assertEqual(debug_ui.PUBLIC_DEMO_MODES, ["reference", "asr_pseudo_reference", "kanade_asr_voice_reference"])
-        self.assertNotIn("transcript_assisted_light", debug_ui.CORE_MODES)
+        self.assertEqual(
+            debug_ui.CORE_MODES,
+            ["reference", "transcript_assisted_light", "asr_pseudo_reference", "kanade_asr_voice_reference"],
+        )
+        self.assertEqual(debug_ui.PUBLIC_DEMO_MODES, ["reference", "transcript_assisted_light"])
+        self.assertIn("transcript_assisted_light", debug_ui.CORE_MODES)
         self.assertNotIn("acoustic", debug_ui.PUBLIC_DEMO_MODES)
+        self.assertNotIn("asr_pseudo_reference", debug_ui.PUBLIC_DEMO_MODES)
+        self.assertNotIn("kanade_asr_voice_reference", debug_ui.PUBLIC_DEMO_MODES)
 
     def test_demo_ui_does_not_fallback_to_raw_total_when_user_score_is_hidden(self) -> None:
         ui = (ROOT / "debug_ui" / "index.html").read_text(encoding="utf-8")

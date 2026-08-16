@@ -216,14 +216,28 @@ def _mora_rows(
     raw_rows = result.get("mora_table") if isinstance(result.get("mora_table"), list) else []
     alignment = _mapping(details.get("alignment"))
     confidence = _finite(alignment.get("confidence"))
+    reference_boundary_confidence = _finite(alignment.get("reference_boundary_confidence"))
+    reference_boundary_tier = str(alignment.get("reference_boundary_tier") or "").strip().lower()
+    reference_boundary_limited = bool(
+        reference_boundary_tier in {"equal_fallback", "unknown_alignment"}
+        or (reference_boundary_confidence is not None and reference_boundary_confidence < 0.45)
+    )
+    effective_local_confidence = confidence
+    if reference_boundary_confidence is not None:
+        effective_local_confidence = (
+            reference_boundary_confidence
+            if effective_local_confidence is None
+            else min(effective_local_confidence, reference_boundary_confidence)
+        )
     alignment_mode = str(result.get("alignment_mode") or alignment.get("mode") or "")
     approximate = bool(
         alignment.get("used_equal_fallback")
         or alignment.get("available") is False
         or alignment_mode == "equal"
         or alignment_mode.endswith("fallback_equal")
-        or confidence is None
-        or confidence < 0.50
+        or reference_boundary_limited
+        or effective_local_confidence is None
+        or effective_local_confidence < 0.50
     )
     rows: List[Dict[str, Any]] = []
     for source_index, raw in enumerate(raw_rows):
@@ -238,7 +252,10 @@ def _mora_rows(
             "source_index": source_index,
             "start_sec": start,
             "end_sec": end,
-            "alignment_confidence": None if confidence is None else round(_clip(confidence, 0.0, 1.0), 4),
+            "alignment_confidence": None if effective_local_confidence is None else round(_clip(effective_local_confidence, 0.0, 1.0), 4),
+            "path_alignment_confidence": None if confidence is None else round(_clip(confidence, 0.0, 1.0), 4),
+            "reference_boundary_confidence": None if reference_boundary_confidence is None else round(_clip(reference_boundary_confidence, 0.0, 1.0), 4),
+            "reference_boundary_tier": reference_boundary_tier or None,
             "approximate": approximate,
             "source": "user_mora_alignment",
             "interpretation": "mora_playback_alignment_not_phone_correctness",
