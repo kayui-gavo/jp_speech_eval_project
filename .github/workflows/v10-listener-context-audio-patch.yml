@@ -1,0 +1,26 @@
+name: v10-listener-context-audio-patch
+on:
+  push:
+    paths:
+      - '.github/workflows/v10-listener-context-audio-patch.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: free-speech-promotion-readiness-v10
+          fetch-depth: 0
+      - name: Apply contextual audio playback patch
+        run: python ver1.3/scripts/_patch_listener_context_audio_v10.py
+      - name: Validate and commit
+        run: |
+          python -m py_compile ver1.3/scripts/free_speech_listener_server_v10.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ver1.3/scripts/free_speech_listener_server_v10.py
+          git commit -m 'research: play contextual audio in listener UI'
+          git push origin HEAD:free-speech-promotion-readiness-v10
