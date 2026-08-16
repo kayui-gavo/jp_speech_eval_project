@@ -21,6 +21,7 @@ def _manifest_row(sample_id: str):
         "expected_language": "ja",
         "channel_condition": "clean",
         "channel_pair_id": "",
+        "source_recording_id": f"source_{sample_id}",
         "context_type": "prompt",
         "context_id": f"ctx_{sample_id}",
         "context_text": "最近あった出来事について話してください。",
@@ -84,6 +85,7 @@ def test_batch_never_passes_oracle_transcript_and_is_resumable(tmp_path):
     assert len(rows) == 2
     assert all(row["scoring_used_gold_transcript"] is False for row in rows)
     assert all(row["metadata"]["speaker_group"] == "learner" for row in rows)
+    assert {row["metadata"]["source_recording_id"] for row in rows} == {"source_s1", "source_s2"}
 
 
 def test_batch_preserves_per_sample_failure_instead_of_aborting(tmp_path):
