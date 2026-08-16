@@ -56,7 +56,17 @@ def test_batch_never_passes_oracle_transcript_and_is_resumable(tmp_path):
         }
 
     def fake_policy(raw, mode="transcript_assisted_light"):
-        return {"score_available": True, "display_score": 74, "score_contract_version": "consumer_four_score_v2"}
+        return {
+            "score_available": True,
+            "display_score": 74,
+            "score_contract_version": "consumer_four_score_v2",
+            "component_scores": {
+                "clarity": {"value": 70, "evidence_state": "neutral_prior"},
+                "mora_timing": {"value": 70, "evidence_state": "neutral_prior"},
+                "delivery_fluency": {"value": 82, "evidence_state": "broad_proxy"},
+                "intonation": {"value": 70, "evidence_state": "neutral_prior"},
+            },
+        }
 
     first = run_batch(
         manifest,
@@ -67,6 +77,8 @@ def test_batch_never_passes_oracle_transcript_and_is_resumable(tmp_path):
     )
     assert first["written_ok"] == 2
     assert first["scoring_used_gold_transcript"] is False
+    assert first["partial_evidence_candidate_user_facing"] is False
+    assert first["partial_evidence_candidate_product_score_changed"] is False
     assert len(calls) == 2
     assert all(call["transcript"] is None for call in calls)
 
@@ -86,6 +98,14 @@ def test_batch_never_passes_oracle_transcript_and_is_resumable(tmp_path):
     assert all(row["scoring_used_gold_transcript"] is False for row in rows)
     assert all(row["metadata"]["speaker_group"] == "learner" for row in rows)
     assert {row["metadata"]["source_recording_id"] for row in rows} == {"source_s1", "source_s2"}
+    for row in rows:
+        candidate = row["score_candidates"]["partial_evidence_aggregate"]
+        assert candidate["available"] is True
+        assert candidate["user_facing"] is False
+        assert candidate["product_score_changed"] is False
+        assert candidate["neutral_prior_count"] == 3
+        assert candidate["available_component_count"] == 1
+        assert candidate["candidate_display_score"] != row["user_score"]["display_score"]
 
 
 def test_batch_preserves_per_sample_failure_instead_of_aborting(tmp_path):
@@ -109,6 +129,8 @@ def test_batch_preserves_per_sample_failure_instead_of_aborting(tmp_path):
     assert report["written_ok"] == 1
     assert report["failed"] == 1
     rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines() if line.strip()]
+    ok = next(row for row in rows if row["status"] == "ok")
+    assert ok["score_candidates"]["partial_evidence_aggregate"]["available"] is False
     failed = next(row for row in rows if row["status"] == "error")
     assert failed["sample_id"] == "s1"
     assert failed["error_type"] == "RuntimeError"
