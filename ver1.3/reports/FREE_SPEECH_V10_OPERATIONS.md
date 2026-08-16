@@ -105,7 +105,44 @@ python scripts/materialize_free_speech_manifest_v10.py \
   --require-all
 ```
 
-## 5. Run machine acceptance and create the blinded listener pack
+## 5. Run machine acceptance and actual-coverage preflight
+
+```bash
+python scripts/run_free_speech_promotion_readiness_v10.py \
+  outputs/free_speech_v10_collection/free_speech_manifest.csv \
+  --audio-root /path/to/free_speech_audio \
+  --out-dir outputs/free_speech_v10_readiness
+```
+
+The scoring path uses `transcript=None`.
+
+The runner first derives actual product-condition `speech_duration_sec` and checks held learner coverage against the frozen v10 structure gates.
+
+Possible machine-only stages are:
+
+```text
+collection_coverage_insufficient
+```
+
+or:
+
+```text
+awaiting_human_ratings
+```
+
+`collection_coverage_insufficient` means the real endpointed learner set still lacks enough short/long or task coverage. Replace or add recordings before freezing the final listener pack. Native clips cannot rescue a missing learner slice.
+
+`awaiting_human_ratings` means the collection structure is ready for the criterion stage. It is not a promotion result.
+
+The detailed preflight is written to:
+
+```text
+outputs/free_speech_v10_readiness/machine_coverage_preflight_v10.json
+```
+
+## 6. Build the final blinded listener pack
+
+Once machine coverage is ready:
 
 ```bash
 python scripts/run_free_speech_promotion_readiness_v10.py \
@@ -115,21 +152,33 @@ python scripts/run_free_speech_promotion_readiness_v10.py \
   --raters r01,r02,r03,r04,r05
 ```
 
-The scoring path uses `transcript=None`.
-
-Before human ratings exist, the expected terminal state is:
-
-```text
-awaiting_human_ratings
-```
-
-That is a successful boundary condition, not a failed experiment.
-
 The private asset map contains source paths. The listener CSV does not expose speaker group, L1, split, channel label, target-response transcript, or machine scores.
 
-## 6. Collect blinded human ratings
+If a pilot listener pack is generated while machine coverage is still insufficient, the runner marks it provisional rather than final-freeze-ready.
 
-The isolated presentation covers the four public constructs:
+## 7. Collect blinded human ratings with the local listener UI
+
+The recommended path is:
+
+```bash
+python scripts/free_speech_listener_server_v10.py serve \
+  outputs/free_speech_v10_readiness/listener_pack_held_v10.csv \
+  outputs/free_speech_v10_readiness/private_asset_map_held_v10.csv \
+  --audio-root /path/to/free_speech_audio \
+  --responses-dir outputs/free_speech_v10_readiness/listener_responses
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8766
+```
+
+Each listener enters only an anonymized rater id such as `r01`. The server shows only that rater's assigned presentations.
+
+The UI reads the construct instructions and 1-7 scale directly from `consumer_rating_schema_v3.json`; it does not maintain a second copy of the human criterion wording.
+
+The isolated presentation covers:
 
 - `clarity_comprehensibility`;
 - `fluency`;
@@ -138,16 +187,40 @@ The isolated presentation covers the four public constructs:
 
 Controlled-dialogue clips may additionally receive a separate contextual-intonation presentation. Contextual appropriateness is not substituted for utterance-level intonation.
 
+The listener UI does not expose sample ids, source paths, speaker group, L1, split, channel labels, response transcripts, or machine scores. Source audio paths stay inside the private asset map on the server.
+
+Each response is atomically stored as a separate JSON document keyed by presentation id. Closing/reopening the browser therefore does not erase previously completed presentations, and multiple local raters do not write a shared CSV row concurrently.
+
+If a presentation is marked unanalyzable, the server rejects construct scores for it. If it is analyzable, exactly the assigned constructs must receive integer ratings from 1 to 7.
+
 The target is five ratings per held presentation; the frozen minimum for held inclusion remains three.
 
-## 7. Run promotion readiness after ratings
+## 8. Export listener responses back to the existing v3 schema
+
+After rating:
+
+```bash
+python scripts/free_speech_listener_server_v10.py export \
+  outputs/free_speech_v10_readiness/listener_pack_held_v10.csv \
+  outputs/free_speech_v10_readiness/private_asset_map_held_v10.csv \
+  --audio-root /path/to/free_speech_audio \
+  --responses-dir outputs/free_speech_v10_readiness/listener_responses \
+  --out outputs/free_speech_v10_readiness/completed_listener_ratings.csv \
+  --require-complete
+```
+
+The exporter reconstructs the original v3 listener rows, fills only the assigned ratings, and runs the existing `validate_consumer_ratings_v3.py` contract before accepting the output.
+
+Without `--require-complete`, a partial CSV may be exported for progress inspection, but missing presentations are reported and never fabricated.
+
+## 9. Run promotion readiness after ratings
 
 ```bash
 python scripts/run_free_speech_promotion_readiness_v10.py \
   outputs/free_speech_v10_collection/free_speech_manifest.csv \
   --audio-root /path/to/free_speech_audio \
   --out-dir outputs/free_speech_v10_readiness \
-  --ratings-csv /path/to/completed_listener_ratings.csv
+  --ratings-csv outputs/free_speech_v10_readiness/completed_listener_ratings.csv
 ```
 
 The runner normalizes blinded ratings, runs the frozen v5 scientific gates, then applies the additive v10 consumer-discrimination gates.
@@ -158,9 +231,9 @@ Interpretation:
 - `fail`: keep it shadow;
 - `insufficient`: collect more criterion evidence; do not tune held thresholds to force a pass.
 
-## 8. What historical data may still be reused
+## 10. What historical and external data may still be reused
 
-Use `audit_historical_free_speech_reuse_v10.py` before attempting to convert old assets into the new manifest.
+Use `audit_historical_free_speech_reuse_v10.py` before attempting to convert old project assets into the new manifest.
 
 Current project boundaries are intentionally conservative:
 
@@ -170,7 +243,9 @@ Current project boundaries are intentionally conservative:
 - historical TTS/noise controls: routing controls if audio is still recoverable;
 - none of those assets should be relabeled as held learner free-speech criterion data.
 
-## 9. What not to do
+For external corpora, see `reports/FREE_SPEECH_EXTERNAL_DATA_POLICY_V10.md`. In particular, a scientifically relevant research corpus is not automatically authorized to calibrate or validate a commercial C-end ProductScore.
+
+## 11. What not to do
 
 Do not:
 
@@ -179,5 +254,7 @@ Do not:
 - count channel variants as independent human productions;
 - call synthetic perturbations learner errors;
 - interpret native control separation as the definition of pronunciation quality;
+- let native samples rescue a failing learner short/long or task slice;
 - promote a candidate because overall native+learner correlation looks good while learner scores remain compressed;
+- spend the full listener-rating budget before actual endpointed learner coverage is checked;
 - change the four public score semantics inside this validation branch.
