@@ -23,7 +23,9 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Apply scoring-integrity repairs
-        run: python scripts/apply_v8_patch_bootstrap.py
+        run: |
+          python scripts/apply_v8_patch_bootstrap.py
+          python scripts/apply_v8_patch_corrections.py
       - name: Install lightweight runtime
         run: |
           python -m pip install --upgrade pip setuptools wheel
