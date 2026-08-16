@@ -43,6 +43,7 @@ from jp_speech_eval.transcript_assisted import evaluate_transcript_assisted_ligh
 from jp_speech_eval.unified_result import unify_evaluation_result
 from jp_speech_eval.vad import detect_speech_region
 from jp_speech_eval.feedback_renderer import render_user_facing_result
+from jp_speech_eval.app_core.karaoke_timeline import build_consumer_karaoke_timeline
 
 
 BACKGROUND_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="debug-ui-bg")
@@ -122,19 +123,18 @@ def _field_value(form: cgi.FieldStorage, name: str, default: str) -> str:
 
 CORE_MODES = [
     "reference",
+    "transcript_assisted_light",
     "asr_pseudo_reference",
     "kanade_asr_voice_reference",
 ]
 
 PUBLIC_DEMO_MODES = [
     "reference",
-    "asr_pseudo_reference",
-    "kanade_asr_voice_reference",
+    "transcript_assisted_light",
 ]
 
 EXPERIMENTAL_MODES = [
     "kanade_voice_reference",
-    "transcript_assisted_light",
     "acoustic",
 ]
 
@@ -146,7 +146,7 @@ def _mode_labels() -> Dict[str, str]:
         "reference": "Reference fixed-sentence scoring",
         "asr_pseudo_reference": "Free speech: ASR-generated pseudo-reference",
         "asr_confirmed_weak_reference": "Free speech: confirmed weak-reference practice",
-        "transcript_assisted_light": "Free speech: transcript-assisted light diagnosis",
+        "transcript_assisted_light": "Free speech: direct broad Japanese scoring",
         "acoustic": "Recording/acoustic quality diagnosis",
         "kanade_voice_reference": "Experimental: voice-conditioned fixed-sentence reference",
         "kanade_asr_voice_reference": "Experimental: ASR pseudo-reference with voice playback",
@@ -396,6 +396,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
             user_facing = render_user_facing_result(result, mode=result.get("details", {}).get("mode") or mode)
+            karaoke_timeline = build_consumer_karaoke_timeline(result, user_facing)
             _json_response(self, {
                 "ok": True,
                 "mode": mode,
@@ -406,6 +407,7 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "result": result,
                 "unified": unified_payload,
                 "user_facing": user_facing,
+                "karaoke_timeline": karaoke_timeline,
                 "realtime": realtime,
             })
         except Exception as exc:
@@ -485,6 +487,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 append_jsonl(self.server.log_jsonl, unified)  # type: ignore[attr-defined]
             unified_payload = unified.to_dict()
             unified_payload.pop("raw_metrics", None)
+            confirmed_user_facing = render_user_facing_result(result, mode=mode)
+            confirmed_karaoke_timeline = build_consumer_karaoke_timeline(result, confirmed_user_facing)
             _json_response(self, {
                 "ok": True,
                 "mode": response_mode,
@@ -498,7 +502,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
                 "kanade": (kanade_job if kanade_job else None),
                 "result": result,
                 "unified": unified_payload,
-                "user_facing": render_user_facing_result(result, mode=mode),
+                "user_facing": confirmed_user_facing,
+                "karaoke_timeline": confirmed_karaoke_timeline,
             })
         except Exception as exc:
             _error_response(self, f"{type(exc).__name__}: {exc}", status=500)
