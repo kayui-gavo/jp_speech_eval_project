@@ -164,9 +164,8 @@ class DebugUiHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT / "debug_ui"), **kwargs)
 
     def do_GET(self) -> None:
-        if self.path == "/" and bool(getattr(self.server, "public_demo", False)):
-            self.path = "/consumer_v3.html"
-            return super().do_GET()
+        # Keep the established Hugging Face Space / debug root on index.html.
+        # The experimental consumer surface remains available explicitly at /consumer.
         if self.path in {"/consumer", "/consumer/"}:
             self.path = "/consumer_v3.html"
             return super().do_GET()
