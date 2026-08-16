@@ -115,9 +115,10 @@ def _evidence_index(rows: Sequence[Mapping[str, Any]]) -> dict[tuple[str, str], 
 def _unique_sample_metadata(evidence_rows: Sequence[Mapping[str, Any]]) -> dict[str, Dict[str, Any]]:
     fields = (
         "speaker_id", "speaker_group", "l1", "task", "prompt_id", "subset",
-        "expected_language", "condition", "channel_pair_id", "context_type",
+        "expected_language", "condition", "channel_pair_id", "source_recording_id", "context_type",
         "context_id", "batch_status", "product_score_available", "language_gate_eligible",
-        "language_gate_reason", "scoring_used_gold_transcript",
+        "language_gate_reason", "scoring_used_gold_transcript", "score_contract_version",
+        "evidence_schema_version", "candidate_surface_policy_id",
     )
     output: dict[str, Dict[str, Any]] = {}
     for row in evidence_rows:
@@ -211,8 +212,12 @@ def _task_report(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
         if task:
             grouped[task].append(row)
     reports = {task: _spearman(group_rows) for task, group_rows in sorted(grouped.items())}
-    usable_groups = sum(report.get("rho") is not None for report in reports.values())
-    return {"groups": reports, "usable_group_count": usable_groups}
+    usable_rhos = [float(report["rho"]) for report in reports.values() if report.get("rho") is not None]
+    return {
+        "groups": reports,
+        "usable_group_count": len(usable_rhos),
+        "all_usable_groups_positive_direction": bool(usable_rhos) and all(value > 0 for value in usable_rhos),
+    }
 
 
 def _leave_one_speaker_out(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -258,10 +263,18 @@ def _channel_drift(
     usable_pairs = 0
     pair_report: Dict[str, Any] = {}
     for pair_id, pair_rows in sorted(grouped.items()):
+        source_ids = {_text(row.get("source_recording_id")) for row in pair_rows if _text(row.get("source_recording_id"))}
+        if len(source_ids) != 1:
+            pair_report[pair_id] = {
+                "usable": False,
+                "reason": "missing_or_conflicting_source_recording_id",
+                "source_recording_ids": sorted(source_ids),
+            }
+            continue
         clean = [float(row["evidence_value"]) for row in pair_rows if _text(row.get("condition")) == "clean"]
         variants = [float(row["evidence_value"]) for row in pair_rows if _text(row.get("condition")) != "clean"]
         if not clean or not variants:
-            pair_report[pair_id] = {"usable": False, "reason": "missing_clean_or_variant"}
+            pair_report[pair_id] = {"usable": False, "reason": "missing_clean_or_variant", "source_recording_ids": sorted(source_ids)}
             continue
         clean_anchor = float(np.median(np.asarray(clean, dtype=float)))
         pair_drifts = [abs(value - clean_anchor) for value in variants]
@@ -269,6 +282,7 @@ def _channel_drift(
         usable_pairs += 1
         pair_report[pair_id] = {
             "usable": True,
+            "source_recording_id": next(iter(source_ids)),
             "clean_anchor": clean_anchor,
             "variant_count": len(variants),
             "median_absolute_drift": float(np.median(np.asarray(pair_drifts, dtype=float))),
@@ -280,6 +294,45 @@ def _channel_drift(
         "median_absolute_drift": float(np.median(np.asarray(drifts, dtype=float))) if drifts else None,
         "max_absolute_drift": max(drifts) if drifts else None,
         "pairs": pair_report,
+    }
+
+
+def _candidate_version_report(
+    evidence_rows: Sequence[Mapping[str, Any]],
+    *,
+    candidate: str,
+    protocol: Mapping[str, Any],
+    subset: str = "held",
+) -> Dict[str, Any]:
+    rows = [
+        row
+        for row in evidence_rows
+        if _text(row.get("candidate")) == candidate
+        and (not subset or _text(row.get("subset")) == subset)
+        and _text(row.get("expected_language")) == "ja"
+    ]
+    score_contracts = sorted({_text(row.get("score_contract_version")) for row in rows if _text(row.get("score_contract_version"))})
+    evidence_schemas = sorted({_text(row.get("evidence_schema_version")) for row in rows if _text(row.get("evidence_schema_version"))})
+    surface_policies = sorted({_text(row.get("candidate_surface_policy_id")) for row in rows if _text(row.get("candidate_surface_policy_id"))})
+    expected_contract = _text(protocol.get("product_score_contract_under_test"))
+    expected_evidence = _text(protocol.get("candidate_evidence_schema"))
+    expected_surface = _text(protocol.get("candidate_surface_policy_under_test"))
+    is_shadow_surface = "shadow_candidate_score" in candidate
+    return {
+        "row_count": len(rows),
+        "score_contract_versions": score_contracts,
+        "evidence_schema_versions": evidence_schemas,
+        "candidate_surface_policy_ids": surface_policies,
+        "expected_score_contract": expected_contract,
+        "expected_evidence_schema": expected_evidence,
+        "expected_candidate_surface_policy": expected_surface if is_shadow_surface else None,
+        "score_contract_match": bool(rows) and score_contracts == [expected_contract],
+        "evidence_schema_match": bool(rows) and evidence_schemas == [expected_evidence],
+        "candidate_surface_policy_match": (
+            bool(rows) and surface_policies == [expected_surface]
+            if is_shadow_surface
+            else True
+        ),
     }
 
 
@@ -391,7 +444,11 @@ def analyze(
     evidence_rows, evidence_fields = _read_csv(evidence_csv)
     for required, fields, label in (
         ({"sample_id", "criterion", "human_rating", "subset", "speaker_id", "task"}, set(human_fields), "human"),
-        ({"sample_id", "candidate", "candidate_construct", "evidence_value", "subset", "speaker_id", "condition"}, set(evidence_fields), "evidence"),
+        ({
+            "sample_id", "candidate", "candidate_construct", "evidence_value", "subset", "speaker_id",
+            "condition", "channel_pair_id", "source_recording_id", "expected_language",
+            "score_contract_version", "evidence_schema_version", "candidate_surface_policy_id",
+        }, set(evidence_fields), "evidence"),
     ):
         missing = sorted(required - fields)
         if missing:
@@ -454,7 +511,13 @@ def analyze(
         criterion = list(direct[candidate])[0]
         stats = criterion_reports.get(criterion, {})
         drift = _channel_drift(evidence_rows, candidate=candidate, subset="held")
-        task_usable = ((stats.get("task_stability") or {}).get("usable_group_count"))
+        version_report = _candidate_version_report(
+            evidence_rows, candidate=candidate, protocol=protocol, subset="held"
+        )
+        task_stats = stats.get("task_stability") or {}
+        task_usable = task_stats.get("usable_group_count")
+        loo_stats = stats.get("leave_one_speaker_out") or {}
+        loo_usable = loo_stats.get("usable_leave_one_out_count")
         rho = ((stats.get("spearman") or {}).get("rho"))
         gate_states = {
             "held_pair_count": _gate(_finite(stats.get("held_pair_count")), float(thresholds["held_construct_matched_pair_count"]), op="min"),
@@ -462,6 +525,19 @@ def analyze(
             "construct_matched_spearman": _gate(_finite(rho), float(thresholds["construct_matched_spearman_rho"]), op="min"),
             "candidate_iqr_points": _gate(_finite(stats.get("candidate_iqr")), float(thresholds["candidate_component_iqr_min_points"]), op="min"),
             "task_group_coverage": _gate(_finite(task_usable), float(thresholds["minimum_task_groups_with_usable_pairs"]), op="min"),
+            "task_direction_stability": (
+                "pass" if task_stats.get("all_usable_groups_positive_direction") and int(task_usable or 0) >= int(thresholds["minimum_task_groups_with_usable_pairs"])
+                else "fail" if int(task_usable or 0) >= int(thresholds["minimum_task_groups_with_usable_pairs"])
+                else "insufficient"
+            ),
+            "leave_one_speaker_out_coverage": _gate(
+                _finite(loo_usable), float(thresholds["minimum_leave_one_speaker_out_usable"]), op="min"
+            ),
+            "leave_one_speaker_out_direction_stability": (
+                "pass" if loo_stats.get("all_same_positive_direction") and int(loo_usable or 0) >= int(thresholds["minimum_leave_one_speaker_out_usable"])
+                else "fail" if int(loo_usable or 0) >= int(thresholds["minimum_leave_one_speaker_out_usable"])
+                else "insufficient"
+            ),
             "held_speaker_count": _gate(_finite(global_report.get("held_speaker_count")), float(thresholds["minimum_speakers"]), op="min"),
             "held_learner_speaker_count": _gate(_finite(global_report.get("held_learner_speaker_count")), float(thresholds["minimum_learner_speakers"]), op="min"),
             "held_native_speaker_count": _gate(_finite(global_report.get("held_native_speaker_count")), float(thresholds["minimum_native_speakers"]), op="min"),
@@ -471,6 +547,11 @@ def analyze(
             "negative_control_no_score_rate": _gate(_finite(global_report.get("negative_control_no_score_rate")), float(thresholds["negative_controls_no_score_rate_min"]), op="min"),
             "speaker_split_disjoint": "pass" if not global_report.get("speaker_split_leakage") else "fail",
             "gold_transcript_not_used": "pass" if global_report.get("gold_transcript_scoring_usage_count") == 0 else "fail",
+            "score_contract_version_match": "pass" if version_report.get("score_contract_match") else "fail",
+            "evidence_schema_version_match": "pass" if version_report.get("evidence_schema_match") else "fail",
+            "candidate_surface_policy_match": (
+                "pass" if version_report.get("candidate_surface_policy_match") else "fail"
+            ),
         }
         if candidate == "intonation.shadow_candidate_score":
             if f0_safety.get("pass") is None:
@@ -481,6 +562,7 @@ def analyze(
         report.update(
             {
                 "channel_drift": drift,
+                "version_consistency": version_report,
                 "gate_states": gate_states,
                 "promotion_decision": _combine_gate_states(gate_states.values()),
                 "promotion_scope": "separate_product_AB_only_with_score_contract_version_bump",
