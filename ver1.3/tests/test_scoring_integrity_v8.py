@@ -101,16 +101,17 @@ def test_low_reference_boundary_provenance_cannot_become_local_public_evidence()
     assert components["intonation"]["confidence"] == "low"
 
 
-def test_low_reference_boundary_provenance_blocks_local_feedback_but_not_whole_score() -> None:
+def test_low_reference_boundary_provenance_blocks_local_feedback_without_marking_learner_down() -> None:
     raw = _low_reference_provenance_result()
     policy = policy_from_result(raw, mode="reference")
     assert policy.allow_pitch_feedback is True
     gate = evaluate_reliability_gate(raw, policy)
-    assert gate.practice_check_result == "needs_attention"
+    assert gate.practice_check_result == "ok"
     assert gate.allow_pitch_feedback is False
     assert gate.allow_special_mora_feedback is False
     assert gate.allow_pronunciation_detail is False
     assert "reference_boundary_precision_low_broad_only" in gate.reasons
+    assert gate.messages
 
 
 def test_low_reference_boundary_provenance_marks_karaoke_mora_sync_approximate() -> None:
