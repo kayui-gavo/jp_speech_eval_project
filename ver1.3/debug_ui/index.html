@@ -3455,7 +3455,7 @@
     }
 
     async function startRecording() {
-      state.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      state.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       state.audioContext = new AudioContext();
       if (state.audioContext.state === "suspended") await state.audioContext.resume();
       state.sampleRate = state.audioContext.sampleRate;
@@ -3541,6 +3541,9 @@
         payload.client_latency_ms = Math.round((performance.now() - started) * 1000) / 1000;
         setBusy(false);
         if (!payload.ok) throw new Error(payload.error || "Sample failed");
+        $("lastRecordingAudio").src = $("sampleAudio").src;
+        $("lastRecordingAudio").load();
+        $("playLastBtn").disabled = false;
         renderPayload(payload);
       };
       $("recordBtn").onclick = () => startRecording().catch((err) => alert(err.message));
@@ -3552,11 +3555,17 @@
       $("confirmAsrBtn").onclick = () => confirmAsrText().catch((err) => alert(err.message));
       $("cancelAsrBtn").onclick = () => hideAsrConfirmation();
       $("playLastBtn").onclick = () => {
-        if (state.lastRecordingUrl) $("lastRecordingAudio").play();
+        if ($("lastRecordingAudio").src) $("lastRecordingAudio").play();
       };
       $("fileInput").onchange = async (event) => {
         const file = event.target.files[0];
-        if (file) await evaluateBlob(file, file.name).catch((err) => alert(err.message));
+        if (!file) return;
+        if (state.lastRecordingUrl) URL.revokeObjectURL(state.lastRecordingUrl);
+        state.lastRecordingUrl = URL.createObjectURL(file);
+        $("lastRecordingAudio").src = state.lastRecordingUrl;
+        $("lastRecordingAudio").load();
+        $("playLastBtn").disabled = false;
+        await evaluateBlob(file, file.name).catch((err) => alert(err.message));
       };
       $("copyJsonBtn").onclick = () => navigator.clipboard.writeText($("rawJson").textContent);
       $("exportFeaturesBtn").onclick = async () => {
