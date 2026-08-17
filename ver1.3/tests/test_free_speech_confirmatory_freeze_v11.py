@@ -70,7 +70,7 @@ def _protocols(tmp_path: Path) -> list[Path]:
     return [p1, p2]
 
 
-def test_freeze_is_reproducible_and_verifies(tmp_path: Path) -> None:
+def _valid_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
     audio = tmp_path / "audio"
     audio.mkdir()
     (audio / "dev.wav").write_bytes(b"RIFF-development-audio")
@@ -83,8 +83,11 @@ def test_freeze_is_reproducible_and_verifies(tmp_path: Path) -> None:
             _row("held_1", "held.wav", "learner_held", "held", "src_held"),
         ],
     )
-    protocols = _protocols(tmp_path)
+    return audio, manifest, _protocols(tmp_path)
 
+
+def test_freeze_is_reproducible_and_verifies(tmp_path: Path) -> None:
+    audio, manifest, protocols = _valid_fixture(tmp_path)
     frozen = build_freeze(manifest, audio_root=audio, protocol_paths=protocols)
     assert frozen["freeze_ok"] is True
     assert frozen["scientific_lock"]["held_set_must_not_be_used_for_threshold_tuning"] is True
@@ -98,24 +101,24 @@ def test_freeze_is_reproducible_and_verifies(tmp_path: Path) -> None:
 
 
 def test_audio_byte_change_is_detected_as_drift(tmp_path: Path) -> None:
-    audio = tmp_path / "audio"
-    audio.mkdir()
-    (audio / "dev.wav").write_bytes(b"dev-audio")
-    (audio / "held.wav").write_bytes(b"held-audio-v1")
-    manifest = tmp_path / "manifest.csv"
-    _write_manifest(
-        manifest,
-        [
-            _row("dev_1", "dev.wav", "speaker_dev", "development", "src_dev"),
-            _row("held_1", "held.wav", "speaker_held", "held", "src_held"),
-        ],
-    )
-    protocols = _protocols(tmp_path)
+    audio, manifest, protocols = _valid_fixture(tmp_path)
     frozen = build_freeze(manifest, audio_root=audio, protocol_paths=protocols)
     freeze_json = tmp_path / "freeze.json"
     freeze_json.write_text(json.dumps(frozen), encoding="utf-8")
 
     (audio / "held.wav").write_bytes(b"held-audio-v2")
+    verified = verify_freeze(freeze_json)
+    assert verified["verification_ok"] is False
+    assert verified["drift_detected"] is True
+
+
+def test_protocol_change_is_detected_as_drift(tmp_path: Path) -> None:
+    audio, manifest, protocols = _valid_fixture(tmp_path)
+    frozen = build_freeze(manifest, audio_root=audio, protocol_paths=protocols)
+    freeze_json = tmp_path / "freeze.json"
+    freeze_json.write_text(json.dumps(frozen), encoding="utf-8")
+
+    protocols[1].write_text(json.dumps({"schema": "v10", "learner_pairs": 29}), encoding="utf-8")
     verified = verify_freeze(freeze_json)
     assert verified["verification_ok"] is False
     assert verified["drift_detected"] is True
