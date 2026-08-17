@@ -13,6 +13,7 @@ on:
       - scoring-integrity-v8
       - score-evidence-reliability-v9
       - free-speech-promotion-readiness-v10
+      - free-speech-confirmatory-freeze-v11
   pull_request:
     paths:
       - "ver1.3/src/jp_speech_eval/audio_features.py"
@@ -72,6 +73,8 @@ on:
       - "ver1.3/scripts/materialize_free_speech_manifest_v10.py"
       - "ver1.3/scripts/free_speech_collection_server_v10.py"
       - "ver1.3/scripts/free_speech_listener_server_v10.py"
+      - "ver1.3/scripts/free_speech_confirmatory_freeze_v11.py"
+      - "ver1.3/scripts/run_free_speech_confirmatory_v11.py"
       - "ver1.3/scripts/analyze_partial_evidence_aggregate.py"
       - "ver1.3/scripts/run_reliability_cap_ab.py"
       - "ver1.3/data/research_eval/**"
@@ -109,6 +112,8 @@ on:
       - "ver1.3/tests/test_free_speech_listener_server_v10.py"
       - "ver1.3/tests/test_free_speech_listener_order_v10.py"
       - "ver1.3/tests/test_free_speech_listener_context_audio_v10.py"
+      - "ver1.3/tests/test_free_speech_confirmatory_freeze_v11.py"
+      - "ver1.3/tests/test_free_speech_confirmatory_runner_v11.py"
       - "ver1.3/tests/test_karaoke_timeline.py"
       - "ver1.3/tests/test_consumer_karaoke_ui.py"
       - "ver1.3/tests/test_hf_space_karaoke_v7.py"
@@ -185,6 +190,8 @@ jobs:
             tests/test_free_speech_listener_server_v10.py \
             tests/test_free_speech_listener_order_v10.py \
             tests/test_free_speech_listener_context_audio_v10.py \
+            tests/test_free_speech_confirmatory_freeze_v11.py \
+            tests/test_free_speech_confirmatory_runner_v11.py \
             tests/test_karaoke_timeline.py \
             tests/test_consumer_karaoke_ui.py \
             tests/test_hf_space_karaoke_v7.py \
